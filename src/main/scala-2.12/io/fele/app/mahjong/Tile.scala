@@ -58,12 +58,14 @@ object TileValue extends Enumeration {
   val HONOR_DRAGON_RED_ = Value(35)
   val HONOR_DRAGON_GREEN = Value(36)
   val HONOR_DRAGON_BLUE = Value(37)
+
+  def shift(tileValue: TileValue, i: Int):TileValue = TileValue(tileValue.id + i)
 }
 
 import TileType._
 import TileValue._
 
-class Tile (tileValue: TileValue){
+class Tile (val tileValue: TileValue){
   val `type` = tileValue.id / 10 match {
     case 0 => DOT
     case 1 => BAMBOO
@@ -77,8 +79,6 @@ class Tile (tileValue: TileValue){
 }
 
 object Tile {
-
-
   def apply(tileValue: TileValue) = new Tile(tileValue)
 }
 
