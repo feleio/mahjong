@@ -1,6 +1,6 @@
 package io.fele.app.mahjong
 
-import scala.collection.mutable
+import scala.language.implicitConversions
 import scala.util.Random
 
 /**
@@ -49,7 +49,7 @@ object TileValue extends Enumeration {
   val CHARACTER_9 = Value(29)
 
   // HONOR WIND
-  val HONOR_WIND_EAST_ = Value(31)
+  val HONOR_WIND_EAST = Value(31)
   val HONOR_WIND_SOUTH = Value(32)
   val HONOR_WIND_WEST = Value(33)
   val HONOR_WIND_NORTH = Value(34)
@@ -62,24 +62,35 @@ object TileValue extends Enumeration {
   def shift(tileValue: TileValue, i: Int):TileValue = TileValue(tileValue.id + i)
 }
 
+
+object ChowPosition extends Enumeration {
+  type ChowPosition = Value
+  val LEFT, MIDDLE, RIGHT = Value
+}
+
 import TileType._
 import TileValue._
 
-class Tile (val tileValue: TileValue){
-  val `type` = tileValue.id / 10 match {
+case class Tile (val value: TileValue){
+  val `type` = value.id / 10 match {
     case 0 => DOT
     case 1 => BAMBOO
     case 2 => CHARACTER
     case 3 => HONOR
   }
 
-  val num = if (`type` == HONOR) 0 else tileValue.id % 10
+  val num = if (`type` == HONOR) 0 else value.id % 10
 
-  override def toString: String = `type`.toString + "-" + num
+  def +(i: Int): Tile = this match {
+    case t if t.`type` != HONOR && this.num + i >= 1 && this.num + i <= 9 => Tile(TileValue(this.value.id + i))
+  }
+  def -(i: Int): Tile = this + -i
+
+  override def toString: String = value.toString
 }
 
 object Tile {
-  def apply(tileValue: TileValue) = new Tile(tileValue)
+  implicit def tileValue2Tile(value: TileValue): Tile = Tile(value)
 }
 
 class RandomTileDrawer(){
@@ -93,9 +104,19 @@ class RandomTileDrawer(){
       Some(shuffledTiles(curPos - 1))
     } else None
   }
+
+  def popHand(): List[Tile] = {
+    curPos += 13
+    shuffledTiles.slice(curPos, curPos + 13).toList
+  }
 }
 
 object RandomTileDrawer {
   val tiles: Seq[Tile] = TileValue.values.toSeq.sorted.flatMap(x => List.fill(4)(Tile(x)))
   val tilesNum = tiles.size
 }
+
+//object generateRandomeTiles extends App {
+//  val drawer = new RandomTileDrawer()
+//  println(drawer.popHand())
+//}

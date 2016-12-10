@@ -4,6 +4,6 @@ scalaVersion := "2.12.0"
 
 libraryDependencies ++= Seq(
   "org.scala-lang" % "scala-reflect" % "2.11.8",
-  "org.scalatest" %% "scalatest" % "3.0.0" % "test",
+  "org.scalatest" %% "scalatest" % "3.0.1" % "test",
   "com.typesafe" % "config" % "1.3.1"
 )
