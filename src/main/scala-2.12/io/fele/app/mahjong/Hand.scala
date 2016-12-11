@@ -32,7 +32,7 @@ case class ChowGroup(tiles: List[Tile]) extends TileGroup{
 }
 
 class Hand(var ts: List[Tile]) {
-  val tiles = mutable.ListBuffer[Tile](ts:_*)
+  var tiles: List[Tile] = ts.sortBy(_.value.id)
   if (tiles.size != 13)
     throw new IllegalArgumentException("the number must be non-negative.")
 
@@ -69,12 +69,12 @@ class Hand(var ts: List[Tile]) {
 
   def kong(tile: Tile): Unit = {
     tileStats(tile.value) -= 3
-    (1 to 3).foreach(_ => tiles -= tile)
+    (1 to 3).foreach(_ => tiles = tiles - tile)
     fixedTileGroups = KongGroup(tile) :: fixedTileGroups
   }
   def pong(tile: Tile): Unit = {
     tileStats(tile.value) -= 2
-    (1 to 2).foreach(_ => tiles -= tile)
+    (1 to 2).foreach(_ => tiles = tiles - tile)
     fixedTileGroups = PongGroup(tile) :: fixedTileGroups
   }
   def chow(tile: Tile, position: ChowPosition): Unit = {
@@ -88,10 +88,10 @@ class Hand(var ts: List[Tile]) {
 
   def draw(tile: Tile): Unit = {
     tileStats(tile.value) += 1
-    tiles += tile
+    tiles = tiles + tile
   }
   def discard(tile: Tile): Unit = {
     tileStats(tile.value) -= 1
-    tiles -= tile
+    tiles = tiles - tile
   }
 }

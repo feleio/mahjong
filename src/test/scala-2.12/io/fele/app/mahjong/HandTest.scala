@@ -134,4 +134,23 @@ class HandTest extends FreeSpec with Matchers {
       hand.tileStats(DOT_9) should equal(0)
     }
   }
+
+
+  "tiles in hand should always be sorted" in {
+    var tiles = List[Tile](DOT_9, HONOR_WIND_NORTH, CHARACTER_3, HONOR_DRAGON_GREEN, HONOR_WIND_EAST, BAMBOO_8, HONOR_WIND_WEST, DOT_2, BAMBOO_8, CHARACTER_9, DOT_6, DOT_8, BAMBOO_8)
+    val hand = new Hand(tiles)
+    hand.tiles should equal(tiles.sortBy(_.value.id))
+
+    tiles = tiles diff List[Tile](BAMBOO_8, BAMBOO_8)
+    hand.pong(BAMBOO_8)
+    hand.tiles should equal(tiles.sortBy(_.value.id))
+
+    tiles = DOT_9 :: tiles
+    hand.draw(DOT_9)
+    hand.tiles should equal(tiles.sortBy(_.value.id))
+
+    tiles = tiles diff List[Tile](HONOR_WIND_EAST)
+    hand.discard(HONOR_WIND_EAST)
+    hand.tiles should equal(tiles.sortBy(_.value.id))
+  }
 }

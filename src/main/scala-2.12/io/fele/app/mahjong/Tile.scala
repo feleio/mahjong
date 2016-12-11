@@ -72,8 +72,8 @@ object ChowPosition extends Enumeration {
 import TileType._
 import TileValue._
 
-case class Tile (val value: TileValue){
-  val `type` = value.id / 10 match {
+case class Tile (value: TileValue){
+  val `type` = value.id / 9 match {
     case 0 => DOT
     case 1 => BAMBOO
     case 2 => CHARACTER
@@ -94,6 +94,16 @@ object Tile {
   implicit def tileValue2Tile(value: TileValue): Tile = Tile(value)
 
   implicit def tileValue2Int(value: TileValue): Int = value.id
+
+  implicit class RickList(tiles: List[Tile]) {
+    def +(tile: Tile): List[Tile] ={
+      (tile :: tiles).sortBy(_.value.id)
+    }
+
+    def -(tile: Tile): List[Tile] ={
+      tiles diff List(tile)
+    }
+  }
 }
 
 class RandomTileDrawer(){
