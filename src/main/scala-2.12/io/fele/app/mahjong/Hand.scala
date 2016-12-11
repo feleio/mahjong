@@ -31,13 +31,11 @@ case class ChowGroup(tiles: List[Tile]) extends TileGroup{
   override def getTiles: List[Tile] = tiles
 }
 
-class Hand(var ts: List[Tile]) {
-  var tiles: List[Tile] = ts.sortBy(_.value.id)
-  if (tiles.size != 13)
-    throw new IllegalArgumentException("the number must be non-negative.")
+class Hand(var initTiles: List[Tile]) {
+  if (initTiles.size % 3 != 1) throw new IllegalArgumentException("invalid number of tiles.")
 
+  var tiles: List[Tile] = initTiles.sortBy(_.value.id)
   var fixedTileGroups: List[TileGroup] = Nil
-
   var tileStats = mutable.ArraySeq.fill[Int](34)(0)
   //var tileTypeStats = mutable.HashMap.empty[TileType, Int].withDefaultValue(0)
   tiles.foreach(x => {
@@ -52,9 +50,22 @@ class Hand(var ts: List[Tile]) {
     case RIGHT => List[Tile](tile - 2, tile - 1)
   }
 
+  private def validate(tiles: List[Tile]): Boolean = tiles match {
+    case t if t.isEmpty => true
+    case t if t(0) == t(1) && t(1) == t(2) => validate(tiles.drop(3))
+    case t if t(0).num <= 7 && t.contains(t(0)+1) && t.contains(t(0)+2) => validate(tiles diff List(t(0), t(0)+1, t(0)+2))
+    case _ => false
+  }
+
   def isToDiscard: Boolean = tiles.size % 3 == 2
 
-  def canWin(tile: Tile): Boolean = false
+  def canWin(tile: Tile): Boolean = {
+    tileStats.zipWithIndex
+      .filter{case (tileCount, i) => tileCount >= 2 || (i == tile.value.id && tileCount >= 1)}
+      .map(_._2)
+      .exists(tileId => validate((tiles + tile) diff List[Tile](TileValue(tileId), TileValue(tileId))))
+  }
+
   def canKong(tile: Tile): Boolean = tileStats(tile.value) >= 3
   def canPong(tile: Tile): Boolean = tileStats(tile.value) >= 2
   def canChow(tile: Tile): Set[ChowPosition] = {

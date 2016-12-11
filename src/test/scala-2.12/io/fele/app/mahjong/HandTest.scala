@@ -12,30 +12,58 @@ import io.fele.app.mahjong.ChowPosition._
 class HandTest extends FreeSpec with Matchers {
   "Hand should indicate whether it" - {
     "can win" in {
-      assert(false)
+      var hand = new Hand(List[Tile](DOT_9))
+      hand.canWin(DOT_9) should equal(true)
+      hand.canWin(HONOR_WIND_EAST) should equal(false)
+
+      hand = new Hand(List[Tile](HONOR_WIND_EAST))
+      hand.canWin(HONOR_WIND_EAST) should equal(true)
+      hand.canWin(DOT_9) should equal(false)
+
+      hand = new Hand(List[Tile](HONOR_WIND_EAST, DOT_8,  HONOR_WIND_EAST, DOT_7))
+      hand.canWin(DOT_9) should equal(true)
+      hand.canWin(DOT_6) should equal(true)
+      hand.canWin(DOT_7) should equal(false)
+      hand.canWin(DOT_8) should equal(false)
+
+      hand = new Hand(List[Tile](CHARACTER_3, CHARACTER_3, CHARACTER_3, CHARACTER_4))
+      hand.canWin(CHARACTER_2) should equal(true)
+      hand.canWin(CHARACTER_4) should equal(true)
+      hand.canWin(CHARACTER_5) should equal(true)
+      hand.canWin(CHARACTER_1) should equal(false)
+      hand.canWin(CHARACTER_6) should equal(false)
+      hand.canWin(DOT_2) should equal(false)
+
+      hand = new Hand(List[Tile](BAMBOO_8, BAMBOO_8, BAMBOO_8, DOT_2, DOT_2, DOT_2, HONOR_WIND_NORTH, HONOR_WIND_NORTH, HONOR_WIND_NORTH, DOT_3, DOT_3, CHARACTER_3, CHARACTER_3))
+      hand.canWin(DOT_3) should equal(true)
+      hand.canWin(CHARACTER_3) should equal(true)
+      hand.canWin(BAMBOO_8) should equal(false)
+
+      hand = new Hand(List[Tile](DOT_1, DOT_2, DOT_3, DOT_2, DOT_3, DOT_4, DOT_5, DOT_5, DOT_5, DOT_8, DOT_8, DOT_9, DOT_9))
+      hand.canWin(DOT_8) should equal(true)
+      hand.canWin(DOT_9) should equal(true)
+      hand.canWin(DOT_1) should equal(false)
+      hand.canWin(DOT_2) should equal(false)
+      hand.canWin(DOT_3) should equal(false)
+      hand.canWin(DOT_4) should equal(false)
+      hand.canWin(DOT_5) should equal(false)
+      hand.canWin(DOT_6) should equal(false)
+      hand.canWin(DOT_7) should equal(false)
+      hand.canWin(CHARACTER_8) should equal(false)
+      hand.canWin(CHARACTER_9) should equal(false)
     }
 
     "can kong" in {
-      val tiles = List[Tile](DOT_9, HONOR_WIND_NORTH, CHARACTER_3, HONOR_DRAGON_GREEN, HONOR_WIND_EAST, BAMBOO_8, HONOR_WIND_WEST, DOT_2, BAMBOO_8, CHARACTER_9, DOT_6, DOT_8, BAMBOO_8)
+      val tiles = List[Tile](DOT_8, HONOR_WIND_NORTH, CHARACTER_3, HONOR_DRAGON_GREEN, HONOR_WIND_EAST, BAMBOO_8, HONOR_WIND_WEST, DOT_2, BAMBOO_8, CHARACTER_9, DOT_6, DOT_8, BAMBOO_8)
       val hand = new Hand(tiles)
       hand.canKong(BAMBOO_8) should equal(true)
-    }
-
-    "cannot kong" in {
-      val tiles = List[Tile](DOT_9, HONOR_WIND_NORTH, CHARACTER_3, HONOR_DRAGON_GREEN, HONOR_WIND_EAST, BAMBOO_7, HONOR_WIND_WEST, DOT_2, BAMBOO_8, CHARACTER_9, DOT_6, DOT_8, BAMBOO_8)
-      val hand = new Hand(tiles)
-      hand.canKong(BAMBOO_8) should equal(false)
+      hand.canKong(DOT_8) should equal(false)
     }
 
     "can pong" in {
       val tiles = List[Tile](BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_1, DOT_8, BAMBOO_6, BAMBOO_3, CHARACTER_9, BAMBOO_1, HONOR_DRAGON_RED_, CHARACTER_3)
       val hand = new Hand(tiles)
       hand.canPong(BAMBOO_6) should equal(true)
-    }
-
-    "cannot pong" in {
-      val tiles = List[Tile](BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_1, DOT_8, BAMBOO_6, BAMBOO_3, CHARACTER_9, BAMBOO_1, HONOR_DRAGON_RED_, CHARACTER_3)
-      val hand = new Hand(tiles)
       hand.canPong(HONOR_DRAGON_GREEN) should equal(false)
     }
 
@@ -83,7 +111,7 @@ class HandTest extends FreeSpec with Matchers {
       hand.kong(BAMBOO_8)
 
       hand.tiles.size should equal(10)
-      hand.tiles.toList.sortBy(_.value.id) should equal((tiles diff List.fill[Tile](3)(BAMBOO_8)).sortBy(_.value.id))
+      hand.tiles.sortBy(_.value.id) should equal((tiles diff List.fill[Tile](3)(BAMBOO_8)).sortBy(_.value.id))
       hand.fixedTileGroups
     }
 
@@ -93,7 +121,7 @@ class HandTest extends FreeSpec with Matchers {
       hand.pong(BAMBOO_8)
 
       hand.tiles.size should equal(11)
-      hand.tiles.toList.sortBy(_.value.id) should equal((tiles diff List.fill[Tile](2)(BAMBOO_8)).sortBy(_.value.id))
+      hand.tiles.sortBy(_.value.id) should equal((tiles diff List.fill[Tile](2)(BAMBOO_8)).sortBy(_.value.id))
     }
 
     "chow" in {
@@ -102,7 +130,7 @@ class HandTest extends FreeSpec with Matchers {
       hand.chow(CHARACTER_3, RIGHT)
 
       hand.tiles.size should equal(11)
-      hand.tiles.toList.sortBy(_.value.id) should equal((tiles diff List[Tile](CHARACTER_1, CHARACTER_2)).sortBy(_.value.id))
+      hand.tiles.sortBy(_.value.id) should equal((tiles diff List[Tile](CHARACTER_1, CHARACTER_2)).sortBy(_.value.id))
       hand.tileStats(CHARACTER_1) should equal(1)
       hand.tileStats(CHARACTER_2) should equal(0)
 
@@ -111,7 +139,7 @@ class HandTest extends FreeSpec with Matchers {
       hand.chow(BAMBOO_1, LEFT)
 
       hand.tiles.size should equal(11)
-      hand.tiles.toList.sortBy(_.value.id) should equal((tiles diff List[Tile](BAMBOO_2, BAMBOO_3)).sortBy(_.value.id))
+      hand.tiles.sortBy(_.value.id) should equal((tiles diff List[Tile](BAMBOO_2, BAMBOO_3)).sortBy(_.value.id))
       hand.tileStats(BAMBOO_2) should equal(0)
       hand.tileStats(BAMBOO_3) should equal(0)
 
@@ -120,7 +148,7 @@ class HandTest extends FreeSpec with Matchers {
       hand.chow(DOT_7, MIDDLE)
 
       hand.tiles.size should equal(11)
-      hand.tiles.toList.sortBy(_.value.id) should equal((tiles diff List[Tile](DOT_6, DOT_8)).sortBy(_.value.id))
+      hand.tiles.sortBy(_.value.id) should equal((tiles diff List[Tile](DOT_6, DOT_8)).sortBy(_.value.id))
       hand.tileStats(DOT_6) should equal(0)
       hand.tileStats(DOT_8) should equal(0)
 
@@ -129,7 +157,7 @@ class HandTest extends FreeSpec with Matchers {
       hand.chow(DOT_7, LEFT)
 
       hand.tiles.size should equal(11)
-      hand.tiles.toList.sortBy(_.value.id) should equal((tiles diff List[Tile](DOT_8, DOT_9)).sortBy(_.value.id))
+      hand.tiles.sortBy(_.value.id) should equal((tiles diff List[Tile](DOT_8, DOT_9)).sortBy(_.value.id))
       hand.tileStats(DOT_8) should equal(0)
       hand.tileStats(DOT_9) should equal(0)
     }
