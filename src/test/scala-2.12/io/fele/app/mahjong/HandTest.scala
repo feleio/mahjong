@@ -2,6 +2,7 @@ package io.fele.app.mahjong
 
 import org.scalatest.{FreeSpec, Matchers}
 
+import io.fele.app.mahjong.Tile._
 import io.fele.app.mahjong.TileValue._
 import io.fele.app.mahjong.ChowPosition._
 

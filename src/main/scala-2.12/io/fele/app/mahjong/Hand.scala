@@ -1,5 +1,6 @@
 package io.fele.app.mahjong
 
+import io.fele.app.mahjong.Tile._
 import io.fele.app.mahjong.TileType._
 import io.fele.app.mahjong.TileValue._
 import io.fele.app.mahjong.ChowPosition._
@@ -37,7 +38,7 @@ class Hand(var ts: List[Tile]) {
 
   var fixedTileGroups: List[TileGroup] = Nil
 
-  var tileStats = mutable.HashMap.empty[TileValue, Int].withDefaultValue(0)
+  var tileStats = mutable.ArraySeq.fill[Int](34)(0)
   //var tileTypeStats = mutable.HashMap.empty[TileType, Int].withDefaultValue(0)
   tiles.foreach(x => {
     tileStats(x.value) += 1
@@ -51,7 +52,7 @@ class Hand(var ts: List[Tile]) {
     case RIGHT => List[Tile](tile - 2, tile - 1)
   }
 
-  def isToDiscard: Boolean = tiles.size % 3 == 1
+  def isToDiscard: Boolean = tiles.size % 3 == 2
 
   def canWin(tile: Tile): Boolean = false
   def canKong(tile: Tile): Boolean = tileStats(tile.value) >= 3
