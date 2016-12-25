@@ -67,6 +67,7 @@ class Hand(var initTiles: List[Tile]) {
   }
 
   def canKong(tile: Tile): Boolean = tileStats(tile.value) >= 3
+  def selfKongSet(): Set[Tile] = tileStats.zipWithIndex.collect{case (count, tileIdx) if count > 4 => Tile(TileValue(tileIdx))}.toSet
   def canPong(tile: Tile): Boolean = tileStats(tile.value) >= 2
   def canChow(tile: Tile): Set[ChowPosition] = {
     if (tile.`type` != HONOR){
@@ -97,7 +98,7 @@ class Hand(var initTiles: List[Tile]) {
     fixedTileGroups = ChowGroup(tile :: existTiles) :: fixedTileGroups
   }
 
-  def draw(tile: Tile): Unit = {
+  def add(tile: Tile): Unit = {
     tileStats(tile.value) += 1
     tiles = tiles + tile
   }

@@ -174,7 +174,7 @@ class HandTest extends FreeSpec with Matchers {
     hand.tiles should equal(tiles.sortBy(_.value.id))
 
     tiles = DOT_9 :: tiles
-    hand.draw(DOT_9)
+    hand.add(DOT_9)
     hand.tiles should equal(tiles.sortBy(_.value.id))
 
     tiles = tiles diff List[Tile](HONOR_WIND_EAST)

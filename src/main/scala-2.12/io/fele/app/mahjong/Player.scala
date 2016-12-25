@@ -5,35 +5,91 @@ import io.fele.app.mahjong.ChowPosition.ChowPosition
 /**
   * Created by felix.ling on 12/12/2016.
   */
-abstract class Player(tiles: List[Tile]) {
-  val hand = new Hand(tiles)
+object DrawResult extends Enumeration {
+  type DrawResult = Value
+  val DISCARD, NO_TILE, WIN = Value
+}
 
-  def isWin(tile: Tile): Boolean
+import DrawResult._
+
+abstract class Player(tiles: List[Tile]) {
+  // TODO: change to private
+  protected val hand = new Hand(tiles)
+
+  def canWin(tile: Tile): Boolean = hand.canWin(tile)
+  def canKong(tile: Tile): Boolean = hand.canKong(tile)
+  def canPong(tile: Tile): Boolean = hand.canPong(tile)
+  def canChow(tile: Tile): Set[ChowPosition] = hand.canChow(tile)
+
+  object SelfKongDecision {
+    def unapply(hand: Hand): Option[Tile] = {
+      hand.selfKongSet() match {
+        case kongSet if kongSet.nonEmpty => isSelfKong(kongSet)
+        case _ => None
+      }
+    }
+  }
+
+  def kong(tile: Tile, drawer: RandomTileDrawer): (DrawResult, Option[Tile]) = {
+    hand.kong(tile)
+    draw(drawer)
+  }
+
+  def pong(tile: Tile): Tile = {
+    hand.pong(tile)
+    val discarded = discard()
+    hand.discard(discarded)
+    discarded
+  }
+
+  def chow(tile: Tile, position: ChowPosition): Tile = {
+    hand.chow(tile, position)
+    val discarded = discard()
+    hand.discard(discarded)
+    discarded
+  }
+
+  def draw(drawer: RandomTileDrawer): (DrawResult, Option[Tile]) = {
+    drawer.pop match {
+      case Some(drawnTile) => {
+        // check self win
+        if (hand.canWin(drawnTile) && isWin(drawnTile, true))
+          (WIN, None)
+        else {
+          // check self kong
+          hand.add(drawnTile)
+          hand match {
+            case SelfKongDecision(kongDecision) => kong(kongDecision, drawer)
+            case _ => {
+              val discarded = discard()
+              hand.discard(discarded)
+              (DISCARD, Some(discarded))
+            }
+          }
+        }
+      }
+      case _ => (NO_TILE, None)
+    }
+  }
+
+  def discard(): Tile = pickToDiscard
+
+  // abstract decision method
+  def isWin(tile: Tile, isSelfWin: Boolean): Boolean
+  def isSelfKong(selfKongTiles: Set[Tile]): Option[Tile]
   def isKong(tile: Tile): Boolean
   def isPong(tile: Tile): Boolean
-  def isChow(tile: Tile, positions: List[ChowPosition]): (Boolean, ChowPosition)
-
-  def isWinWhenDraw(tile: Tile): Boolean
-  def isKongWhenDraw(tile: Tile): Boolean
+  def isChow(tile: Tile, positions: Set[ChowPosition]): Option[ChowPosition]
 
   def pickToDiscard(): Tile
-
-//  def doKong(in: Tile): Unit = hand.kong(in)
-//  def doPong(in: Tile): Unit = hand.pong(in)
-//  def doChow(in: Tile, position: ChowPosition): Unit = hand.chow(in, position)
-//  def doDraw(in: Tile): Unit = hand.draw(in)
-//
-//  def discard(out: Tile) = hand.discard(out)
 }
 
 class DummyPlayer(tiles: List[Tile]) extends Player(tiles) {
-  def isWin(tile: Tile): Boolean = true
+  def isWin(tile: Tile, isSelfWin: Boolean): Boolean = true
+  def isSelfKong(selfKongTiles: Set[Tile]): Option[Tile] = selfKongTiles.headOption
   def isKong(tile: Tile): Boolean = true
   def isPong(tile: Tile): Boolean = true
-  def isChow(tile: Tile, positions: List[ChowPosition]): (Boolean, ChowPosition) = (true, positions.head)
-
-  def isWinWhenDraw(tile: Tile): Boolean = true
-  def isKongWhenDraw(tile: Tile): Boolean = true
+  def isChow(tile: Tile, positions: Set[ChowPosition]): Option[ChowPosition] = positions.headOption
 
   def pickToDiscard(): Tile = hand.tiles.head
 }
