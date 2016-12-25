@@ -14,6 +14,7 @@ import scala.collection.mutable
 trait TileGroup {
   def getCount: Int
   def getTiles: List[Tile]
+  override def toString: String = s"(${getTiles.sortBy(t => t.value.id).mkString(", ")})"
 }
 
 case class KongGroup(tile: Tile) extends TileGroup{
@@ -53,7 +54,7 @@ class Hand(var initTiles: List[Tile]) {
   private def validate(tiles: List[Tile]): Boolean = tiles match {
     case t if t.isEmpty => true
     case t if t(0) == t(1) && t(1) == t(2) => validate(tiles.drop(3))
-    case t if t(0).num <= 7 && t.contains(t(0)+1) && t.contains(t(0)+2) => validate(tiles diff List(t(0), t(0)+1, t(0)+2))
+    case t if t(0).`type` != HONOR && t(0).num <= 7 && t.contains(t(0)+1) && t.contains(t(0)+2) => validate(tiles diff List(t(0), t(0)+1, t(0)+2))
     case _ => false
   }
 
@@ -63,7 +64,7 @@ class Hand(var initTiles: List[Tile]) {
     tileStats.zipWithIndex
       .filter{case (tileCount, i) => tileCount >= 2 || (i == tile.value.id && tileCount >= 1)}
       .map(_._2)
-      .exists(tileId => validate((tiles + tile) diff List[Tile](TileValue(tileId), TileValue(tileId))))
+      .exists(eyeTileId => validate((tiles + tile) diff List[Tile](TileValue(eyeTileId), TileValue(eyeTileId))))
   }
 
   def canKong(tile: Tile): Boolean = tileStats(tile.value) >= 3
@@ -84,11 +85,13 @@ class Hand(var initTiles: List[Tile]) {
     (1 to 3).foreach(_ => tiles = tiles - tile)
     fixedTileGroups = KongGroup(tile) :: fixedTileGroups
   }
+
   def pong(tile: Tile): Unit = {
     tileStats(tile.value) -= 2
     (1 to 2).foreach(_ => tiles = tiles - tile)
     fixedTileGroups = PongGroup(tile) :: fixedTileGroups
   }
+
   def chow(tile: Tile, position: ChowPosition): Unit = {
     val existTiles = getExistingChowTiles(tile, position)
     existTiles.foreach(x => {
@@ -102,8 +105,13 @@ class Hand(var initTiles: List[Tile]) {
     tileStats(tile.value) += 1
     tiles = tiles + tile
   }
+
   def discard(tile: Tile): Unit = {
     tileStats(tile.value) -= 1
     tiles = tiles - tile
+  }
+
+  override def toString: String = {
+    s"fixed: ${fixedTileGroups.mkString(" ")}\ntiles: ${tiles.sortBy(t => t.value.id).mkString(" ")}\n"
   }
 }

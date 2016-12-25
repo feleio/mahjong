@@ -72,7 +72,7 @@ abstract class Player(tiles: List[Tile]) {
     }
   }
 
-  def discard(): Tile = pickToDiscard
+  def discard(): Tile = pickToDiscard()
 
   // abstract decision method
   def isWin(tile: Tile, isSelfWin: Boolean): Boolean
@@ -82,6 +82,8 @@ abstract class Player(tiles: List[Tile]) {
   def isChow(tile: Tile, positions: Set[ChowPosition]): Option[ChowPosition]
 
   def pickToDiscard(): Tile
+
+  override def toString = hand.toString
 }
 
 class DummyPlayer(tiles: List[Tile]) extends Player(tiles) {

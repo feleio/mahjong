@@ -56,7 +56,7 @@ object TileValue extends Enumeration {
   val HONOR_WIND_NORTH = Value(30)
 
   // HONOR DRAGON
-  val HONOR_DRAGON_RED_ = Value(31)
+  val HONOR_DRAGON_RED = Value(31)
   val HONOR_DRAGON_GREEN = Value(32)
   val HONOR_DRAGON_BLUE = Value(33)
 
@@ -108,7 +108,7 @@ object Tile {
 
 class RandomTileDrawer(){
   // Seq of Tiles for drawing in one game, 4 of each kind of Tile.
-  var shuffledTiles = Random.shuffle(RandomTileDrawer.tiles)
+  var shuffledTiles = new Random(2).shuffle(RandomTileDrawer.tiles)
   var curPos = 0
 
   def pop(): Option[Tile] = {
@@ -128,8 +128,3 @@ object RandomTileDrawer {
   val tiles: Seq[Tile] = TileValue.values.toSeq.sorted.flatMap(x => List.fill(4)(Tile(x)))
   val tilesNum = tiles.size
 }
-
-//object generateRandomeTiles extends App {
-//  val drawer = new RandomTileDrawer()
-//  println(drawer.popHand())
-//}

@@ -51,6 +51,9 @@ class HandTest extends FreeSpec with Matchers {
       hand.canWin(DOT_7) should equal(false)
       hand.canWin(CHARACTER_8) should equal(false)
       hand.canWin(CHARACTER_9) should equal(false)
+
+      hand = new Hand(List[Tile](HONOR_WIND_SOUTH, HONOR_WIND_NORTH, HONOR_DRAGON_RED, HONOR_DRAGON_BLUE))
+      hand.canWin(HONOR_DRAGON_RED) should equal(false)
     }
 
     "can kong" in {
@@ -61,44 +64,44 @@ class HandTest extends FreeSpec with Matchers {
     }
 
     "can pong" in {
-      val tiles = List[Tile](BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_1, DOT_8, BAMBOO_6, BAMBOO_3, CHARACTER_9, BAMBOO_1, HONOR_DRAGON_RED_, CHARACTER_3)
+      val tiles = List[Tile](BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_1, DOT_8, BAMBOO_6, BAMBOO_3, CHARACTER_9, BAMBOO_1, HONOR_DRAGON_RED, CHARACTER_3)
       val hand = new Hand(tiles)
       hand.canPong(BAMBOO_6) should equal(true)
       hand.canPong(HONOR_DRAGON_GREEN) should equal(false)
     }
 
     "can chow" in {
-      var tiles = List[Tile](BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_1, DOT_8, BAMBOO_6, BAMBOO_3, CHARACTER_9, BAMBOO_1, HONOR_DRAGON_RED_, CHARACTER_2)
+      var tiles = List[Tile](BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_1, DOT_8, BAMBOO_6, BAMBOO_3, CHARACTER_9, BAMBOO_1, HONOR_DRAGON_RED, CHARACTER_2)
       var hand = new Hand(tiles)
       hand.canChow(CHARACTER_3) should equal(Set(RIGHT))
 
-      tiles = List(BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_2, DOT_8, BAMBOO_6, BAMBOO_3, CHARACTER_9, BAMBOO_1, HONOR_DRAGON_RED_, CHARACTER_3)
+      tiles = List(BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_2, DOT_8, BAMBOO_6, BAMBOO_3, CHARACTER_9, BAMBOO_1, HONOR_DRAGON_RED, CHARACTER_3)
       hand = new Hand(tiles)
       hand.canChow(BAMBOO_1) should equal(Set(LEFT))
 
-      tiles = List(BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_2, DOT_8, BAMBOO_6, BAMBOO_3, DOT_6, BAMBOO_1, HONOR_DRAGON_RED_, CHARACTER_3)
+      tiles = List(BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_2, DOT_8, BAMBOO_6, BAMBOO_3, DOT_6, BAMBOO_1, HONOR_DRAGON_RED, CHARACTER_3)
       hand = new Hand(tiles)
       hand.canChow(DOT_7) should equal(Set(MIDDLE))
 
-      tiles = List(BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_2, DOT_8, DOT_9, BAMBOO_3, DOT_6, BAMBOO_1, HONOR_DRAGON_RED_, CHARACTER_3)
+      tiles = List(BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_2, DOT_8, DOT_9, BAMBOO_3, DOT_6, BAMBOO_1, HONOR_DRAGON_RED, CHARACTER_3)
       hand = new Hand(tiles)
       hand.canChow(DOT_7) should equal(Set(MIDDLE, LEFT))
 
-      tiles = List(BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, DOT_5, DOT_8, DOT_9, BAMBOO_3, DOT_6, BAMBOO_1, HONOR_DRAGON_RED_, CHARACTER_3)
+      tiles = List(BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, DOT_5, DOT_8, DOT_9, BAMBOO_3, DOT_6, BAMBOO_1, HONOR_DRAGON_RED, CHARACTER_3)
       hand = new Hand(tiles)
       hand.canChow(DOT_7) should equal(Set(MIDDLE, LEFT, RIGHT))
     }
 
     "cannot chow" in {
-      var tiles = List[Tile](BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_1, DOT_8, BAMBOO_6, BAMBOO_3, CHARACTER_9, BAMBOO_1, HONOR_DRAGON_RED_, CHARACTER_3)
+      var tiles = List[Tile](BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_1, DOT_8, BAMBOO_6, BAMBOO_3, CHARACTER_9, BAMBOO_1, HONOR_DRAGON_RED, CHARACTER_3)
       var hand = new Hand(tiles)
       hand.canChow(HONOR_DRAGON_BLUE) should equal(Set())
 
-      tiles = List(BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_2, DOT_8, BAMBOO_6, BAMBOO_3, CHARACTER_9, BAMBOO_1, HONOR_DRAGON_RED_, CHARACTER_3)
+      tiles = List(BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_2, DOT_8, BAMBOO_6, BAMBOO_3, CHARACTER_9, BAMBOO_1, HONOR_DRAGON_RED, CHARACTER_3)
       hand = new Hand(tiles)
       hand.canChow(BAMBOO_5) should equal(Set())
 
-      tiles = List(BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_2, DOT_8, BAMBOO_6, BAMBOO_3, DOT_9, BAMBOO_1, HONOR_DRAGON_RED_, CHARACTER_3)
+      tiles = List(BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_2, DOT_8, BAMBOO_6, BAMBOO_3, DOT_9, BAMBOO_1, HONOR_DRAGON_RED, CHARACTER_3)
       hand = new Hand(tiles)
       hand.canChow(DOT_9) should equal(Set())
     }
@@ -125,7 +128,7 @@ class HandTest extends FreeSpec with Matchers {
     }
 
     "chow" in {
-      var tiles = List[Tile](BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_1, DOT_3, CHARACTER_1, BAMBOO_1, DOT_8, BAMBOO_6, BAMBOO_3, CHARACTER_9, BAMBOO_1, HONOR_DRAGON_RED_, CHARACTER_2)
+      var tiles = List[Tile](BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_1, DOT_3, CHARACTER_1, BAMBOO_1, DOT_8, BAMBOO_6, BAMBOO_3, CHARACTER_9, BAMBOO_1, HONOR_DRAGON_RED, CHARACTER_2)
       var hand = new Hand(tiles)
       hand.chow(CHARACTER_3, RIGHT)
 
@@ -134,7 +137,7 @@ class HandTest extends FreeSpec with Matchers {
       hand.tileStats(CHARACTER_1) should equal(1)
       hand.tileStats(CHARACTER_2) should equal(0)
 
-      tiles = List[Tile](BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_2, DOT_8, BAMBOO_6, BAMBOO_3, CHARACTER_9, BAMBOO_1, HONOR_DRAGON_RED_, CHARACTER_3)
+      tiles = List[Tile](BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_2, DOT_8, BAMBOO_6, BAMBOO_3, CHARACTER_9, BAMBOO_1, HONOR_DRAGON_RED, CHARACTER_3)
       hand = new Hand(tiles)
       hand.chow(BAMBOO_1, LEFT)
 
@@ -143,7 +146,7 @@ class HandTest extends FreeSpec with Matchers {
       hand.tileStats(BAMBOO_2) should equal(0)
       hand.tileStats(BAMBOO_3) should equal(0)
 
-      tiles = List[Tile](BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_2, DOT_8, BAMBOO_6, BAMBOO_3, DOT_6, BAMBOO_1, HONOR_DRAGON_RED_, CHARACTER_3)
+      tiles = List[Tile](BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_2, DOT_8, BAMBOO_6, BAMBOO_3, DOT_6, BAMBOO_1, HONOR_DRAGON_RED, CHARACTER_3)
       hand = new Hand(tiles)
       hand.chow(DOT_7, MIDDLE)
 
@@ -152,7 +155,7 @@ class HandTest extends FreeSpec with Matchers {
       hand.tileStats(DOT_6) should equal(0)
       hand.tileStats(DOT_8) should equal(0)
 
-      tiles = List[Tile](BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_2, DOT_8, DOT_9, BAMBOO_3, DOT_6, BAMBOO_1, HONOR_DRAGON_RED_, CHARACTER_3)
+      tiles = List[Tile](BAMBOO_6, HONOR_DRAGON_GREEN, CHARACTER_6, DOT_3, CHARACTER_1, BAMBOO_2, DOT_8, DOT_9, BAMBOO_3, DOT_6, BAMBOO_1, HONOR_DRAGON_RED, CHARACTER_3)
       hand = new Hand(tiles)
       hand.chow(DOT_7, LEFT)
 

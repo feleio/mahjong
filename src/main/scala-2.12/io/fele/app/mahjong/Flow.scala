@@ -2,6 +2,9 @@ package io.fele.app.mahjong
 
 import java.util.Random
 
+import scala.io.StdIn.readLine
+
+import com.typesafe.scalalogging.Logger
 import io.fele.app.mahjong.ChowPosition.ChowPosition
 import io.fele.app.mahjong.DrawResult._
 
@@ -18,30 +21,39 @@ import DiscardReason._
 case class GameResult(winners: Set[Int])
 
 class Flow {
-  // public states
-  val discards: List[Tile] = List.empty[Tile]
-
-  // private states
-  val players: List[Player] = List.fill(4)(new DummyPlayer(drawer.popHand()))
+  // logger
+  val logger = Logger(classOf[Flow])
 
   // tool
   val drawer = new RandomTileDrawer()
 
+  // public states
+  var discards: List[Tile] = Nil
+  val players: List[Player] = List.fill(4)(new DummyPlayer(drawer.popHand()))
+
   // flow
-  var curPlayerIdx: Int = (new Random).nextInt(4)
+  var curPlayerIdx: Int = new Random(1).nextInt(4)
   var discardReason: DiscardReason = FIRST_DRAW
 
   var winners = Set.empty[Int]
 
-  //private def nextPlayer(): Unit = curPlayerIdx = curPlayerIdx + 1 % 4
-  private def curPlayer(): Player = players(curPlayerIdx)
-  private def nextPlayer(): Player = players(curPlayerIdx + 1 % 4)
-  private def nextPlayerIdx(): Int = curPlayerIdx + 1 % 4
-  private def otherPlayers(): List[(Int, Player)] = {
-    (1 to 3).map(_ + curPlayerIdx % 4).map(x => (x, players(x))).toList
+  // class Pauser(val ps: List[Player], val ds: List[Tile]){
+  class Pauser(){
+    def logAndPause(msg: String) = {
+      logger.debug(msg + "\n")
+      logCurStates()
+      //readLine()
+    }
   }
 
-  private def askToDiscard(player: Player): Tile = TileValue.BAMBOO_1
+  implicit val pauser = new Pauser()
+
+  private def curPlayer(): Player = players(curPlayerIdx)
+  private def nextPlayer(): Player = players((curPlayerIdx + 1) % 4)
+  private def nextPlayerIdx(): Int = (curPlayerIdx + 1) % 4
+  private def otherPlayers(): List[(Int, Player)] = {
+    (1 to 3).map(x => (x + curPlayerIdx) % 4).map(x => (x, players(x))).toList
+  }
 
   private def checkPlayersTile(f: ((Int, Player)) => Boolean): Set[Int] = {
     otherPlayers().filter(f).map(_._1).toSet
@@ -87,14 +99,24 @@ class Flow {
     }
   }
 
+  def logCurStates() = {
+    players.zipWithIndex.foreach(p => logger.debug(s"Player ${p._2}:\n${p._1.toString}\n"))
+    logger.debug(s"discards: ${discards.mkString(", ")}\n")
+  }
+
   def start(): GameResult = {
+    pauser.logAndPause("Game start")
+
     // TODO: check if kong at the first place is allowed?
     var discardedTile = curPlayer().draw(drawer) match {
       case (DISCARD, discarded: Option[Tile]) => discarded
       case (WIN, _) => winners = Set(curPlayerIdx); None
     }
+    discards = discardedTile.get :: discards
 
     while (discardedTile.isDefined) {
+      pauser.logAndPause(s"======================================\nplayer ${curPlayerIdx} discarded ${discardedTile.get}")
+      discards = discardedTile.get :: discards
       discardedTile = discardedTile.get match {
         case WiningTile(playerIds) => winners = playerIds; None
         case KongableTile(playerId) => {
@@ -126,4 +148,10 @@ class Flow {
 
     GameResult(winners)
   }
+}
+
+object Main extends App{
+  val logger = Logger("main")
+  val flow = new Flow
+  logger.debug(s"result${flow.start()}")
 }
