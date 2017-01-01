@@ -20,19 +20,19 @@ import DiscardReason._
 
 case class GameResult(winners: Set[Int])
 
-class Flow {
+class Flow(seed: Long) {
   // logger
   val logger = Logger(classOf[Flow])
 
   // tool
-  val drawer = new RandomTileDrawer()
+  val drawer = new RandomTileDrawer(seed)
 
   // public states
   var discards: List[Tile] = Nil
   val players: List[Player] = List.fill(4)(new DummyPlayer(drawer.popHand()))
 
   // flow
-  var curPlayerIdx: Int = new Random(1).nextInt(4)
+  var curPlayerIdx: Int = new Random(seed).nextInt(4)
   var discardReason: DiscardReason = FIRST_DRAW
 
   var winners = Set.empty[Int]
@@ -152,6 +152,6 @@ class Flow {
 
 object Main extends App{
   val logger = Logger("main")
-  val flow = new Flow
+  val flow = new Flow(2)
   logger.debug(s"result${flow.start()}")
 }

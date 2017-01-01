@@ -106,9 +106,9 @@ object Tile {
   }
 }
 
-class RandomTileDrawer(){
+class RandomTileDrawer(seed: Long){
   // Seq of Tiles for drawing in one game, 4 of each kind of Tile.
-  var shuffledTiles = new Random(2).shuffle(RandomTileDrawer.tiles)
+  var shuffledTiles = new Random(seed).shuffle(RandomTileDrawer.tiles)
   var curPos = 0
 
   def pop(): Option[Tile] = {
