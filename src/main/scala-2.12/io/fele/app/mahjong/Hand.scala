@@ -68,7 +68,7 @@ class Hand(var initTiles: List[Tile]) {
   }
 
   def canKong(tile: Tile): Boolean = tileStats(tile.value) >= 3
-  def selfKongSet(): Set[Tile] = tileStats.zipWithIndex.collect{case (count, tileIdx) if count > 4 => Tile(TileValue(tileIdx))}.toSet
+  def selfKongSet(): Set[Tile] = tileStats.zipWithIndex.collect{case (count, tileId) if count > 4 => Tile(TileValue(tileId))}.toSet
   def canPong(tile: Tile): Boolean = tileStats(tile.value) >= 2
   def canChow(tile: Tile): Set[ChowPosition] = {
     if (tile.`type` != HONOR){

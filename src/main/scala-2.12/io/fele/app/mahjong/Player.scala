@@ -12,7 +12,7 @@ object DrawResult extends Enumeration {
 
 import DrawResult._
 
-abstract class Player(tiles: List[Tile]) {
+abstract class Player(val id: Int, tiles: List[Tile]) {
   // TODO: change to private
   protected val hand = new Hand(tiles)
 
@@ -21,7 +21,7 @@ abstract class Player(tiles: List[Tile]) {
   def canPong(tile: Tile): Boolean = hand.canPong(tile)
   def canChow(tile: Tile): Set[ChowPosition] = hand.canChow(tile)
 
-  object SelfKongDecision {
+  private object SelfKongDecision {
     def unapply(hand: Hand): Option[Tile] = {
       hand.selfKongSet() match {
         case kongSet if kongSet.nonEmpty => isSelfKong(kongSet)
@@ -30,26 +30,29 @@ abstract class Player(tiles: List[Tile]) {
     }
   }
 
-  def kong(tile: Tile, drawer: RandomTileDrawer): (DrawResult, Option[Tile]) = {
+  def kong(tile: Tile, drawer: RandomTileDrawer)(implicit gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
     hand.kong(tile)
+    gameLogger.kong(id, tile)
     draw(drawer)
   }
 
-  def pong(tile: Tile): Tile = {
+  def pong(tile: Tile)(implicit gameLogger: GameLogger): Tile = {
     hand.pong(tile)
+    gameLogger.pong(id, tile)
     val discarded = discard()
     hand.discard(discarded)
     discarded
   }
 
-  def chow(tile: Tile, position: ChowPosition): Tile = {
+  def chow(tile: Tile, position: ChowPosition)(implicit gameLogger: GameLogger): Tile = {
     hand.chow(tile, position)
+    gameLogger.chow(id, tile, position)
     val discarded = discard()
     hand.discard(discarded)
     discarded
   }
 
-  def draw(drawer: RandomTileDrawer): (DrawResult, Option[Tile]) = {
+  def draw(drawer: RandomTileDrawer)(implicit gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
     drawer.pop match {
       case Some(drawnTile) => {
         // check self win
@@ -58,6 +61,7 @@ abstract class Player(tiles: List[Tile]) {
         else {
           // check self kong
           hand.add(drawnTile)
+          gameLogger.draw(id, drawnTile)
           hand match {
             case SelfKongDecision(kongDecision) => kong(kongDecision, drawer)
             case _ => {
@@ -72,7 +76,7 @@ abstract class Player(tiles: List[Tile]) {
     }
   }
 
-  def discard(): Tile = pickToDiscard()
+  def discard()(implicit gameLogger: GameLogger): Tile = pickToDiscard()
 
   // abstract decision method
   def isWin(tile: Tile, isSelfWin: Boolean): Boolean
@@ -86,7 +90,7 @@ abstract class Player(tiles: List[Tile]) {
   override def toString = hand.toString
 }
 
-class DummyPlayer(tiles: List[Tile]) extends Player(tiles) {
+class DummyPlayer(id: Int, tiles: List[Tile]) extends Player(id, tiles) {
   def isWin(tile: Tile, isSelfWin: Boolean): Boolean = true
   def isSelfKong(selfKongTiles: Set[Tile]): Option[Tile] = selfKongTiles.headOption
   def isKong(tile: Tile): Boolean = true
