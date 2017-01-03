@@ -14,6 +14,7 @@ import io.fele.app.mahjong.DrawResult._
 case class GameResult(winners: Set[Int])
 case class GameState(players: List[Player],
                      var winners: Set[Int],
+                     var winningTile: Option[Tile],
                      var discards: List[Tile],
                      private var curPlayerId: Int){
   def addDiscarded(tile: Tile) = discards = tile :: discards
@@ -39,6 +40,7 @@ class Flow(seed: Long) {
   val state = GameState(
     (0 to 3).map(new DummyPlayer(_, drawer.popHand())).toList,
     Set.empty[Int],
+    None,
     Nil,
     new Random(seed).nextInt(4) )
 
@@ -96,14 +98,16 @@ class Flow(seed: Long) {
       case (DISCARD, discarded: Option[Tile]) => discarded
       case (WIN, _) => state.winners = Set(state.getCurPlayerId()); None
     }
-    state.addDiscarded(discardedTile.get)
 
     while (discardedTile.isDefined) {
       gameLogger.discard(state.getCurPlayerId(), discardedTile.get)
-      state.addDiscarded(discardedTile.get)
 
       discardedTile = discardedTile.get match {
-        case WiningTile(playerIds) => state.winners = playerIds; None
+        case WiningTile(playerIds) => {
+          state.winners = playerIds
+          state.winningTile = Some(discardedTile.get)
+          None
+        }
         case KongableTile(playerId) => {
           state.setCurPlayer(playerId)
           state.curPlayer().kong(discardedTile.get, drawer) match {
@@ -121,6 +125,7 @@ class Flow(seed: Long) {
           Some(state.curPlayer().chow(discardedTile.get, chowPosition))
         }
         case _ => {
+          state.addDiscarded(discardedTile.get)
           state.setCurPlayer(state.getNextPlayerId())
           state.curPlayer().draw(drawer) match {
             case (DISCARD, discarded: Option[Tile]) => discarded
@@ -131,7 +136,7 @@ class Flow(seed: Long) {
       }
     }
     if (state.winners.nonEmpty)
-      gameLogger.win(state.winners)
+      gameLogger.win(state.winners, state.winningTile.get)
     else
       gameLogger.noOneWin()
 

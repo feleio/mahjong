@@ -68,7 +68,11 @@ class Hand(var initTiles: List[Tile]) {
   }
 
   def canKong(tile: Tile): Boolean = tileStats(tile.value) >= 3
-  def selfKongSet(): Set[Tile] = tileStats.zipWithIndex.collect{case (count, tileId) if count > 4 => Tile(TileValue(tileId))}.toSet
+  def selfKongableTiles(): Set[Tile] = {
+    val kongableTiles = tileStats.zipWithIndex.collect{case (count, tileId) if count > 4 => Tile(TileValue(tileId))}.toSet
+    val kongablePongGroupTiles = fixedTileGroups.collect{case PongGroup(tile) if tileStats(tile.value) >= 1 => tile}.toSet
+    kongableTiles | kongablePongGroupTiles
+  }
   def canPong(tile: Tile): Boolean = tileStats(tile.value) >= 2
   def canChow(tile: Tile): Set[ChowPosition] = {
     if (tile.`type` != HONOR){
@@ -84,6 +88,22 @@ class Hand(var initTiles: List[Tile]) {
     tileStats(tile.value) -= 3
     (1 to 3).foreach(_ => tiles = tiles - tile)
     fixedTileGroups = KongGroup(tile) :: fixedTileGroups
+  }
+
+  def selfKong(tile: Tile): Unit = {
+    tileStats(tile.value) match {
+      case 4 => {
+        tileStats(tile.value) -= 3
+        (1 to 3).foreach(_ => tiles = tiles - tile)
+        fixedTileGroups = KongGroup(tile) :: fixedTileGroups
+      }
+      case 1 => {
+        tileStats(tile.value) -= 1
+        tiles = tiles - tile
+        fixedTileGroups = fixedTileGroups diff List(PongGroup(tile))
+        fixedTileGroups = KongGroup(tile) :: fixedTileGroups
+      }
+    }
   }
 
   def pong(tile: Tile): Unit = {

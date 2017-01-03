@@ -23,7 +23,7 @@ abstract class Player(val id: Int, tiles: List[Tile]) {
 
   private object SelfKongDecision {
     def unapply(hand: Hand): Option[Tile] = {
-      hand.selfKongSet() match {
+      hand.selfKongableTiles() match {
         case kongSet if kongSet.nonEmpty => isSelfKong(kongSet)
         case _ => None
       }
@@ -32,6 +32,12 @@ abstract class Player(val id: Int, tiles: List[Tile]) {
 
   def kong(tile: Tile, drawer: RandomTileDrawer)(implicit gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
     hand.kong(tile)
+    gameLogger.kong(id, tile)
+    draw(drawer)
+  }
+
+  def selfKong(tile: Tile, drawer: RandomTileDrawer)(implicit gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
+    hand.selfKong(tile)
     gameLogger.kong(id, tile)
     draw(drawer)
   }
@@ -63,7 +69,7 @@ abstract class Player(val id: Int, tiles: List[Tile]) {
           hand.add(drawnTile)
           gameLogger.draw(id, drawnTile)
           hand match {
-            case SelfKongDecision(kongDecision) => kong(kongDecision, drawer)
+            case SelfKongDecision(kongDecision) => selfKong(kongDecision, drawer)
             case _ => {
               val discarded = discard()
               hand.discard(discarded)
