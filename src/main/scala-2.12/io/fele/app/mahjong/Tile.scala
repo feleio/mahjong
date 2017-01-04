@@ -3,7 +3,6 @@ package io.fele.app.mahjong
 import scala.language.implicitConversions
 import scala.util.Random
 
-
 /**
   * Created by felix.ling on 24/11/2016.
   */
@@ -106,7 +105,7 @@ object Tile {
   }
 }
 
-class RandomTileDrawer(seed: Long){
+class RandomTileDrawer(seed: Long) {
   // Seq of Tiles for drawing in one game, 4 of each kind of Tile.
   var shuffledTiles = new Random(seed).shuffle(RandomTileDrawer.tiles)
   var curPos = 0
@@ -119,8 +118,9 @@ class RandomTileDrawer(seed: Long){
   }
 
   def popHand(): List[Tile] = {
+    val drawnHandTile = shuffledTiles.slice(curPos, curPos + 13).toList
     curPos += 13
-    shuffledTiles.slice(curPos, curPos + 13).toList
+    drawnHandTile
   }
 }
 
