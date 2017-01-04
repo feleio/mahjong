@@ -20,10 +20,10 @@ class GameLogger(val gameState: GameState){
     logger.debug(s"discards: ${gameState.discards.mkString(", ")}\n")
   }
 
-  private def logAndPause(msg: String) = {
+  private def logAndPause(msg: String): Unit = {
     logger.debug("***** " + msg + " *****\n")
     logCurStates()
-    readLine()
+    if (Config.isPauseWhenLog) readLine()
   }
 
   def start() = logAndPause("Game Start.")
