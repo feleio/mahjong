@@ -32,16 +32,15 @@ case class ChowGroup(tiles: List[Tile]) extends TileGroup{
   override def getTiles: List[Tile] = tiles
 }
 
-class Hand(var initTiles: List[Tile]) {
-  if (initTiles.size % 3 != 1) throw new IllegalArgumentException("invalid number of tiles.")
+class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup]) {
+  if (ts.length + (gs.length * 3) != 13) throw new IllegalArgumentException("invalid number of tiles.")
 
-  var tiles: List[Tile] = initTiles.sortBy(_.value.id)
-  var fixedTileGroups: List[TileGroup] = Nil
+  var tiles: List[Tile] = ts.sortBy(_.value.id)
+  var fixedTileGroups: List[TileGroup] = gs
   var tileStats = mutable.ArraySeq.fill[Int](34)(0)
-  //var tileTypeStats = mutable.HashMap.empty[TileType, Int].withDefaultValue(0)
+
   tiles.foreach(x => {
     tileStats(x.value) += 1
-    //tileTypeStats(x.`type`) += 1
   })
 
   private def isExist(tileValue: TileValue): Boolean = tileStats(tileValue) >= 1
@@ -69,7 +68,7 @@ class Hand(var initTiles: List[Tile]) {
 
   def canKong(tile: Tile): Boolean = tileStats(tile.value) >= 3
   def selfKongableTiles(): Set[Tile] = {
-    val kongableTiles = tileStats.zipWithIndex.collect{case (count, tileId) if count > 4 => Tile(TileValue(tileId))}.toSet
+    val kongableTiles = tileStats.zipWithIndex.collect{case (count, tileId) if count >= 4 => Tile(TileValue(tileId))}.toSet
     val kongablePongGroupTiles = fixedTileGroups.collect{case PongGroup(tile) if tileStats(tile.value) >= 1 => tile}.toSet
     kongableTiles | kongablePongGroupTiles
   }
@@ -93,8 +92,8 @@ class Hand(var initTiles: List[Tile]) {
   def selfKong(tile: Tile): Unit = {
     tileStats(tile.value) match {
       case 4 => {
-        tileStats(tile.value) -= 3
-        (1 to 3).foreach(_ => tiles = tiles - tile)
+        tileStats(tile.value) -= 4
+        (1 to 4).foreach(_ => tiles = tiles - tile)
         fixedTileGroups = KongGroup(tile) :: fixedTileGroups
       }
       case 1 => {

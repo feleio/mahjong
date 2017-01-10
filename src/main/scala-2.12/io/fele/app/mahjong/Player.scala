@@ -12,9 +12,12 @@ object DrawResult extends Enumeration {
 
 import DrawResult._
 
-abstract class Player(val id: Int, tiles: List[Tile]) {
+abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup]) {
   // TODO: change to private
-  protected val hand = new Hand(tiles)
+  protected val hand = new Hand(tiles, tileGroups)
+
+  def privateInfo() = SelfInfo(hand.tiles, hand.fixedTileGroups)
+  def publicInfo() = OtherInfo(hand.fixedTileGroups)
 
   def canWin(tile: Tile): Boolean = hand.canWin(tile)
   def canKong(tile: Tile): Boolean = hand.canKong(tile)
@@ -30,13 +33,13 @@ abstract class Player(val id: Int, tiles: List[Tile]) {
     }
   }
 
-  def kong(tile: Tile, drawer: RandomTileDrawer)(implicit gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
+  def kong(tile: Tile, drawer: TileDrawer)(implicit gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
     hand.kong(tile)
     gameLogger.kong(id, tile)
     draw(drawer)
   }
 
-  def selfKong(tile: Tile, drawer: RandomTileDrawer)(implicit gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
+  def selfKong(tile: Tile, drawer: TileDrawer)(implicit gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
     hand.selfKong(tile)
     gameLogger.kong(id, tile)
     draw(drawer)
@@ -58,7 +61,7 @@ abstract class Player(val id: Int, tiles: List[Tile]) {
     discarded
   }
 
-  def draw(drawer: RandomTileDrawer)(implicit gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
+  def draw(drawer: TileDrawer)(implicit gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
     drawer.pop match {
       case Some(drawnTile) => {
         // check self win
@@ -78,7 +81,7 @@ abstract class Player(val id: Int, tiles: List[Tile]) {
           }
         }
       }
-      case _ => (NO_TILE, None)
+      case None => (NO_TILE, None)
     }
   }
 
@@ -96,7 +99,7 @@ abstract class Player(val id: Int, tiles: List[Tile]) {
   override def toString = hand.toString
 }
 
-class DummyPlayer(id: Int, tiles: List[Tile]) extends Player(id, tiles) {
+class DummyPlayer(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup]) extends Player(id, tiles, tileGroups) {
   def isWin(tile: Tile, isSelfWin: Boolean): Boolean = true
   def isSelfKong(selfKongTiles: Set[Tile]): Option[Tile] = selfKongTiles.headOption
   def isKong(tile: Tile): Boolean = true

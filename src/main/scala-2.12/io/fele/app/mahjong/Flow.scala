@@ -2,8 +2,6 @@ package io.fele.app.mahjong
 
 import java.util.Random
 
-import scala.io.StdIn.readLine
-
 import com.typesafe.scalalogging.Logger
 import io.fele.app.mahjong.ChowPosition.ChowPosition
 import io.fele.app.mahjong.DrawResult._
@@ -29,22 +27,10 @@ case class GameState(players: List[Player],
   }
 }
 
-class Flow(seed: Long) {
+class Flow(val state: GameState, val drawer: TileDrawer, seed: Option[Long] = None)
+          (implicit gameLogger: GameLogger){
   // logger
   val logger = Logger(classOf[Flow])
-
-  // tool
-  val drawer = new RandomTileDrawer(seed)
-
-  // public states
-  val state = GameState(
-    (0 to 3).map(new DummyPlayer(_, drawer.popHand())).toList,
-    Set.empty[Int],
-    None,
-    Nil,
-    new Random(seed).nextInt(4) )
-
-  implicit val gameLogger = new GameLogger(state)
 
   private def checkPlayersTile(f: ((Int, Player)) => Boolean): Set[Int] = {
     state.otherPlayers().filter(f).map(_._1).toSet
@@ -90,6 +76,39 @@ class Flow(seed: Long) {
     }
   }
 
+  def round(discardedTile: Tile): Option[Tile] = discardedTile match {
+    case WiningTile(playerIds) => {
+      state.winners = playerIds
+      state.winningTile = Some(discardedTile)
+      None
+    }
+    case KongableTile(playerId) => {
+      state.setCurPlayer(playerId)
+      state.curPlayer().kong(discardedTile, drawer) match {
+        case (DISCARD, discarded: Option[Tile]) => discarded
+        case (WIN, _) => state.winners = Set(playerId); None
+        case (NO_TILE, _) => None
+      }
+    }
+    case PongableTile(playerId) => {
+      state.setCurPlayer(playerId)
+      Some(state.curPlayer().pong(discardedTile))
+    }
+    case ChowableTile(playerId, chowPosition) => {
+      state.setCurPlayer(playerId)
+      Some(state.curPlayer().chow(discardedTile, chowPosition))
+    }
+    case _ => {
+      state.addDiscarded(discardedTile)
+      state.setCurPlayer(state.getNextPlayerId())
+      state.curPlayer().draw(drawer) match {
+        case (DISCARD, discarded: Option[Tile]) => discarded
+        case (WIN, _) => state.winners = Set(state.getCurPlayerId()); None
+        case (NO_TILE, _) => None
+      }
+    }
+  }
+
   def start(): GameResult = {
     gameLogger.start()
 
@@ -101,39 +120,7 @@ class Flow(seed: Long) {
 
     while (discardedTile.isDefined) {
       gameLogger.discard(state.getCurPlayerId(), discardedTile.get)
-
-      discardedTile = discardedTile.get match {
-        case WiningTile(playerIds) => {
-          state.winners = playerIds
-          state.winningTile = Some(discardedTile.get)
-          None
-        }
-        case KongableTile(playerId) => {
-          state.setCurPlayer(playerId)
-          state.curPlayer().kong(discardedTile.get, drawer) match {
-            case (DISCARD, discarded: Option[Tile]) => discarded
-            case (WIN, _) => state.winners = Set(playerId); None
-            case (NO_TILE, _) => None
-          }
-        }
-        case PongableTile(playerId) => {
-          state.setCurPlayer(playerId)
-          Some(state.curPlayer().pong(discardedTile.get))
-        }
-        case ChowableTile(playerId, chowPosition) => {
-          state.setCurPlayer(playerId)
-          Some(state.curPlayer().chow(discardedTile.get, chowPosition))
-        }
-        case _ => {
-          state.addDiscarded(discardedTile.get)
-          state.setCurPlayer(state.getNextPlayerId())
-          state.curPlayer().draw(drawer) match {
-            case (DISCARD, discarded: Option[Tile]) => discarded
-            case (WIN, _) => state.winners = Set(state.getCurPlayerId()); None
-            case (NO_TILE, _) => None
-          }
-        }
-      }
+      discardedTile = round(discardedTile.get)
     }
     if (state.winners.nonEmpty)
       gameLogger.win(state.winners, state.winningTile.get)
@@ -145,7 +132,20 @@ class Flow(seed: Long) {
 }
 
 object Main extends App{
+  implicit val config: Config = new Config()
+
+  val seed: Option[Long] = Some(2)
+  val drawer: TileDrawer = new RandomTileDrawer(seed)
+  val state = GameState(
+    (0 to 3).map(new DummyPlayer(_, drawer.popHand())).toList,
+    Set.empty[Int],
+    None,
+    Nil,
+    if (seed.isDefined) new Random(seed.get).nextInt(4) else new Random().nextInt(4))
+
+  implicit val gameLogger: GameLogger = new DebugGameLogger(state)
+
   val logger = Logger("main")
-  val flow = new Flow(2)
+  val flow = new Flow(state, drawer, seed)
   logger.debug(s"result${flow.start()}")
 }

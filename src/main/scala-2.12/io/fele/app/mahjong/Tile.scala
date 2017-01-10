@@ -105,24 +105,32 @@ object Tile {
   }
 }
 
-class RandomTileDrawer(seed: Long) {
+trait TileDrawer {
+  def pop(): Option[Tile]
+  def popHand(): List[Tile]
+}
+
+class RandomTileDrawer(seed: Option[Long] = None) extends TileDrawer {
   // Seq of Tiles for drawing in one game, 4 of each kind of Tile.
-  var shuffledTiles = new Random(seed).shuffle(RandomTileDrawer.tiles)
+  var shuffledTiles = ( if (seed.isDefined) new Random(seed.get) else new Random()).shuffle(RandomTileDrawer.tiles)
   var curPos = 0
 
-  def pop(): Option[Tile] = {
+  override def pop(): Option[Tile] = {
     if (curPos < RandomTileDrawer.tilesNum) {
       curPos += 1
       Some(shuffledTiles(curPos - 1))
     } else None
   }
 
-  def popHand(): List[Tile] = {
+  override def popHand(): List[Tile] = {
     val drawnHandTile = shuffledTiles.slice(curPos, curPos + 13).toList
     curPos += 13
     drawnHandTile
   }
 }
+
+case class SelfInfo(tiles: List[Tile], tileGroups: List[TileGroup])
+case class OtherInfo(tileGroups: List[TileGroup])
 
 object RandomTileDrawer {
   val tiles: Seq[Tile] = TileValue.values.toSeq.sorted.flatMap(x => List.fill(4)(Tile(x)))
