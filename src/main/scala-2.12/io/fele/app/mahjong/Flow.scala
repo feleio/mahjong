@@ -86,7 +86,7 @@ class Flow(val state: GameState, val drawer: TileDrawer, seed: Option[Long] = No
       state.setCurPlayer(playerId)
       state.curPlayer().kong(discardedTile, drawer) match {
         case (DISCARD, discarded: Option[Tile]) => discarded
-        case (WIN, _) => state.winners = Set(playerId); None
+        case (WIN, Some(winningTile)) => state.winners = Set(playerId); state.winningTile = Some(winningTile); None
         case (NO_TILE, _) => None
       }
     }
@@ -103,7 +103,7 @@ class Flow(val state: GameState, val drawer: TileDrawer, seed: Option[Long] = No
       state.setCurPlayer(state.getNextPlayerId())
       state.curPlayer().draw(drawer) match {
         case (DISCARD, discarded: Option[Tile]) => discarded
-        case (WIN, _) => state.winners = Set(state.getCurPlayerId()); None
+        case (WIN, Some(winningTile)) => state.winners = Set(state.getCurPlayerId()); state.winningTile = Some(winningTile); None
         case (NO_TILE, _) => None
       }
     }
@@ -115,7 +115,7 @@ class Flow(val state: GameState, val drawer: TileDrawer, seed: Option[Long] = No
     // TODO: check if kong at the first place is allowed?
     var discardedTile = state.curPlayer().draw(drawer) match {
       case (DISCARD, discarded: Option[Tile]) => discarded
-      case (WIN, _) => state.winners = Set(state.getCurPlayerId()); None
+      case (WIN, Some(winningTile)) => state.winners = Set(state.getCurPlayerId()); state.winningTile = Some(winningTile); None
     }
 
     while (discardedTile.isDefined) {

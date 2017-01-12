@@ -66,7 +66,7 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
       case Some(drawnTile) => {
         // check self win
         if (hand.canWin(drawnTile) && isWin(drawnTile, true))
-          (WIN, None)
+          (WIN, Some(drawnTile))
         else {
           // check self kong
           hand.add(drawnTile)
