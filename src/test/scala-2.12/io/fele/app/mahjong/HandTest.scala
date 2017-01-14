@@ -12,21 +12,21 @@ import io.fele.app.mahjong.ChowPosition._
 class HandTest extends FreeSpec with Matchers {
   "Hand should indicate whether it" - {
     "can win" in {
-      var hand = new Hand(List[Tile](DOT_9), List[TileGroup](PongGroup(DOT_1), ChowGroup(List[Tile](DOT_2, DOT_3, DOT_4)), KongGroup(DOT_6), PongGroup(DOT_4)))
+      var hand = new Hand(List[Tile](DOT_9), List[TileGroup](PongGroup(DOT_1), ChowGroup(Set[Tile](DOT_2, DOT_3, DOT_4)), KongGroup(DOT_6), PongGroup(DOT_4)))
       hand.canWin(DOT_9) should equal(true)
       hand.canWin(HONOR_WIND_EAST) should equal(false)
 
-      hand = new Hand(List[Tile](HONOR_WIND_EAST), List[TileGroup](PongGroup(DOT_1), ChowGroup(List[Tile](DOT_2, DOT_3, DOT_4)), KongGroup(DOT_6), PongGroup(DOT_4)))
+      hand = new Hand(List[Tile](HONOR_WIND_EAST), List[TileGroup](PongGroup(DOT_1), ChowGroup(Set[Tile](DOT_2, DOT_3, DOT_4)), KongGroup(DOT_6), PongGroup(DOT_4)))
       hand.canWin(HONOR_WIND_EAST) should equal(true)
       hand.canWin(DOT_9) should equal(false)
 
-      hand = new Hand(List[Tile](HONOR_WIND_EAST, DOT_8,  HONOR_WIND_EAST, DOT_7), List[TileGroup](PongGroup(DOT_1), ChowGroup(List[Tile](DOT_2, DOT_3, DOT_4)), KongGroup(DOT_6)))
+      hand = new Hand(List[Tile](HONOR_WIND_EAST, DOT_8,  HONOR_WIND_EAST, DOT_7), List[TileGroup](PongGroup(DOT_1), ChowGroup(Set[Tile](DOT_2, DOT_3, DOT_4)), KongGroup(DOT_6)))
       hand.canWin(DOT_9) should equal(true)
       hand.canWin(DOT_6) should equal(true)
       hand.canWin(DOT_7) should equal(false)
       hand.canWin(DOT_8) should equal(false)
 
-      hand = new Hand(List[Tile](CHARACTER_3, CHARACTER_3, CHARACTER_3, CHARACTER_4), List[TileGroup](PongGroup(DOT_1), ChowGroup(List[Tile](DOT_2, DOT_3, DOT_4)), KongGroup(DOT_6)))
+      hand = new Hand(List[Tile](CHARACTER_3, CHARACTER_3, CHARACTER_3, CHARACTER_4), List[TileGroup](PongGroup(DOT_1), ChowGroup(Set[Tile](DOT_2, DOT_3, DOT_4)), KongGroup(DOT_6)))
       hand.canWin(CHARACTER_2) should equal(true)
       hand.canWin(CHARACTER_4) should equal(true)
       hand.canWin(CHARACTER_5) should equal(true)
@@ -52,7 +52,7 @@ class HandTest extends FreeSpec with Matchers {
       hand.canWin(CHARACTER_8) should equal(false)
       hand.canWin(CHARACTER_9) should equal(false)
 
-      hand = new Hand(List[Tile](HONOR_WIND_SOUTH, HONOR_WIND_NORTH, HONOR_DRAGON_RED, HONOR_DRAGON_BLUE), List[TileGroup](PongGroup(DOT_1), ChowGroup(List[Tile](DOT_2, DOT_3, DOT_4)), KongGroup(DOT_6)))
+      hand = new Hand(List[Tile](HONOR_WIND_SOUTH, HONOR_WIND_NORTH, HONOR_DRAGON_RED, HONOR_DRAGON_BLUE), List[TileGroup](PongGroup(DOT_1), ChowGroup(Set[Tile](DOT_2, DOT_3, DOT_4)), KongGroup(DOT_6)))
       hand.canWin(HONOR_DRAGON_RED) should equal(false)
     }
 

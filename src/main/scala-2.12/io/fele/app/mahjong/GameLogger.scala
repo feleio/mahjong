@@ -8,7 +8,8 @@ import scala.io.StdIn.readLine
 /**
   * Created by felix.ling on 01/01/2017.
   */
-trait GameLogger {
+trait
+GameLogger {
   def start()
   def discard(playerId: Int, tile: Tile)
   def kong(playerId: Int, tile: Tile)
@@ -25,7 +26,7 @@ class DebugGameLogger(val gameState: GameState)(implicit val config: Config) ext
   private def logCurStates() = {
     gameState.players.foreach(
       p => {
-        val curMark = if (gameState.getCurPlayerId() == p.id) " ****" else ""
+        val curMark = if (gameState.getCurPlayerId == p.id) " ****" else ""
         logger.debug(s"#### Player ${p.id}$curMark:\n${p.toString}\n")
       }
     )

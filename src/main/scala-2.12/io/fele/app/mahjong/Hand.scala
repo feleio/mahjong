@@ -13,23 +13,22 @@ import scala.collection.mutable
 
 trait TileGroup {
   def getCount: Int
-  def getTiles: List[Tile]
-  override def toString: String = s"(${getTiles.sortBy(t => t.value.id).mkString(", ")})"
+  def toString: String
 }
 
 case class KongGroup(tile: Tile) extends TileGroup{
   override def getCount: Int = 4
-  override def getTiles: List[Tile] = List.fill(getCount)(tile)
+  override def toString: String = s"Kong(${List.fill(getCount)(tile).sortBy(t => t.value.id).mkString(", ")})"
 }
 
 case class PongGroup(tile: Tile) extends TileGroup{
   override def getCount: Int = 3
-  override def getTiles: List[Tile] = List.fill(getCount)(tile)
+  override def toString: String = s"Pong(${List.fill(getCount)(tile).sortBy(t => t.value.id).mkString(", ")})"
 }
 
-case class ChowGroup(tiles: List[Tile]) extends TileGroup{
+case class ChowGroup(tiles: Set[Tile]) extends TileGroup{
   override def getCount: Int = 3
-  override def getTiles: List[Tile] = tiles
+  override def toString: String = s"Chow(${tiles.toList.sortBy(t => t.value.id).mkString(", ")})"
 }
 
 class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup]) {
@@ -52,8 +51,8 @@ class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup]) {
 
   private def validate(tiles: List[Tile]): Boolean = tiles match {
     case t if t.isEmpty => true
-    case t if t(0) == t(1) && t(1) == t(2) => validate(tiles.drop(3))
-    case t if t(0).`type` != HONOR && t(0).num <= 7 && t.contains(t(0)+1) && t.contains(t(0)+2) => validate(tiles diff List(t(0), t(0)+1, t(0)+2))
+    case t if t.head == t(1) && t(1) == t(2) => validate(tiles.drop(3))
+    case t if t.head.`type` != HONOR && t.head.num <= 7 && t.contains(t(0)+1) && t.contains(t(0)+2) => validate(tiles diff List(t(0), t(0)+1, t(0)+2))
     case _ => false
   }
 
@@ -117,7 +116,7 @@ class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup]) {
       tileStats(x.value) -= 1
       tiles -= x
     })
-    fixedTileGroups = ChowGroup(tile :: existTiles) :: fixedTileGroups
+    fixedTileGroups = ChowGroup(existTiles.toSet + tile) :: fixedTileGroups
   }
 
   def add(tile: Tile): Unit = {
