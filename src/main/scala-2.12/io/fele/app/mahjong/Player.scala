@@ -62,10 +62,10 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   }
 
   def draw(drawer: TileDrawer)(implicit gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
-    drawer.pop match {
-      case Some(drawnTile) => {
+    drawer.pop() match {
+      case Some(drawnTile) =>
         // check self win
-        if (hand.canWin(drawnTile) && isWin(drawnTile, true))
+        if (hand.canWin(drawnTile) && isWin(drawnTile, isSelfWin = true))
           (WIN, Some(drawnTile))
         else {
           // check self kong
@@ -73,14 +73,12 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
           gameLogger.draw(id, drawnTile)
           hand match {
             case SelfKongDecision(kongDecision) => selfKong(kongDecision, drawer)
-            case _ => {
+            case _ =>
               val discarded = discard()
               hand.discard(discarded)
               (DISCARD, Some(discarded))
-            }
           }
         }
-      }
       case None => (NO_TILE, None)
     }
   }
