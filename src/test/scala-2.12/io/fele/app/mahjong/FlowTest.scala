@@ -21,11 +21,11 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
   private def spyPlayer(dummpyPlayer: Player): Player = {
     val spyPlayer = spy(dummpyPlayer)
 
-    doReturn(false).when(spyPlayer).isWin(any[Tile], any[Boolean])
-    doReturn(false).when(spyPlayer).isKong(any[Tile])
-    doReturn(None).when(spyPlayer).isSelfKong(any[Set[Tile]])
-    doReturn(false).when(spyPlayer).isPong(any[Tile])
-    doReturn(None).when(spyPlayer).isChow(any[Tile], any[Set[ChowPosition]])
+    doReturn(false).when(spyPlayer).decideWin(any[Tile], any[Boolean])
+    doReturn(false).when(spyPlayer).decideKong(any[Tile])
+    doReturn(None).when(spyPlayer).decideSelfKong(any[Set[Tile]])
+    doReturn(false).when(spyPlayer).decidePong(any[Tile])
+    doReturn(None).when(spyPlayer).decideChow(any[Tile], any[Set[ChowPosition]])
     spyPlayer
   }
 
@@ -45,7 +45,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_7, CHARACTER_8, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
 
-      doReturn(true).when(subjectPlayers).isWin(BAMBOO_3, isSelfWin = false)
+      doReturn(true).when(subjectPlayers).decideWin(BAMBOO_3, isSelfWin = false)
       when(f.drawer.pop()).thenReturn(Some(Tile(BAMBOO_6)))
 
       val gameState = GameState(
@@ -86,9 +86,9 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_5, CHARACTER_1, CHARACTER_2, CHARACTER_2, CHARACTER_9, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_BLUE),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
 
-      doReturn(true).when(subjectPlayers).isKong(CHARACTER_9)
+      doReturn(true).when(subjectPlayers).decideKong(CHARACTER_9)
       when(f.drawer.pop()).thenReturn(Some[Tile](CHARACTER_2))
-      doReturn(Tile(CHARACTER_2)).when(subjectPlayers).pickToDiscard()
+      doReturn(Tile(CHARACTER_2)).when(subjectPlayers).decideDiscard()
 
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
@@ -130,10 +130,10 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_5, CHARACTER_1, CHARACTER_2, CHARACTER_2, CHARACTER_9, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_BLUE),
         List(PongGroup(CHARACTER_7))))
 
-      doReturn(true).when(subjectPlayers).isKong(CHARACTER_9)
-      doReturn(Some(Tile(CHARACTER_7))).when(subjectPlayers).isSelfKong(Set(CHARACTER_7))
+      doReturn(true).when(subjectPlayers).decideKong(CHARACTER_9)
+      doReturn(Some(Tile(CHARACTER_7))).when(subjectPlayers).decideSelfKong(Set(CHARACTER_7))
       when(f.drawer.pop()).thenReturn(Some[Tile](CHARACTER_7)).thenReturn(Some[Tile](CHARACTER_2))
-      doReturn(Tile(CHARACTER_2)).when(subjectPlayers).pickToDiscard()
+      doReturn(Tile(CHARACTER_2)).when(subjectPlayers).decideDiscard()
 
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
@@ -178,11 +178,11 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_9, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(PongGroup(CHARACTER_7))))
 
-      doReturn(true).when(subjectPlayers).isWin(Tile(HONOR_DRAGON_RED), isSelfWin = true)
-      doReturn(true).when(subjectPlayers).isKong(CHARACTER_9)
-      doReturn(Some(Tile(CHARACTER_7))).when(subjectPlayers).isSelfKong(Set(CHARACTER_7))
+      doReturn(true).when(subjectPlayers).decideWin(Tile(HONOR_DRAGON_RED), isSelfWin = true)
+      doReturn(true).when(subjectPlayers).decideKong(CHARACTER_9)
+      doReturn(Some(Tile(CHARACTER_7))).when(subjectPlayers).decideSelfKong(Set(CHARACTER_7))
       when(f.drawer.pop()).thenReturn(Some[Tile](CHARACTER_7)).thenReturn(Some[Tile](HONOR_DRAGON_RED))
-      doReturn(Tile(CHARACTER_2)).when(subjectPlayers).pickToDiscard()
+      doReturn(Tile(CHARACTER_2)).when(subjectPlayers).decideDiscard()
 
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
@@ -229,8 +229,8 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_9, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(PongGroup(CHARACTER_7))))
 
-      doReturn(true).when(subjectPlayers).isKong(CHARACTER_9)
-      doReturn(Some(Tile(CHARACTER_7))).when(subjectPlayers).isSelfKong(Set(CHARACTER_7))
+      doReturn(true).when(subjectPlayers).decideKong(CHARACTER_9)
+      doReturn(Some(Tile(CHARACTER_7))).when(subjectPlayers).decideSelfKong(Set(CHARACTER_7))
       when(f.drawer.pop()).thenReturn(Some[Tile](CHARACTER_7)).thenReturn(None)
 
       val gameState = GameState(
@@ -276,8 +276,8 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_5, CHARACTER_1, CHARACTER_2, CHARACTER_2, CHARACTER_8, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_BLUE),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
 
-      doReturn(true).when(subjectPlayers).isPong(CHARACTER_9)
-      doReturn(Tile(CHARACTER_2)).when(subjectPlayers).pickToDiscard()
+      doReturn(true).when(subjectPlayers).decidePong(CHARACTER_9)
+      doReturn(Tile(CHARACTER_2)).when(subjectPlayers).decideDiscard()
 
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
@@ -318,8 +318,8 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_5, CHARACTER_1, CHARACTER_2, CHARACTER_8, CHARACTER_8, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_BLUE),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
 
-      doReturn(Some(ChowPosition.RIGHT)).when(subjectPlayers).isChow(CHARACTER_3, Set(ChowPosition.RIGHT))
-      doReturn(Tile(BAMBOO_3)).when(subjectPlayers).pickToDiscard()
+      doReturn(Some(ChowPosition.RIGHT)).when(subjectPlayers).decideChow(CHARACTER_3, Set(ChowPosition.RIGHT))
+      doReturn(Tile(BAMBOO_3)).when(subjectPlayers).decideDiscard()
 
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
@@ -362,7 +362,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_5, CHARACTER_1, CHARACTER_2, CHARACTER_2, CHARACTER_8, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_BLUE),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
 
-      doReturn(Tile(BAMBOO_3)).when(subjectPlayers).pickToDiscard()
+      doReturn(Tile(BAMBOO_3)).when(subjectPlayers).decideDiscard()
       when(f.drawer.pop()).thenReturn(Some(Tile(DOT_1)))
 
       val gameState = GameState(
@@ -404,7 +404,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_7, CHARACTER_8, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
 
-      doReturn(true).when(subjectPlayers).isWin(BAMBOO_3, isSelfWin = true)
+      doReturn(true).when(subjectPlayers).decideWin(BAMBOO_3, isSelfWin = true)
       when(f.drawer.pop()).thenReturn(Some(Tile(BAMBOO_3)))
 
       val gameState = GameState(
@@ -446,7 +446,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_7, CHARACTER_8, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
 
-      doReturn(true).when(subjectPlayers).isWin(BAMBOO_3, isSelfWin = true)
+      doReturn(true).when(subjectPlayers).decideWin(BAMBOO_3, isSelfWin = true)
       when(f.drawer.pop()).thenReturn(None)
 
       val gameState = GameState(

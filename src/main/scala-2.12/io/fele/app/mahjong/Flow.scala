@@ -43,7 +43,7 @@ class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] 
   private object WiningTile {
     def unapply(tile: Tile): Option[Set[Int]] = {
       val ws = checkPlayersTile{
-        case (i: Int, p: Player) => p.canWin(tile) && p.isWin(tile, isSelfWin = false)
+        case (i: Int, p: Player) => p.canWin(tile) && p.decideWin(tile, isSelfWin = false)
       }
       if (ws.isEmpty) None else Some(ws)
     }
@@ -52,7 +52,7 @@ class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] 
   private object KongableTile {
     def unapply(tile: Tile): Option[Int] = {
       checkPlayersTile{
-        case (i: Int, p: Player) => p.canKong(tile) && p.isKong(tile)
+        case (i: Int, p: Player) => p.canKong(tile) && p.decideKong(tile)
       }.headOption
     }
   }
@@ -60,7 +60,7 @@ class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] 
   private object PongableTile {
     def unapply(tile: Tile): Option[Int] = {
       checkPlayersTile{
-        case (i: Int, p: Player) => p.canPong(tile) && p.isPong(tile)
+        case (i: Int, p: Player) => p.canPong(tile) && p.decidePong(tile)
       }.headOption
     }
   }
@@ -69,7 +69,7 @@ class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] 
     def unapply(tile: Tile): Option[(Int, ChowPosition)] = {
       val canChowPositions = state.nextPlayer().canChow(tile)
       if (canChowPositions.nonEmpty) {
-        val chowPosition = state.nextPlayer().isChow(tile, canChowPositions)
+        val chowPosition = verify(canChowPositions)(state.nextPlayer().decideChow(tile, canChowPositions))
         if (chowPosition.isDefined)
           Some((state.getNextPlayerId, chowPosition.get))
         else
@@ -77,6 +77,11 @@ class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] 
       }
       else
         None
+    }
+    private def verify(positions: Set[ChowPosition])(decision: Option[ChowPosition]): Option[ChowPosition] = decision match {
+      case Some(position) if !positions.contains(position) =>
+        throw new Exception(s"Player $id: invalid self kong decision, $position not found in $positions")
+      case _ => decision
     }
   }
 
