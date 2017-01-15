@@ -52,7 +52,7 @@ class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup]) {
   private def validate(tiles: List[Tile]): Boolean = tiles match {
     case t if t.isEmpty => true
     case t if t.head == t(1) && t(1) == t(2) => validate(tiles.drop(3))
-    case t if t.head.`type` != HONOR && t.head.num <= 7 && t.contains(t(0)+1) && t.contains(t(0)+2) => validate(tiles diff List(t(0), t(0)+1, t(0)+2))
+    case t if t.head.`type` != HONOR && t.head.num <= 7 && t.contains(t.head+1) && t.contains(t.head+2) => validate(tiles diff List(t.head, t.head+1, t.head+2))
     case _ => false
   }
 
