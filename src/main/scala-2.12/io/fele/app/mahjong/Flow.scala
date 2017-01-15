@@ -27,8 +27,12 @@ case class GameState(players: List[Player],
   }
 }
 
-class Flow(val state: GameState, val drawer: TileDrawer, seed: Option[Long] = None)
-          (implicit gameLogger: GameLogger){
+trait Flow {
+  def start(): GameResult
+}
+
+class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] = None)
+          (implicit gameLogger: GameLogger) extends Flow{
   // logger
   val logger = Logger(classOf[Flow])
 
@@ -104,7 +108,7 @@ class Flow(val state: GameState, val drawer: TileDrawer, seed: Option[Long] = No
       }
   }
 
-  def start(): GameResult = {
+  override def start(): GameResult = {
     gameLogger.start()
 
     // TODO: check if kong at the first place is allowed?
@@ -141,6 +145,6 @@ object Main extends App{
   implicit val gameLogger: GameLogger = new DebugGameLogger(state)
 
   val logger = Logger("main")
-  val flow = new Flow(state, drawer, seed)
+  val flow: Flow = new FlowImpl(state, drawer, seed)
   logger.debug(s"result${flow.start()}")
 }

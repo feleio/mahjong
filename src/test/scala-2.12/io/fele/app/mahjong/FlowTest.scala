@@ -55,7 +55,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List.empty[Tile],
         1)
 
-      val flow = new Flow(gameState, f.drawer)
+      val flow = new FlowImpl(gameState, f.drawer)
 
       // When
       val discarded: Option[Tile] = flow.round(BAMBOO_3)
@@ -97,7 +97,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List.empty[Tile],
         1)
 
-      val flow = new Flow(gameState, f.drawer)
+      val flow = new FlowImpl(gameState, f.drawer)
 
       // When
       val discarded: Option[Tile] = flow.round(CHARACTER_9)
@@ -142,7 +142,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List.empty[Tile],
         1)
 
-      val flow = new Flow(gameState, f.drawer)
+      val flow = new FlowImpl(gameState, f.drawer)
 
       // When
       val discarded: Option[Tile] = flow.round(CHARACTER_9)
@@ -191,7 +191,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List.empty[Tile],
         1)
 
-      val flow = new Flow(gameState, f.drawer)
+      val flow = new FlowImpl(gameState, f.drawer)
 
       // When
       val discarded: Option[Tile] = flow.round(CHARACTER_9)
@@ -240,7 +240,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List.empty[Tile],
         1)
 
-      val flow = new Flow(gameState, f.drawer)
+      val flow = new FlowImpl(gameState, f.drawer)
 
       // When
       val discarded: Option[Tile] = flow.round(CHARACTER_9)
@@ -286,7 +286,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List.empty[Tile],
         1)
 
-      val flow = new Flow(gameState, f.drawer)
+      val flow = new FlowImpl(gameState, f.drawer)
 
       // When
       val discarded: Option[Tile] = flow.round(CHARACTER_9)
@@ -328,7 +328,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List.empty[Tile],
         2)
 
-      val flow = new Flow(gameState, f.drawer)
+      val flow = new FlowImpl(gameState, f.drawer)
 
       // When
       val discarded: Option[Tile] = flow.round(CHARACTER_3)
@@ -372,7 +372,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List.empty[Tile],
         2)
 
-      val flow = new Flow(gameState, f.drawer)
+      val flow = new FlowImpl(gameState, f.drawer)
 
       // When
       val discarded: Option[Tile] = flow.round(BAMBOO_6)
@@ -414,7 +414,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List.empty[Tile],
         2)
 
-      val flow = new Flow(gameState, f.drawer)
+      val flow = new FlowImpl(gameState, f.drawer)
 
       // When
       val discarded: Option[Tile] = flow.round(BAMBOO_6)
@@ -456,7 +456,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List.empty[Tile],
         2)
 
-      val flow = new Flow(gameState, f.drawer)
+      val flow = new FlowImpl(gameState, f.drawer)
 
       // When
       val discarded: Option[Tile] = flow.round(BAMBOO_6)
