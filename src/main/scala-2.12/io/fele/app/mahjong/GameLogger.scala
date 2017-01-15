@@ -36,7 +36,6 @@ class DebugGameLogger(val gameState: GameState)(implicit val config: Config) ext
   private def logAndPause(msg: String): Unit = {
     logger.debug("***** " + msg + " *****\n")
     logCurStates()
-    println("!!!" + config.isPauseWhenLog)
     if (config.isPauseWhenLog) readLine()
   }
 

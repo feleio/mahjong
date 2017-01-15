@@ -136,20 +136,30 @@ class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] 
 }
 
 object Main extends App{
-  implicit val config: Config = new Config()
-
-  val seed: Option[Long] = Some(2)
-  val drawer: TileDrawer = new RandomTileDrawer(seed)
-  val state = GameState(
-    (0 to 3).map(new DummyPlayer(_, drawer.popHand())).toList,
-    Set.empty[Int],
-    None,
-    Nil,
-    if (seed.isDefined) new Random(seed.get).nextInt(4) else new Random().nextInt(4))
-
-  implicit val gameLogger: GameLogger = new DebugGameLogger(state)
-
   val logger = Logger("main")
-  val flow: Flow = new FlowImpl(state, drawer, seed)
-  logger.debug(s"result${flow.start()}")
+  implicit val config: Config = new Config()
+  val total = 10000
+  var count = 0
+
+  val results = (0 to total).par.map(roundNum => {
+    count += 1
+    if (count % 2000 == 0)
+      logger.info(s"$count/$total")
+
+    val drawer: TileDrawer = new RandomTileDrawer(Some(roundNum))
+    val state = GameState(
+      (0 to 3).map(new DummyPlayer(_, drawer.popHand())).toList,
+      Set.empty[Int],
+      None,
+      Nil,
+      new Random(roundNum).nextInt(4))
+
+    implicit val gameLogger: GameLogger = new DebugGameLogger(state)
+    val flow: Flow = new FlowImpl(state, drawer, Some(roundNum))
+
+    flow.start()
+  })
+
+  val playerWinCount = results.flatMap(_.winners.toList).groupBy(identity).mapValues(_.size)
+  (0 to 3).foreach(id => logger.info(s"Player $id wins: ${playerWinCount(id)}"))
 }

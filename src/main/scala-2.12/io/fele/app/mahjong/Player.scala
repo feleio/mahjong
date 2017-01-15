@@ -103,6 +103,7 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   def decideChow(tile: Tile, positions: Set[ChowPosition]): Option[ChowPosition]
   def decideDiscard(): Tile
 
+  def name: String
   override def toString = hand.toString
 }
 
@@ -113,4 +114,6 @@ class DummyPlayer(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List
   def decidePong(tile: Tile): Boolean = true
   def decideChow(tile: Tile, positions: Set[ChowPosition]): Option[ChowPosition] = positions.headOption
   def decideDiscard(): Tile = hand.tiles.head
+
+  override def name: String = this.getClass.getName
 }
