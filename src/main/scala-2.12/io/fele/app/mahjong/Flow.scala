@@ -69,7 +69,7 @@ class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] 
     def unapply(tile: Tile): Option[(Int, ChowPosition)] = {
       val canChowPositions = state.nextPlayer().canChow(tile)
       if (canChowPositions.nonEmpty) {
-        val chowPosition = verify(canChowPositions)(state.nextPlayer().decideChow(tile, canChowPositions))
+        val chowPosition = verify(state.getNextPlayerId, canChowPositions)(state.nextPlayer().decideChow(tile, canChowPositions))
         if (chowPosition.isDefined)
           Some((state.getNextPlayerId, chowPosition.get))
         else
@@ -78,9 +78,9 @@ class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] 
       else
         None
     }
-    private def verify(positions: Set[ChowPosition])(decision: Option[ChowPosition]): Option[ChowPosition] = decision match {
+    private def verify(playerId: Int, positions: Set[ChowPosition])(decision: Option[ChowPosition]): Option[ChowPosition] = decision match {
       case Some(position) if !positions.contains(position) =>
-        throw new Exception(s"Player $id: invalid self kong decision, $position not found in $positions")
+        throw new Exception(s"Player $playerId: invalid self kong decision, $position not found in $positions")
       case _ => decision
     }
   }
