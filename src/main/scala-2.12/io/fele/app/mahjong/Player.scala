@@ -91,7 +91,7 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   def discard()(implicit gameLogger: GameLogger): Tile = {
     val discarded = decideDiscard()
     if (!hand.tiles.contains(discarded))
-      throw new Exception(s"Player $id: discarded tile does not exist in ${hand.tiles}")
+      throw new Exception(s"Player $id: discarded tile $discarded does not exist in ${hand.tiles}")
     discarded
   }
 
@@ -108,12 +108,12 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
 }
 
 class DummyPlayer(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup]) extends Player(id, tiles, tileGroups) {
-  def decideWin(tile: Tile, isSelfWin: Boolean): Boolean = true
-  def decideSelfKong(selfKongTiles: Set[Tile]): Option[Tile] = selfKongTiles.headOption
-  def decideKong(tile: Tile): Boolean = true
-  def decidePong(tile: Tile): Boolean = true
-  def decideChow(tile: Tile, positions: Set[ChowPosition]): Option[ChowPosition] = positions.headOption
-  def decideDiscard(): Tile = hand.tiles.head
+  override def decideWin(tile: Tile, isSelfWin: Boolean): Boolean = true
+  override def decideSelfKong(selfKongTiles: Set[Tile]): Option[Tile] = selfKongTiles.headOption
+  override def decideKong(tile: Tile): Boolean = true
+  override def decidePong(tile: Tile): Boolean = true
+  override def decideChow(tile: Tile, positions: Set[ChowPosition]): Option[ChowPosition] = positions.headOption
+  override def decideDiscard(): Tile = hand.tiles.head
 
   override def name: String = this.getClass.getName
 }

@@ -5,6 +5,7 @@ import java.util.Random
 import com.typesafe.scalalogging.Logger
 import io.fele.app.mahjong.ChowPosition.ChowPosition
 import io.fele.app.mahjong.DrawResult._
+import io.fele.app.mahjong.player.Chicken
 
 /**
   * Created by felix.ling on 12/12/2016.
@@ -148,7 +149,7 @@ object Main extends App{
 
     val drawer: TileDrawer = new RandomTileDrawer(Some(roundNum))
     val state = GameState(
-      (0 to 3).map(new DummyPlayer(_, drawer.popHand())).toList,
+      new Chicken(0, drawer.popHand()) :: (1 to 3).map(new DummyPlayer(_, drawer.popHand())).toList,
       Set.empty[Int],
       None,
       Nil,
@@ -159,6 +160,9 @@ object Main extends App{
 
     flow.start()
   })
+
+  val winnerCount = results.groupBy(_.winners.size).mapValues(_.size)
+  logger.info(winnerCount.toList.sortBy(_._1).toString())
 
   val playerWinCount = results.flatMap(_.winners.toList).groupBy(identity).mapValues(_.size)
   (0 to 3).foreach(id => logger.info(s"Player $id wins: ${playerWinCount(id)}"))
