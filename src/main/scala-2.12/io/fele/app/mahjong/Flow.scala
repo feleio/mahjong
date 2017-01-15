@@ -161,6 +161,7 @@ object Main extends App{
     flow.start()
   })
 
+  logger.info(s"Total games: $total")
   val winnerCount = results.groupBy(_.winners.size).mapValues(_.size)
   logger.info(winnerCount.toList.sortBy(_._1).toString())
 
