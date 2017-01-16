@@ -7,7 +7,8 @@ import io.fele.app.mahjong.{Player, Tile, TileGroup, TileType}
   * Created by felix.ling on 15/01/2017.
   */
 class Chicken(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup]) extends Player(id, tiles, tileGroups) {
-  override def decideWin(tile: Tile, isSelfWin: Boolean): Boolean = true
+  override def decideSelfWin(tile: Tile): Boolean = true
+  override def decideWin(tile: Tile): Boolean = true
   override def decideSelfKong(selfKongTiles: Set[Tile]): Option[Tile] = selfKongTiles.headOption
   override def decideKong(tile: Tile): Boolean = true
   override def decidePong(tile: Tile): Boolean = true

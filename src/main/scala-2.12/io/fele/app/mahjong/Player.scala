@@ -70,7 +70,7 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
     drawer.pop() match {
       case Some(drawnTile) =>
         // check self win
-        if (hand.canWin(drawnTile) && decideWin(drawnTile, isSelfWin = true))
+        if (hand.canWin(drawnTile) && decideSelfWin(drawnTile))
           (WIN, Some(drawnTile))
         else {
           // check self kong
@@ -95,8 +95,11 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
     discarded
   }
 
+  override def toString = hand.toString
+
   // abstract decision method
-  def decideWin(tile: Tile, isSelfWin: Boolean): Boolean
+  def decideSelfWin(tile: Tile): Boolean
+  def decideWin(tile: Tile): Boolean
   def decideSelfKong(selfKongTiles: Set[Tile]): Option[Tile]
   def decideKong(tile: Tile): Boolean
   def decidePong(tile: Tile): Boolean
@@ -104,11 +107,11 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   def decideDiscard(): Tile
 
   def name: String
-  override def toString = hand.toString
 }
 
 class DummyPlayer(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup]) extends Player(id, tiles, tileGroups) {
-  override def decideWin(tile: Tile, isSelfWin: Boolean): Boolean = true
+  override def decideSelfWin(tile: Tile): Boolean = true
+  override def decideWin(tile: Tile): Boolean = true
   override def decideSelfKong(selfKongTiles: Set[Tile]): Option[Tile] = selfKongTiles.headOption
   override def decideKong(tile: Tile): Boolean = true
   override def decidePong(tile: Tile): Boolean = true

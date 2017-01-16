@@ -21,7 +21,8 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
   private def spyPlayer(dummpyPlayer: Player): Player = {
     val spyPlayer = spy(dummpyPlayer)
 
-    doReturn(false).when(spyPlayer).decideWin(any[Tile], any[Boolean])
+    doReturn(false).when(spyPlayer).decideWin(any[Tile])
+    doReturn(false).when(spyPlayer).decideSelfWin(any[Tile])
     doReturn(false).when(spyPlayer).decideKong(any[Tile])
     doReturn(None).when(spyPlayer).decideSelfKong(any[Set[Tile]])
     doReturn(false).when(spyPlayer).decidePong(any[Tile])
@@ -45,7 +46,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_7, CHARACTER_8, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
 
-      doReturn(true).when(subjectPlayers).decideWin(BAMBOO_3, isSelfWin = false)
+      doReturn(true).when(subjectPlayers).decideWin(BAMBOO_3)
       when(f.drawer.pop()).thenReturn(Some(Tile(BAMBOO_6)))
 
       val gameState = GameState(
@@ -178,7 +179,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_9, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(PongGroup(CHARACTER_7))))
 
-      doReturn(true).when(subjectPlayers).decideWin(Tile(HONOR_DRAGON_RED), isSelfWin = true)
+      doReturn(true).when(subjectPlayers).decideSelfWin(Tile(HONOR_DRAGON_RED))
       doReturn(true).when(subjectPlayers).decideKong(CHARACTER_9)
       doReturn(Some(Tile(CHARACTER_7))).when(subjectPlayers).decideSelfKong(Set(CHARACTER_7))
       when(f.drawer.pop()).thenReturn(Some[Tile](CHARACTER_7)).thenReturn(Some[Tile](HONOR_DRAGON_RED))
@@ -404,7 +405,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_7, CHARACTER_8, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
 
-      doReturn(true).when(subjectPlayers).decideWin(BAMBOO_3, isSelfWin = true)
+      doReturn(true).when(subjectPlayers).decideSelfWin(BAMBOO_3)
       when(f.drawer.pop()).thenReturn(Some(Tile(BAMBOO_3)))
 
       val gameState = GameState(
@@ -446,7 +447,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_7, CHARACTER_8, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
 
-      doReturn(true).when(subjectPlayers).decideWin(BAMBOO_3, isSelfWin = true)
+      doReturn(true).when(subjectPlayers).decideSelfWin(BAMBOO_3)
       when(f.drawer.pop()).thenReturn(None)
 
       val gameState = GameState(
