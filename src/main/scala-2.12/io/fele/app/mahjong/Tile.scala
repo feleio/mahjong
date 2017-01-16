@@ -129,8 +129,12 @@ class RandomTileDrawer(seed: Option[Long] = None) extends TileDrawer {
   }
 }
 
-case class SelfInfo(tiles: List[Tile], tileGroups: List[TileGroup])
-case class OtherInfo(tileGroups: List[TileGroup])
+case class PrivateState(tiles: List[Tile], tileGroups: List[TileGroup])
+case class PublicState(tileGroups: List[TileGroup])
+case class CurState(myInfo: PrivateState,
+                    otherInfos: List[PublicState],
+                    discards: List[Tile],
+                    remainTileNum: Int)
 
 object RandomTileDrawer {
   val tiles: Seq[Tile] = TileValue.values.toSeq.sorted.flatMap(x => List.fill(4)(Tile(x)))

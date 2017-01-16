@@ -16,8 +16,8 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   // TODO: change to private
   protected val hand = new Hand(tiles, tileGroups)
 
-  def privateInfo() = SelfInfo(hand.tiles, hand.fixedTileGroups)
-  def publicInfo() = OtherInfo(hand.fixedTileGroups)
+  def privateInfo = PrivateState(hand.tiles, hand.fixedTileGroups)
+  def publicInfo = PublicState(hand.fixedTileGroups)
 
   def canWin(tile: Tile): Boolean = hand.canWin(tile)
   def canKong(tile: Tile): Boolean = hand.canKong(tile)
@@ -98,25 +98,25 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   override def toString = hand.toString
 
   // abstract decision method
-  def decideSelfWin(tile: Tile): Boolean
-  def decideWin(tile: Tile): Boolean
-  def decideSelfKong(selfKongTiles: Set[Tile]): Option[Tile]
-  def decideKong(tile: Tile): Boolean
-  def decidePong(tile: Tile): Boolean
-  def decideChow(tile: Tile, positions: Set[ChowPosition]): Option[ChowPosition]
-  def decideDiscard(): Tile
+  def decideSelfWin(tile: Tile, curState: CurState): Boolean
+  def decideWin(tile: Tile, curState: CurState): Boolean
+  def decideSelfKong(selfKongTiles: Set[Tile], curState: CurState): Option[Tile]
+  def decideKong(tile: Tile, curState: CurState): Boolean
+  def decidePong(tile: Tile, curState: CurState): Boolean
+  def decideChow(tile: Tile, positions: Set[ChowPosition], curState: CurState): Option[ChowPosition]
+  def decideDiscard(curState: CurState): Tile
 
   def name: String
 }
 
 class DummyPlayer(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup]) extends Player(id, tiles, tileGroups) {
-  override def decideSelfWin(tile: Tile): Boolean = true
-  override def decideWin(tile: Tile): Boolean = true
-  override def decideSelfKong(selfKongTiles: Set[Tile]): Option[Tile] = selfKongTiles.headOption
-  override def decideKong(tile: Tile): Boolean = true
-  override def decidePong(tile: Tile): Boolean = true
-  override def decideChow(tile: Tile, positions: Set[ChowPosition]): Option[ChowPosition] = positions.headOption
-  override def decideDiscard(): Tile = hand.tiles.head
+  override def decideSelfWin(tile: Tile, curState: CurState): Boolean = true
+  override def decideWin(tile: Tile, curState: CurState): Boolean = true
+  override def decideSelfKong(selfKongTiles: Set[Tile], curState: CurState): Option[Tile] = selfKongTiles.headOption
+  override def decideKong(tile: Tile, curState: CurState): Boolean = true
+  override def decidePong(tile: Tile, curState: CurState): Boolean = true
+  override def decideChow(tile: Tile, positions: Set[ChowPosition], curState: CurState): Option[ChowPosition] = positions.headOption
+  override def decideDiscard(curState: CurState): Tile = hand.tiles.head
 
   override def name: String = this.getClass.getName
 }
