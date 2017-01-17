@@ -143,7 +143,7 @@ class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] 
 object Main extends App{
   val logger = Logger("main")
   implicit val config: Config = new Config()
-  val total = 10000
+  val total = 100000
   var count = 0
 
   val results = (0 to total).par.map(roundNum => {
