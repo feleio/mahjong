@@ -14,9 +14,9 @@ case class GameResult(winners: Set[Int])
 case class GameState(players: List[Player],
                      var winners: Set[Int],
                      var winningTile: Option[Tile],
-                     var discards: List[Tile],
-                     private var curPlayerId: Int){
-  def addDiscarded(tile: Tile) = discards = tile :: discards
+                     var discards: List[(Int, Tile)],
+                     var curPlayerId: Int){
+  def addDiscarded(tile: Tile) = discards = (curPlayerId, tile) :: discards
   def setCurPlayer(playerId: Int) = curPlayerId = playerId
 
   def curPlayer(): Player = players(curPlayerId)
@@ -37,6 +37,8 @@ class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] 
   // logger
   val logger = Logger(classOf[Flow])
 
+  implicit val curStateGenerator = new CurStateGenerator(state, drawer)
+
   private def checkPlayersTile(f: ((Int, Player)) => Boolean): Set[Int] = {
     state.otherPlayers().filter(f).map(_._1).toSet
   }
@@ -44,7 +46,7 @@ class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] 
   private object WiningTile {
     def unapply(tile: Tile): Option[Set[Int]] = {
       val ws = checkPlayersTile{
-        case (i: Int, p: Player) => p.canWin(tile) && p.decideWin(tile)
+        case (i: Int, p: Player) => p.canWin(tile) && p.decideWin(tile, curStateGenerator.curState(i))
       }
       if (ws.isEmpty) None else Some(ws)
     }
@@ -53,7 +55,7 @@ class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] 
   private object KongableTile {
     def unapply(tile: Tile): Option[Int] = {
       checkPlayersTile{
-        case (i: Int, p: Player) => p.canKong(tile) && p.decideKong(tile)
+        case (i: Int, p: Player) => p.canKong(tile) && p.decideKong(tile, curStateGenerator.curState(i))
       }.headOption
     }
   }
@@ -61,7 +63,7 @@ class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] 
   private object PongableTile {
     def unapply(tile: Tile): Option[Int] = {
       checkPlayersTile{
-        case (i: Int, p: Player) => p.canPong(tile) && p.decidePong(tile)
+        case (i: Int, p: Player) => p.canPong(tile) && p.decidePong(tile, curStateGenerator.curState(i))
       }.headOption
     }
   }
@@ -70,7 +72,9 @@ class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] 
     def unapply(tile: Tile): Option[(Int, ChowPosition)] = {
       val canChowPositions = state.nextPlayer().canChow(tile)
       if (canChowPositions.nonEmpty) {
-        val chowPosition = verify(state.getNextPlayerId, canChowPositions)(state.nextPlayer().decideChow(tile, canChowPositions))
+        val chowPosition = verify(state.getNextPlayerId, canChowPositions)(
+          state.nextPlayer().decideChow(tile, canChowPositions, curStateGenerator.curState(state.getNextPlayerId))
+        )
         if (chowPosition.isDefined)
           Some((state.getNextPlayerId, chowPosition.get))
         else
