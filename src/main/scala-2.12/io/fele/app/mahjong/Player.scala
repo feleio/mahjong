@@ -16,8 +16,8 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   // TODO: change to private
   protected val hand = new Hand(tiles, tileGroups)
 
-  def privateInfo() = SelfInfo(hand.tiles, hand.fixedTileGroups)
-  def publicInfo() = OtherInfo(hand.fixedTileGroups)
+  def privateInfo = PrivateState(hand.tiles, hand.fixedTileGroups)
+  def publicInfo = PublicState(hand.fixedTileGroups)
 
   def canWin(tile: Tile): Boolean = hand.canWin(tile)
   def canKong(tile: Tile): Boolean = hand.canKong(tile)
@@ -25,9 +25,9 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   def canChow(tile: Tile): Set[ChowPosition] = hand.canChow(tile)
 
   private object SelfKongDecision {
-    def unapply(hand: Hand): Option[Tile] = {
+    def unapply(hand: Hand)(implicit stateGenerator: CurStateGenerator): Option[Tile] = {
       hand.selfKongableTiles() match {
-        case kongSet if kongSet.nonEmpty => verify(kongSet)(decideSelfKong(kongSet))
+        case kongSet if kongSet.nonEmpty => verify(kongSet)(decideSelfKong(kongSet, stateGenerator.curState(id)))
         case _ => None
       }
     }
@@ -38,19 +38,22 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
     }
   }
 
-  def kong(tile: Tile, drawer: TileDrawer)(implicit gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
+  def kong(tile: Tile, drawer: TileDrawer)
+          (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
     hand.kong(tile)
     gameLogger.kong(id, tile)
     draw(drawer)
   }
 
-  def selfKong(tile: Tile, drawer: TileDrawer)(implicit gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
+  def selfKong(tile: Tile, drawer: TileDrawer)
+          (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
     hand.selfKong(tile)
     gameLogger.kong(id, tile)
     draw(drawer)
   }
 
-  def pong(tile: Tile)(implicit gameLogger: GameLogger): Tile = {
+  def pong(tile: Tile)
+          (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): Tile = {
     hand.pong(tile)
     gameLogger.pong(id, tile)
     val discarded = discard()
@@ -58,7 +61,8 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
     discarded
   }
 
-  def chow(tile: Tile, position: ChowPosition)(implicit gameLogger: GameLogger): Tile = {
+  def chow(tile: Tile, position: ChowPosition)
+          (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): Tile = {
     hand.chow(tile, position)
     gameLogger.chow(id, tile, position)
     val discarded = discard()
@@ -66,11 +70,12 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
     discarded
   }
 
-  def draw(drawer: TileDrawer)(implicit gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
+  def draw(drawer: TileDrawer)
+          (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
     drawer.pop() match {
       case Some(drawnTile) =>
         // check self win
-        if (hand.canWin(drawnTile) && decideWin(drawnTile, isSelfWin = true))
+        if (hand.canWin(drawnTile) && decideSelfWin(drawnTile, stateGenerator.curState(id)))
           (WIN, Some(drawnTile))
         else {
           // check self kong
@@ -88,32 +93,35 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
     }
   }
 
-  def discard()(implicit gameLogger: GameLogger): Tile = {
-    val discarded = decideDiscard()
+  def discard()(implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): Tile = {
+    val discarded = decideDiscard(stateGenerator.curState(id))
     if (!hand.tiles.contains(discarded))
       throw new Exception(s"Player $id: discarded tile $discarded does not exist in ${hand.tiles}")
     discarded
   }
 
+  override def toString = hand.toString
+
   // abstract decision method
-  def decideWin(tile: Tile, isSelfWin: Boolean): Boolean
-  def decideSelfKong(selfKongTiles: Set[Tile]): Option[Tile]
-  def decideKong(tile: Tile): Boolean
-  def decidePong(tile: Tile): Boolean
-  def decideChow(tile: Tile, positions: Set[ChowPosition]): Option[ChowPosition]
-  def decideDiscard(): Tile
+  def decideSelfWin(tile: Tile, curState: CurState): Boolean
+  def decideWin(tile: Tile, curState: CurState): Boolean
+  def decideSelfKong(selfKongTiles: Set[Tile], curState: CurState): Option[Tile]
+  def decideKong(tile: Tile, curState: CurState): Boolean
+  def decidePong(tile: Tile, curState: CurState): Boolean
+  def decideChow(tile: Tile, positions: Set[ChowPosition], curState: CurState): Option[ChowPosition]
+  def decideDiscard(curState: CurState): Tile
 
   def name: String
-  override def toString = hand.toString
 }
 
 class DummyPlayer(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup]) extends Player(id, tiles, tileGroups) {
-  override def decideWin(tile: Tile, isSelfWin: Boolean): Boolean = true
-  override def decideSelfKong(selfKongTiles: Set[Tile]): Option[Tile] = selfKongTiles.headOption
-  override def decideKong(tile: Tile): Boolean = true
-  override def decidePong(tile: Tile): Boolean = true
-  override def decideChow(tile: Tile, positions: Set[ChowPosition]): Option[ChowPosition] = positions.headOption
-  override def decideDiscard(): Tile = hand.tiles.head
+  override def decideSelfWin(tile: Tile, curState: CurState): Boolean = true
+  override def decideWin(tile: Tile, curState: CurState): Boolean = true
+  override def decideSelfKong(selfKongTiles: Set[Tile], curState: CurState): Option[Tile] = selfKongTiles.headOption
+  override def decideKong(tile: Tile, curState: CurState): Boolean = true
+  override def decidePong(tile: Tile, curState: CurState): Boolean = true
+  override def decideChow(tile: Tile, positions: Set[ChowPosition], curState: CurState): Option[ChowPosition] = positions.headOption
+  override def decideDiscard(curState: CurState): Tile = hand.tiles.head
 
   override def name: String = this.getClass.getName
 }

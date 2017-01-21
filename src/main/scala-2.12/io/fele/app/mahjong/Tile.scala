@@ -108,6 +108,7 @@ object Tile {
 trait TileDrawer {
   def pop(): Option[Tile]
   def popHand(): List[Tile]
+  def remainingTileNum: Int
 }
 
 class RandomTileDrawer(seed: Option[Long] = None) extends TileDrawer {
@@ -127,10 +128,9 @@ class RandomTileDrawer(seed: Option[Long] = None) extends TileDrawer {
     curPos += 13
     drawnHandTile
   }
-}
 
-case class SelfInfo(tiles: List[Tile], tileGroups: List[TileGroup])
-case class OtherInfo(tileGroups: List[TileGroup])
+  override def remainingTileNum: Int = shuffledTiles.size - curPos
+}
 
 object RandomTileDrawer {
   val tiles: Seq[Tile] = TileValue.values.toSeq.sorted.flatMap(x => List.fill(4)(Tile(x)))

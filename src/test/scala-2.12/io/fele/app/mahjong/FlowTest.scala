@@ -5,6 +5,7 @@ import org.scalatest.{FreeSpec, Matchers}
 import org.scalatest.mockito.MockitoSugar
 import org.mockito.Mockito._
 import org.mockito.Matchers.any
+import org.mockito.Matchers.{eq => eqTo}
 import io.fele.app.mahjong.TileValue._
 
 /**
@@ -21,11 +22,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
   private def spyPlayer(dummpyPlayer: Player): Player = {
     val spyPlayer = spy(dummpyPlayer)
 
-    doReturn(false).when(spyPlayer).decideWin(any[Tile], any[Boolean])
-    doReturn(false).when(spyPlayer).decideKong(any[Tile])
-    doReturn(None).when(spyPlayer).decideSelfKong(any[Set[Tile]])
-    doReturn(false).when(spyPlayer).decidePong(any[Tile])
-    doReturn(None).when(spyPlayer).decideChow(any[Tile], any[Set[ChowPosition]])
+    doReturn(false).when(spyPlayer).decideWin(any[Tile], any[CurState])
+    doReturn(false).when(spyPlayer).decideSelfWin(any[Tile], any[CurState])
+    doReturn(false).when(spyPlayer).decideKong(any[Tile], any[CurState])
+    doReturn(None).when(spyPlayer).decideSelfKong(any[Set[Tile]], any[CurState])
+    doReturn(false).when(spyPlayer).decidePong(any[Tile], any[CurState])
+    doReturn(None).when(spyPlayer).decideChow(any[Tile], any[Set[ChowPosition]], any[CurState])
     spyPlayer
   }
 
@@ -45,15 +47,17 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_7, CHARACTER_8, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
 
-      doReturn(true).when(subjectPlayers).decideWin(BAMBOO_3, isSelfWin = false)
+      doReturn(true).when(subjectPlayers).decideWin(eqTo(BAMBOO_3), any[CurState])
       when(f.drawer.pop()).thenReturn(Some(Tile(BAMBOO_6)))
 
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
         None,
-        List.empty[Tile],
+        List.empty[(Int,Tile)],
         1)
+
+      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
 
       val flow = new FlowImpl(gameState, f.drawer)
 
@@ -64,11 +68,11 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       discarded should equal(None)
       gameState.winners should equal(Set(subjectPlayers.id))
       gameState.winningTile should equal(Some(Tile(BAMBOO_3)))
-      verify(subjectPlayers, never()).draw(f.drawer)
-      verify(subjectPlayers, never()).discard()
-      verify(subjectPlayers, never()).kong(any[Tile], any[TileDrawer])(any[GameLogger])
-      verify(subjectPlayers, never()).pong(any[Tile])(any[GameLogger])
-      verify(subjectPlayers, never()).chow(any[Tile], any[ChowPosition])(any[GameLogger])
+      verify(subjectPlayers, never()).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).discard()(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).kong(any[Tile], any[TileDrawer])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).pong(any[Tile])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).chow(any[Tile], any[ChowPosition])(any[CurStateGenerator], any[GameLogger])
     }
 
     "kong" in {
@@ -86,16 +90,18 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_5, CHARACTER_1, CHARACTER_2, CHARACTER_2, CHARACTER_9, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_BLUE),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
 
-      doReturn(true).when(subjectPlayers).decideKong(CHARACTER_9)
+      doReturn(true).when(subjectPlayers).decideKong(eqTo(CHARACTER_9), any[CurState])
       when(f.drawer.pop()).thenReturn(Some[Tile](CHARACTER_2))
-      doReturn(Tile(CHARACTER_2)).when(subjectPlayers).decideDiscard()
+      doReturn(Tile(CHARACTER_2)).when(subjectPlayers).decideDiscard(any[CurState])
 
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
         None,
-        List.empty[Tile],
+        List.empty[(Int,Tile)],
         1)
+
+      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
 
       val flow = new FlowImpl(gameState, f.drawer)
 
@@ -107,11 +113,11 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       gameState.winners should equal(Set.empty[Int])
       gameState.winningTile should equal(None)
       gameState.getCurPlayerId should equal(subjectPlayers.id)
-      assert(subjectPlayers.privateInfo().tileGroups.contains(KongGroup(CHARACTER_9)))
-      assert(!subjectPlayers.privateInfo().tiles.contains(Tile(CHARACTER_9)))
-      verify(subjectPlayers, times(1)).draw(f.drawer)
-      verify(subjectPlayers, times(1)).discard()
-      verify(subjectPlayers, times(1)).kong(CHARACTER_9, f.drawer)
+      assert(subjectPlayers.privateInfo.tileGroups.contains(KongGroup(CHARACTER_9)))
+      assert(!subjectPlayers.privateInfo.tiles.contains(Tile(CHARACTER_9)))
+      verify(subjectPlayers, times(1)).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).discard()(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).kong(eqTo(CHARACTER_9), eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
     }
 
     "kong twice" in {
@@ -130,17 +136,19 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_5, CHARACTER_1, CHARACTER_2, CHARACTER_2, CHARACTER_9, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_BLUE),
         List(PongGroup(CHARACTER_7))))
 
-      doReturn(true).when(subjectPlayers).decideKong(CHARACTER_9)
-      doReturn(Some(Tile(CHARACTER_7))).when(subjectPlayers).decideSelfKong(Set(CHARACTER_7))
+      doReturn(true).when(subjectPlayers).decideKong(eqTo(CHARACTER_9), any[CurState])
+      doReturn(Some(Tile(CHARACTER_7))).when(subjectPlayers).decideSelfKong(eqTo(Set(CHARACTER_7)), any[CurState])
       when(f.drawer.pop()).thenReturn(Some[Tile](CHARACTER_7)).thenReturn(Some[Tile](CHARACTER_2))
-      doReturn(Tile(CHARACTER_2)).when(subjectPlayers).decideDiscard()
+      doReturn(Tile(CHARACTER_2)).when(subjectPlayers).decideDiscard(any[CurState])
 
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
         None,
-        List.empty[Tile],
+        List.empty[(Int,Tile)],
         1)
+
+      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
 
       val flow = new FlowImpl(gameState, f.drawer)
 
@@ -152,14 +160,14 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       gameState.winners should equal(Set.empty[Int])
       gameState.winningTile should equal(None)
       gameState.getCurPlayerId should equal(subjectPlayers.id)
-      assert(subjectPlayers.privateInfo().tileGroups.contains(KongGroup(CHARACTER_9)))
-      assert(subjectPlayers.privateInfo().tileGroups.contains(KongGroup(CHARACTER_7)))
-      assert(!subjectPlayers.privateInfo().tiles.contains(Tile(CHARACTER_9)))
-      assert(!subjectPlayers.privateInfo().tiles.contains(Tile(CHARACTER_7)))
-      verify(subjectPlayers, times(2)).draw(f.drawer)
-      verify(subjectPlayers, times(1)).discard()
-      verify(subjectPlayers, times(1)).kong(CHARACTER_9, f.drawer)
-      verify(subjectPlayers, times(1)).selfKong(CHARACTER_7, f.drawer)
+      assert(subjectPlayers.privateInfo.tileGroups.contains(KongGroup(CHARACTER_9)))
+      assert(subjectPlayers.privateInfo.tileGroups.contains(KongGroup(CHARACTER_7)))
+      assert(!subjectPlayers.privateInfo.tiles.contains(Tile(CHARACTER_9)))
+      assert(!subjectPlayers.privateInfo.tiles.contains(Tile(CHARACTER_7)))
+      verify(subjectPlayers, times(2)).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).discard()(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).kong(eqTo(CHARACTER_9), eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).selfKong(eqTo(CHARACTER_7), eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
     }
 
     "kong then win" in {
@@ -178,18 +186,20 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_9, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(PongGroup(CHARACTER_7))))
 
-      doReturn(true).when(subjectPlayers).decideWin(Tile(HONOR_DRAGON_RED), isSelfWin = true)
-      doReturn(true).when(subjectPlayers).decideKong(CHARACTER_9)
-      doReturn(Some(Tile(CHARACTER_7))).when(subjectPlayers).decideSelfKong(Set(CHARACTER_7))
+      doReturn(true).when(subjectPlayers).decideSelfWin(eqTo(Tile(HONOR_DRAGON_RED)), any[CurState])
+      doReturn(true).when(subjectPlayers).decideKong(eqTo(CHARACTER_9), any[CurState])
+      doReturn(Some(Tile(CHARACTER_7))).when(subjectPlayers).decideSelfKong(eqTo(Set(CHARACTER_7)), any[CurState])
       when(f.drawer.pop()).thenReturn(Some[Tile](CHARACTER_7)).thenReturn(Some[Tile](HONOR_DRAGON_RED))
-      doReturn(Tile(CHARACTER_2)).when(subjectPlayers).decideDiscard()
+      doReturn(Tile(CHARACTER_2)).when(subjectPlayers).decideDiscard(any[CurState])
 
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
         None,
-        List.empty[Tile],
+        List.empty[(Int,Tile)],
         1)
+
+      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
 
       val flow = new FlowImpl(gameState, f.drawer)
 
@@ -201,14 +211,14 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       gameState.winners should equal(Set(subjectPlayers.id))
       gameState.winningTile should equal(Some(Tile(HONOR_DRAGON_RED)))
       gameState.getCurPlayerId should equal(subjectPlayers.id)
-      assert(subjectPlayers.privateInfo().tileGroups.contains(KongGroup(CHARACTER_9)))
-      assert(subjectPlayers.privateInfo().tileGroups.contains(KongGroup(CHARACTER_7)))
-      assert(!subjectPlayers.privateInfo().tiles.contains(Tile(CHARACTER_9)))
-      assert(!subjectPlayers.privateInfo().tiles.contains(Tile(CHARACTER_7)))
-      verify(subjectPlayers, times(2)).draw(f.drawer)
-      verify(subjectPlayers, never()).discard()
-      verify(subjectPlayers, times(1)).kong(CHARACTER_9, f.drawer)
-      verify(subjectPlayers, times(1)).selfKong(CHARACTER_7, f.drawer)
+      assert(subjectPlayers.privateInfo.tileGroups.contains(KongGroup(CHARACTER_9)))
+      assert(subjectPlayers.privateInfo.tileGroups.contains(KongGroup(CHARACTER_7)))
+      assert(!subjectPlayers.privateInfo.tiles.contains(Tile(CHARACTER_9)))
+      assert(!subjectPlayers.privateInfo.tiles.contains(Tile(CHARACTER_7)))
+      verify(subjectPlayers, times(2)).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).discard()(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).kong(eqTo(CHARACTER_9), eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).selfKong(eqTo(CHARACTER_7), eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
 
     }
 
@@ -229,16 +239,18 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_9, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(PongGroup(CHARACTER_7))))
 
-      doReturn(true).when(subjectPlayers).decideKong(CHARACTER_9)
-      doReturn(Some(Tile(CHARACTER_7))).when(subjectPlayers).decideSelfKong(Set(CHARACTER_7))
+      doReturn(true).when(subjectPlayers).decideKong(eqTo(CHARACTER_9), any[CurState])
+      doReturn(Some(Tile(CHARACTER_7))).when(subjectPlayers).decideSelfKong(eqTo(Set(CHARACTER_7)), any[CurState])
       when(f.drawer.pop()).thenReturn(Some[Tile](CHARACTER_7)).thenReturn(None)
 
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
         None,
-        List.empty[Tile],
+        List.empty[(Int,Tile)],
         1)
+
+      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
 
       val flow = new FlowImpl(gameState, f.drawer)
 
@@ -250,14 +262,14 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       gameState.winners should equal(Set.empty[Int])
       gameState.winningTile should equal(None)
       gameState.getCurPlayerId should equal(subjectPlayers.id)
-      assert(subjectPlayers.privateInfo().tileGroups.contains(KongGroup(CHARACTER_9)))
-      assert(subjectPlayers.privateInfo().tileGroups.contains(KongGroup(CHARACTER_7)))
-      assert(!subjectPlayers.privateInfo().tiles.contains(Tile(CHARACTER_9)))
-      assert(!subjectPlayers.privateInfo().tiles.contains(Tile(CHARACTER_7)))
-      verify(subjectPlayers, times(2)).draw(f.drawer)
-      verify(subjectPlayers, never()).discard()
-      verify(subjectPlayers, times(1)).kong(CHARACTER_9, f.drawer)
-      verify(subjectPlayers, times(1)).selfKong(CHARACTER_7, f.drawer)
+      assert(subjectPlayers.privateInfo.tileGroups.contains(KongGroup(CHARACTER_9)))
+      assert(subjectPlayers.privateInfo.tileGroups.contains(KongGroup(CHARACTER_7)))
+      assert(!subjectPlayers.privateInfo.tiles.contains(Tile(CHARACTER_9)))
+      assert(!subjectPlayers.privateInfo.tiles.contains(Tile(CHARACTER_7)))
+      verify(subjectPlayers, times(2)).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).discard()(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).kong(eqTo(CHARACTER_9), eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).selfKong(eqTo(CHARACTER_7), eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
 
     }
 
@@ -276,15 +288,17 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_5, CHARACTER_1, CHARACTER_2, CHARACTER_2, CHARACTER_8, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_BLUE),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
 
-      doReturn(true).when(subjectPlayers).decidePong(CHARACTER_9)
-      doReturn(Tile(CHARACTER_2)).when(subjectPlayers).decideDiscard()
+      doReturn(true).when(subjectPlayers).decidePong(eqTo(CHARACTER_9), any[CurState])
+      doReturn(Tile(CHARACTER_2)).when(subjectPlayers).decideDiscard(any[CurState])
 
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
         None,
-        List.empty[Tile],
+        List.empty[(Int,Tile)],
         1)
+
+      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
 
       val flow = new FlowImpl(gameState, f.drawer)
 
@@ -296,11 +310,11 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       gameState.winners should equal(Set.empty[Int])
       gameState.winningTile should equal(None)
       gameState.getCurPlayerId should equal(subjectPlayers.id)
-      assert(subjectPlayers.privateInfo().tileGroups.contains(PongGroup(CHARACTER_9)))
-      assert(!subjectPlayers.privateInfo().tiles.contains(Tile(CHARACTER_9)))
-      verify(subjectPlayers, never()).draw(f.drawer)
-      verify(subjectPlayers, times(1)).discard()
-      verify(subjectPlayers, times(1)).pong(CHARACTER_9)
+      assert(subjectPlayers.privateInfo.tileGroups.contains(PongGroup(CHARACTER_9)))
+      assert(!subjectPlayers.privateInfo.tiles.contains(Tile(CHARACTER_9)))
+      verify(subjectPlayers, never()).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).discard()(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).pong(eqTo(CHARACTER_9))(any[CurStateGenerator], any[GameLogger])
     }
 
     "Chow" in {
@@ -318,15 +332,17 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_5, CHARACTER_1, CHARACTER_2, CHARACTER_8, CHARACTER_8, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_BLUE),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
 
-      doReturn(Some(ChowPosition.RIGHT)).when(subjectPlayers).decideChow(CHARACTER_3, Set(ChowPosition.RIGHT))
-      doReturn(Tile(BAMBOO_3)).when(subjectPlayers).decideDiscard()
+      doReturn(Some(ChowPosition.RIGHT)).when(subjectPlayers).decideChow(eqTo(CHARACTER_3), eqTo(Set(ChowPosition.RIGHT)), any[CurState])
+      doReturn(Tile(BAMBOO_3)).when(subjectPlayers).decideDiscard(any[CurState])
 
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
         None,
-        List.empty[Tile],
+        List.empty[(Int,Tile)],
         2)
+
+      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
 
       val flow = new FlowImpl(gameState, f.drawer)
 
@@ -338,13 +354,13 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       gameState.winners should equal(Set.empty[Int])
       gameState.winningTile should equal(None)
       gameState.getCurPlayerId should equal(subjectPlayers.id)
-      assert(subjectPlayers.privateInfo().tileGroups.contains(ChowGroup(Set[Tile](CHARACTER_1, CHARACTER_2, CHARACTER_3))))
-      assert(!subjectPlayers.privateInfo().tiles.contains(Tile(CHARACTER_1)))
-      assert(!subjectPlayers.privateInfo().tiles.contains(Tile(CHARACTER_2)))
-      assert(!subjectPlayers.privateInfo().tiles.contains(Tile(CHARACTER_3)))
-      verify(subjectPlayers, never()).draw(f.drawer)
-      verify(subjectPlayers, times(1)).discard()
-      verify(subjectPlayers, times(1)).chow(CHARACTER_3, ChowPosition.RIGHT)
+      assert(subjectPlayers.privateInfo.tileGroups.contains(ChowGroup(Set[Tile](CHARACTER_1, CHARACTER_2, CHARACTER_3))))
+      assert(!subjectPlayers.privateInfo.tiles.contains(Tile(CHARACTER_1)))
+      assert(!subjectPlayers.privateInfo.tiles.contains(Tile(CHARACTER_2)))
+      assert(!subjectPlayers.privateInfo.tiles.contains(Tile(CHARACTER_3)))
+      verify(subjectPlayers, never()).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).discard()(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).chow(eqTo(CHARACTER_3), eqTo(ChowPosition.RIGHT))(any[CurStateGenerator], any[GameLogger])
     }
 
     "draw and discard" in {
@@ -362,15 +378,17 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_5, CHARACTER_1, CHARACTER_2, CHARACTER_2, CHARACTER_8, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_BLUE),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
 
-      doReturn(Tile(BAMBOO_3)).when(subjectPlayers).decideDiscard()
+      doReturn(Tile(BAMBOO_3)).when(subjectPlayers).decideDiscard(any[CurState])
       when(f.drawer.pop()).thenReturn(Some(Tile(DOT_1)))
 
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
         None,
-        List.empty[Tile],
+        List.empty[(Int,Tile)],
         2)
+
+      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
 
       val flow = new FlowImpl(gameState, f.drawer)
 
@@ -382,11 +400,11 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       gameState.winners should equal(Set.empty[Int])
       gameState.winningTile should equal(None)
       gameState.getCurPlayerId should equal(subjectPlayers.id)
-      verify(subjectPlayers, times(1)).draw(f.drawer)
-      verify(subjectPlayers, times(1)).discard()
-      verify(subjectPlayers, never()).kong(any[Tile], any[TileDrawer])(any[GameLogger])
-      verify(subjectPlayers, never()).pong(any[Tile])(any[GameLogger])
-      verify(subjectPlayers, never()).chow(any[Tile], any[ChowPosition])(any[GameLogger])
+      verify(subjectPlayers, times(1)).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).discard()(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).kong(any[Tile], any[TileDrawer])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).pong(any[Tile])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).chow(any[Tile], any[ChowPosition])(any[CurStateGenerator], any[GameLogger])
     }
 
     "draw and win" in {
@@ -404,15 +422,17 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_7, CHARACTER_8, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
 
-      doReturn(true).when(subjectPlayers).decideWin(BAMBOO_3, isSelfWin = true)
+      doReturn(true).when(subjectPlayers).decideSelfWin(eqTo(BAMBOO_3), any[CurState])
       when(f.drawer.pop()).thenReturn(Some(Tile(BAMBOO_3)))
 
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
         None,
-        List.empty[Tile],
+        List.empty[(Int,Tile)],
         2)
+
+      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
 
       val flow = new FlowImpl(gameState, f.drawer)
 
@@ -424,11 +444,11 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       gameState.winners should equal(Set(subjectPlayers.id))
       gameState.winningTile should equal(Some(Tile(BAMBOO_3)))
       gameState.getCurPlayerId should equal(subjectPlayers.id)
-      verify(subjectPlayers, times(1)).draw(f.drawer)
-      verify(subjectPlayers, never()).discard()
-      verify(subjectPlayers, never()).kong(any[Tile], any[TileDrawer])(any[GameLogger])
-      verify(subjectPlayers, never()).pong(any[Tile])(any[GameLogger])
-      verify(subjectPlayers, never()).chow(any[Tile], any[ChowPosition])(any[GameLogger])
+      verify(subjectPlayers, times(1)).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).discard()(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).kong(any[Tile], any[TileDrawer])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).pong(any[Tile])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).chow(any[Tile], any[ChowPosition])(any[CurStateGenerator], any[GameLogger])
     }
 
     "all tiles has been drawn" in {
@@ -446,15 +466,17 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_7, CHARACTER_8, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
 
-      doReturn(true).when(subjectPlayers).decideWin(BAMBOO_3, isSelfWin = true)
+      doReturn(true).when(subjectPlayers).decideSelfWin(eqTo(BAMBOO_3), any[CurState])
       when(f.drawer.pop()).thenReturn(None)
 
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
         None,
-        List.empty[Tile],
+        List.empty[(Int,Tile)],
         2)
+
+      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
 
       val flow = new FlowImpl(gameState, f.drawer)
 
@@ -466,11 +488,11 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       gameState.winners should equal(Set.empty[Int])
       gameState.winningTile should equal(None)
       gameState.getCurPlayerId should equal(subjectPlayers.id)
-      verify(subjectPlayers, times(1)).draw(f.drawer)
-      verify(subjectPlayers, never()).discard()
-      verify(subjectPlayers, never()).kong(any[Tile], any[TileDrawer])(any[GameLogger])
-      verify(subjectPlayers, never()).pong(any[Tile])(any[GameLogger])
-      verify(subjectPlayers, never()).chow(any[Tile], any[ChowPosition])(any[GameLogger])
+      verify(subjectPlayers, times(1)).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).discard()(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).kong(any[Tile], any[TileDrawer])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).pong(any[Tile])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).chow(any[Tile], any[ChowPosition])(any[CurStateGenerator], any[GameLogger])
     }
   }
   // TODO: add test case for wrong decisiton
