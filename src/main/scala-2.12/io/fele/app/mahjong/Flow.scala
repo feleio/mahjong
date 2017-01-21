@@ -4,8 +4,8 @@ import java.util.Random
 
 import com.typesafe.scalalogging.Logger
 import io.fele.app.mahjong.ChowPosition.ChowPosition
-import io.fele.app.mahjong.DrawResult._
-import io.fele.app.mahjong.player.Chicken
+import io.fele.app.mahjong.player.DrawResult._
+import io.fele.app.mahjong.player.{Chicken, Dummy, Player}
 
 /**
   * Created by felix.ling on 12/12/2016.
@@ -153,7 +153,7 @@ object Main extends App{
 
     val drawer: TileDrawer = new RandomTileDrawer(Some(roundNum))
     val state = GameState(
-      new Chicken(0, drawer.popHand()) :: (1 to 3).map(new DummyPlayer(_, drawer.popHand())).toList,
+      new Chicken(0, drawer.popHand()) :: (1 to 3).map(new Dummy(_, drawer.popHand())).toList,
       Set.empty[Int],
       None,
       Nil,

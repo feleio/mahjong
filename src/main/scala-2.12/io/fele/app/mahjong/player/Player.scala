@@ -1,6 +1,7 @@
-package io.fele.app.mahjong
+package io.fele.app.mahjong.player
 
 import io.fele.app.mahjong.ChowPosition.ChowPosition
+import io.fele.app.mahjong._
 
 /**
   * Created by felix.ling on 12/12/2016.
@@ -10,7 +11,7 @@ object DrawResult extends Enumeration {
   val DISCARD, NO_TILE, WIN = Value
 }
 
-import DrawResult._
+import io.fele.app.mahjong.player.DrawResult._
 
 abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup]) {
   // TODO: change to private
@@ -112,16 +113,4 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   def decideDiscard(curState: CurState): Tile
 
   def name: String
-}
-
-class DummyPlayer(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup]) extends Player(id, tiles, tileGroups) {
-  override def decideSelfWin(tile: Tile, curState: CurState): Boolean = true
-  override def decideWin(tile: Tile, curState: CurState): Boolean = true
-  override def decideSelfKong(selfKongTiles: Set[Tile], curState: CurState): Option[Tile] = selfKongTiles.headOption
-  override def decideKong(tile: Tile, curState: CurState): Boolean = true
-  override def decidePong(tile: Tile, curState: CurState): Boolean = true
-  override def decideChow(tile: Tile, positions: Set[ChowPosition], curState: CurState): Option[ChowPosition] = positions.headOption
-  override def decideDiscard(curState: CurState): Tile = hand.tiles.head
-
-  override def name: String = this.getClass.getName
 }
