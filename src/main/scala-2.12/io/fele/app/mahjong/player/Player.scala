@@ -17,6 +17,8 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   // TODO: change to private
   protected val hand = new Hand(tiles, tileGroups)
 
+  var discardDecision: Option[Tile] = None
+
   def privateInfo = PrivateState(hand.tiles, hand.fixedTileGroups)
   def publicInfo = PublicState(hand.fixedTileGroups)
 
@@ -95,11 +97,16 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   }
 
   def discard()(implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): Tile = {
-    val discarded = decideDiscard(stateGenerator.curState(id))
+    val discarded = discardDecision match {
+      case Some(decision) => discardDecision = None; decision
+      case None => decideDiscard(stateGenerator.curState(id))
+    }
     if (!hand.tiles.contains(discarded))
       throw new Exception(s"Player $id: discarded tile $discarded does not exist in ${hand.tiles}")
     discarded
   }
+
+  def overrideDiscardDecision(decision: Tile): Unit = discardDecision = Some(decision)
 
   override def toString = hand.toString
 

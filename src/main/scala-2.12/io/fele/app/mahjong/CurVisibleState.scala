@@ -12,12 +12,12 @@ case class CurState(myInfo: PrivateState,
                     curPlayerId: Int,
                     remainTileNum: Int)
 
-class CurStateGenerator(val gameState: GameState, val tileDrawer: TileDrawer) {
+class CurStateGenerator(val gameState: GameState) {
   def curState(playerId: Int): CurState = CurState(
     gameState.players(playerId).privateInfo,
     (1 to 3).map(id => gameState.players((id + playerId) % 4).publicInfo).toList,
     gameState.discards,
     gameState.curPlayerId,
-    tileDrawer.remainingTileNum
+    gameState.drawer.remainingTileNum
   )
 }

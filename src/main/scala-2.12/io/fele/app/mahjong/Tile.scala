@@ -105,16 +105,24 @@ object Tile {
   }
 }
 
+case class DrawerState(shuffledTiles: Seq[Tile], curPos: Int)
+
 trait TileDrawer {
   def pop(): Option[Tile]
   def popHand(): List[Tile]
   def remainingTileNum: Int
+  def drawerState: DrawerState
 }
 
-class RandomTileDrawer(seed: Option[Long] = None) extends TileDrawer {
+class RandomTileDrawer(
+  seed: Option[Long] = None,
+  tiles: Option[Seq[Tile]] = None,
+  var curPos: Int = 0) extends TileDrawer {
   // Seq of Tiles for drawing in one game, 4 of each kind of Tile.
-  var shuffledTiles = ( if (seed.isDefined) new Random(seed.get) else new Random()).shuffle(RandomTileDrawer.tiles)
-  var curPos = 0
+  var shuffledTiles = tiles match {
+    case Some(ts) => ts
+    case None => ( if (seed.isDefined) new Random(seed.get) else new Random()).shuffle(RandomTileDrawer.tiles)
+  }
 
   override def pop(): Option[Tile] = {
     if (curPos < RandomTileDrawer.tilesNum) {
@@ -130,6 +138,7 @@ class RandomTileDrawer(seed: Option[Long] = None) extends TileDrawer {
   }
 
   override def remainingTileNum: Int = shuffledTiles.size - curPos
+  override def drawerState: DrawerState = DrawerState(shuffledTiles, curPos)
 }
 
 object RandomTileDrawer {
