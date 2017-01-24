@@ -4,8 +4,8 @@ import java.util.Random
 
 import com.typesafe.scalalogging.Logger
 import io.fele.app.mahjong.ChowPosition.ChowPosition
-import io.fele.app.mahjong.DrawResult._
-import io.fele.app.mahjong.player.Chicken
+import io.fele.app.mahjong.player.DrawResult._
+import io.fele.app.mahjong.player.{Chicken, Dummy, Player}
 
 /**
   * Created by felix.ling on 12/12/2016.
@@ -15,7 +15,8 @@ case class GameState(players: List[Player],
                      var winners: Set[Int],
                      var winningTile: Option[Tile],
                      var discards: List[(Int, Tile)],
-                     var curPlayerId: Int){
+                     var curPlayerId: Int,
+                     val drawer: TileDrawer){
   def addDiscarded(tile: Tile) = discards = (curPlayerId, tile) :: discards
   def setCurPlayer(playerId: Int) = curPlayerId = playerId
 
@@ -30,14 +31,15 @@ case class GameState(players: List[Player],
 
 trait Flow {
   def start(): GameResult
+  def resume(discarded: Option[Tile]): GameResult
 }
 
-class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] = None)
+class FlowImpl(val state: GameState, seed: Option[Long] = None)
           (implicit gameLogger: GameLogger) extends Flow{
   // logger
   val logger = Logger(classOf[Flow])
 
-  implicit val curStateGenerator = new CurStateGenerator(state, drawer)
+  implicit val curStateGenerator = new CurStateGenerator(state)
 
   private def checkPlayersTile(f: ((Int, Player)) => Boolean): Set[Int] = {
     state.otherPlayers().filter(f).map(_._1).toSet
@@ -97,7 +99,7 @@ class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] 
       None
     case KongableTile(playerId) =>
       state.setCurPlayer(playerId)
-      state.curPlayer().kong(discardedTile, drawer) match {
+      state.curPlayer().kong(discardedTile, state.drawer) match {
         case (DISCARD, discarded: Option[Tile]) => discarded
         case (WIN, Some(winningTile)) => state.winners = Set(playerId); state.winningTile = Some(winningTile); None
         case (NO_TILE, _) => None
@@ -111,7 +113,7 @@ class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] 
     case _ =>
       state.addDiscarded(discardedTile)
       state.setCurPlayer(state.getNextPlayerId)
-      state.curPlayer().draw(drawer) match {
+      state.curPlayer().draw(state.drawer) match {
         case (DISCARD, discarded: Option[Tile]) => discarded
         case (WIN, Some(winningTile)) => state.winners = Set(state.getCurPlayerId); state.winningTile = Some(winningTile); None
         case (NO_TILE, _) => None
@@ -122,7 +124,7 @@ class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] 
     gameLogger.start()
 
     // TODO: check if kong at the first place is allowed?
-    var discardedTile = state.curPlayer().draw(drawer) match {
+    var discardedTile = state.curPlayer().draw(state.drawer) match {
       case (DISCARD, discarded: Option[Tile]) => discarded
       case (WIN, Some(winningTile)) => state.winners = Set(state.getCurPlayerId); state.winningTile = Some(winningTile); None
     }
@@ -131,11 +133,19 @@ class FlowImpl(val state: GameState, val drawer: TileDrawer, seed: Option[Long] 
       gameLogger.discard(state.getCurPlayerId, discardedTile.get)
       discardedTile = round(discardedTile.get)
     }
-    if (state.winners.nonEmpty)
-      gameLogger.win(state.winners, state.winningTile.get)
-    else
-      gameLogger.noOneWin()
+    gameLogger.end(state.winners, state.winningTile)
+    GameResult(state.winners)
+  }
 
+  override def resume(discarded: Option[Tile]): GameResult = {
+    gameLogger.resume()
+
+    var discardedTile = discarded
+    while (discardedTile.isDefined) {
+      gameLogger.discard(state.getCurPlayerId, discardedTile.get)
+      discardedTile = round(discardedTile.get)
+    }
+    gameLogger.end(state.winners, state.winningTile)
     GameResult(state.winners)
   }
 }
@@ -153,14 +163,15 @@ object Main extends App{
 
     val drawer: TileDrawer = new RandomTileDrawer(Some(roundNum))
     val state = GameState(
-      new Chicken(0, drawer.popHand()) :: (1 to 3).map(new DummyPlayer(_, drawer.popHand())).toList,
+      new Chicken(0, drawer.popHand()) :: (1 to 3).map(new Dummy(_, drawer.popHand())).toList,
       Set.empty[Int],
       None,
       Nil,
-      new Random(roundNum).nextInt(4))
+      new Random(roundNum).nextInt(4),
+      drawer)
 
     implicit val gameLogger: GameLogger = new DebugGameLogger(state)
-    val flow: Flow = new FlowImpl(state, drawer, Some(roundNum))
+    val flow: Flow = new FlowImpl(state, Some(roundNum))
 
     flow.start()
   })

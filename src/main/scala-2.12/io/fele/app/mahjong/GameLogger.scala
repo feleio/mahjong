@@ -11,13 +11,13 @@ import scala.io.StdIn.readLine
 trait
 GameLogger {
   def start()
+  def resume()
   def discard(playerId: Int, tile: Tile)
   def kong(playerId: Int, tile: Tile)
   def pong(playerId: Int, tile: Tile)
   def chow(playerId: Int, tile: Tile, position: ChowPosition)
-  def win(playerIds: Set[Int], winningTile: Tile)
+  def end(playerIds: Set[Int], winningTile: Option[Tile])
   def draw(playerId: Int, tile: Tile)
-  def noOneWin()
 }
 
 class DebugGameLogger(val gameState: GameState)(implicit val config: Config) extends GameLogger {
@@ -31,6 +31,8 @@ class DebugGameLogger(val gameState: GameState)(implicit val config: Config) ext
       }
     )
     logger.debug(s"discards: ${gameState.discards.mkString(", ")}\n")
+    logger.debug(s"drawer tiles: ${gameState.drawer.drawerState.shuffledTiles}")
+    logger.debug(s"drawer curPos: ${gameState.drawer.drawerState.curPos}")
   }
 
   private def logAndPause(msg: String): Unit = {
@@ -40,11 +42,14 @@ class DebugGameLogger(val gameState: GameState)(implicit val config: Config) ext
   }
 
   def start() = logAndPause("Game Start.")
+  def resume() = logAndPause("Game Resume.")
   def discard(playerId: Int, tile: Tile) = logAndPause(s"player $playerId > discarded ${tile.toString}")
   def kong(playerId: Int, tile: Tile) = logAndPause(s"player $playerId < kong with ${tile.toString}")
   def pong(playerId: Int, tile: Tile) = logAndPause(s"player $playerId < pong with ${tile.toString}")
   def chow(playerId: Int, tile: Tile, position: ChowPosition) = logAndPause(s"player $playerId < chow with ${tile.toString} in position $position")
-  def win(playerIds: Set[Int], winningTile: Tile) = logAndPause(s"player ${playerIds.mkString(", ")} < wins with ${winningTile.toString}")
+  def end(playerIds: Set[Int], winningTile: Option[Tile]) = playerIds.size match {
+    case 0 => logAndPause(s"no player wins")
+    case _ => logAndPause(s"player ${playerIds.mkString(", ")} < wins with ${winningTile.get.toString}")
+  }
   def draw(playerId: Int, tile: Tile) = logAndPause(s"player $playerId < draws ${tile.toString}")
-  def noOneWin() = logAndPause(s"no player wins")
 }

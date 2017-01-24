@@ -1,6 +1,7 @@
-package io.fele.app.mahjong
+package io.fele.app.mahjong.player
 
 import io.fele.app.mahjong.ChowPosition.ChowPosition
+import io.fele.app.mahjong._
 
 /**
   * Created by felix.ling on 12/12/2016.
@@ -10,11 +11,13 @@ object DrawResult extends Enumeration {
   val DISCARD, NO_TILE, WIN = Value
 }
 
-import DrawResult._
+import io.fele.app.mahjong.player.DrawResult._
 
 abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup]) {
   // TODO: change to private
   protected val hand = new Hand(tiles, tileGroups)
+
+  var discardDecision: Option[Tile] = None
 
   def privateInfo = PrivateState(hand.tiles, hand.fixedTileGroups)
   def publicInfo = PublicState(hand.fixedTileGroups)
@@ -94,11 +97,16 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   }
 
   def discard()(implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): Tile = {
-    val discarded = decideDiscard(stateGenerator.curState(id))
+    val discarded = discardDecision match {
+      case Some(decision) => discardDecision = None; decision
+      case None => decideDiscard(stateGenerator.curState(id))
+    }
     if (!hand.tiles.contains(discarded))
       throw new Exception(s"Player $id: discarded tile $discarded does not exist in ${hand.tiles}")
     discarded
   }
+
+  def overrideDiscardDecision(decision: Tile): Unit = discardDecision = Some(decision)
 
   override def toString = hand.toString
 
@@ -112,16 +120,4 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   def decideDiscard(curState: CurState): Tile
 
   def name: String
-}
-
-class DummyPlayer(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup]) extends Player(id, tiles, tileGroups) {
-  override def decideSelfWin(tile: Tile, curState: CurState): Boolean = true
-  override def decideWin(tile: Tile, curState: CurState): Boolean = true
-  override def decideSelfKong(selfKongTiles: Set[Tile], curState: CurState): Option[Tile] = selfKongTiles.headOption
-  override def decideKong(tile: Tile, curState: CurState): Boolean = true
-  override def decidePong(tile: Tile, curState: CurState): Boolean = true
-  override def decideChow(tile: Tile, positions: Set[ChowPosition], curState: CurState): Option[ChowPosition] = positions.headOption
-  override def decideDiscard(curState: CurState): Tile = hand.tiles.head
-
-  override def name: String = this.getClass.getName
 }

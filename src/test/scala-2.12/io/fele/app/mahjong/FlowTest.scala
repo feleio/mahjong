@@ -7,6 +7,7 @@ import org.mockito.Mockito._
 import org.mockito.Matchers.any
 import org.mockito.Matchers.{eq => eqTo}
 import io.fele.app.mahjong.TileValue._
+import io.fele.app.mahjong.player.{Dummy, Player}
 
 /**
   * Created by felix.ling on 04/01/2017.
@@ -41,8 +42,8 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       )
 
       // Given
-      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new DummyPlayer(i, playerTiles(i)._1, playerTiles(i)._2)))
-      val subjectPlayers = spyPlayer(new DummyPlayer(
+      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new Dummy(i, playerTiles(i)._1, playerTiles(i)._2)))
+      val subjectPlayers = spyPlayer(new Dummy(
         3,
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_7, CHARACTER_8, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
@@ -55,11 +56,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         Set.empty[Int],
         None,
         List.empty[(Int,Tile)],
-        1)
+        1,
+        f.drawer)
 
-      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
+      implicit val stateGenerator = new CurStateGenerator(gameState)
 
-      val flow = new FlowImpl(gameState, f.drawer)
+      val flow = new FlowImpl(gameState)
 
       // When
       val discarded: Option[Tile] = flow.round(BAMBOO_3)
@@ -84,8 +86,8 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       )
 
       // Given
-      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new DummyPlayer(i, playerTiles(i)._1, playerTiles(i)._2)))
-      val subjectPlayers = spyPlayer(new DummyPlayer(
+      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new Dummy(i, playerTiles(i)._1, playerTiles(i)._2)))
+      val subjectPlayers = spyPlayer(new Dummy(
         3,
         List[Tile](BAMBOO_3, BAMBOO_5, CHARACTER_1, CHARACTER_2, CHARACTER_2, CHARACTER_9, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_BLUE),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
@@ -99,11 +101,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         Set.empty[Int],
         None,
         List.empty[(Int,Tile)],
-        1)
+        1,
+        f.drawer)
 
-      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
+      implicit val stateGenerator = new CurStateGenerator(gameState)
 
-      val flow = new FlowImpl(gameState, f.drawer)
+      val flow = new FlowImpl(gameState)
 
       // When
       val discarded: Option[Tile] = flow.round(CHARACTER_9)
@@ -130,8 +133,8 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       )
 
       // Given
-      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new DummyPlayer(i, playerTiles(i)._1, playerTiles(i)._2)))
-      val subjectPlayers = spyPlayer(new DummyPlayer(
+      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new Dummy(i, playerTiles(i)._1, playerTiles(i)._2)))
+      val subjectPlayers = spyPlayer(new Dummy(
         3,
         List[Tile](BAMBOO_3, BAMBOO_5, CHARACTER_1, CHARACTER_2, CHARACTER_2, CHARACTER_9, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_BLUE),
         List(PongGroup(CHARACTER_7))))
@@ -146,11 +149,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         Set.empty[Int],
         None,
         List.empty[(Int,Tile)],
-        1)
+        1,
+        f.drawer)
 
-      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
+      implicit val stateGenerator = new CurStateGenerator(gameState)
 
-      val flow = new FlowImpl(gameState, f.drawer)
+      val flow = new FlowImpl(gameState)
 
       // When
       val discarded: Option[Tile] = flow.round(CHARACTER_9)
@@ -180,8 +184,8 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       )
 
       // Given
-      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new DummyPlayer(i, playerTiles(i)._1, playerTiles(i)._2)))
-      val subjectPlayers = spyPlayer(new DummyPlayer(
+      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new Dummy(i, playerTiles(i)._1, playerTiles(i)._2)))
+      val subjectPlayers = spyPlayer(new Dummy(
         3,
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_9, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(PongGroup(CHARACTER_7))))
@@ -197,11 +201,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         Set.empty[Int],
         None,
         List.empty[(Int,Tile)],
-        1)
+        1,
+        f.drawer)
 
-      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
+      implicit val stateGenerator = new CurStateGenerator(gameState)
 
-      val flow = new FlowImpl(gameState, f.drawer)
+      val flow = new FlowImpl(gameState)
 
       // When
       val discarded: Option[Tile] = flow.round(CHARACTER_9)
@@ -233,8 +238,8 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       )
 
       // Given
-      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new DummyPlayer(i, playerTiles(i)._1, playerTiles(i)._2)))
-      val subjectPlayers = spyPlayer(new DummyPlayer(
+      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new Dummy(i, playerTiles(i)._1, playerTiles(i)._2)))
+      val subjectPlayers = spyPlayer(new Dummy(
         3,
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_9, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(PongGroup(CHARACTER_7))))
@@ -248,11 +253,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         Set.empty[Int],
         None,
         List.empty[(Int,Tile)],
-        1)
+        1,
+        f.drawer)
 
-      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
+      implicit val stateGenerator = new CurStateGenerator(gameState)
 
-      val flow = new FlowImpl(gameState, f.drawer)
+      val flow = new FlowImpl(gameState)
 
       // When
       val discarded: Option[Tile] = flow.round(CHARACTER_9)
@@ -282,8 +288,8 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       )
 
       // Given
-      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new DummyPlayer(i, playerTiles(i)._1, playerTiles(i)._2)))
-      val subjectPlayers = spyPlayer(new DummyPlayer(
+      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new Dummy(i, playerTiles(i)._1, playerTiles(i)._2)))
+      val subjectPlayers = spyPlayer(new Dummy(
         3,
         List[Tile](BAMBOO_3, BAMBOO_5, CHARACTER_1, CHARACTER_2, CHARACTER_2, CHARACTER_8, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_BLUE),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
@@ -296,11 +302,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         Set.empty[Int],
         None,
         List.empty[(Int,Tile)],
-        1)
+        1,
+        f.drawer)
 
-      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
+      implicit val stateGenerator = new CurStateGenerator(gameState)
 
-      val flow = new FlowImpl(gameState, f.drawer)
+      val flow = new FlowImpl(gameState)
 
       // When
       val discarded: Option[Tile] = flow.round(CHARACTER_9)
@@ -326,8 +333,8 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       )
 
       // Given
-      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new DummyPlayer(i, playerTiles(i)._1, playerTiles(i)._2)))
-      val subjectPlayers = spyPlayer(new DummyPlayer(
+      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new Dummy(i, playerTiles(i)._1, playerTiles(i)._2)))
+      val subjectPlayers = spyPlayer(new Dummy(
         3,
         List[Tile](BAMBOO_3, BAMBOO_5, CHARACTER_1, CHARACTER_2, CHARACTER_8, CHARACTER_8, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_BLUE),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
@@ -340,11 +347,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         Set.empty[Int],
         None,
         List.empty[(Int,Tile)],
-        2)
+        2,
+        f.drawer)
 
-      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
+      implicit val stateGenerator = new CurStateGenerator(gameState)
 
-      val flow = new FlowImpl(gameState, f.drawer)
+      val flow = new FlowImpl(gameState)
 
       // When
       val discarded: Option[Tile] = flow.round(CHARACTER_3)
@@ -372,8 +380,8 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       )
 
       // Given
-      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new DummyPlayer(i, playerTiles(i)._1, playerTiles(i)._2)))
-      val subjectPlayers = spyPlayer(new DummyPlayer(
+      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new Dummy(i, playerTiles(i)._1, playerTiles(i)._2)))
+      val subjectPlayers = spyPlayer(new Dummy(
         3,
         List[Tile](BAMBOO_3, BAMBOO_5, CHARACTER_1, CHARACTER_2, CHARACTER_2, CHARACTER_8, CHARACTER_9, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_BLUE),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
@@ -386,11 +394,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         Set.empty[Int],
         None,
         List.empty[(Int,Tile)],
-        2)
+        2,
+        f.drawer)
 
-      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
+      implicit val stateGenerator = new CurStateGenerator(gameState)
 
-      val flow = new FlowImpl(gameState, f.drawer)
+      val flow = new FlowImpl(gameState)
 
       // When
       val discarded: Option[Tile] = flow.round(BAMBOO_6)
@@ -416,8 +425,8 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       )
 
       // Given
-      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new DummyPlayer(i, playerTiles(i)._1, playerTiles(i)._2)))
-      val subjectPlayers = spyPlayer(new DummyPlayer(
+      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new Dummy(i, playerTiles(i)._1, playerTiles(i)._2)))
+      val subjectPlayers = spyPlayer(new Dummy(
         3,
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_7, CHARACTER_8, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
@@ -430,11 +439,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         Set.empty[Int],
         None,
         List.empty[(Int,Tile)],
-        2)
+        2,
+        f.drawer)
 
-      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
+      implicit val stateGenerator = new CurStateGenerator(gameState)
 
-      val flow = new FlowImpl(gameState, f.drawer)
+      val flow = new FlowImpl(gameState)
 
       // When
       val discarded: Option[Tile] = flow.round(BAMBOO_6)
@@ -460,8 +470,8 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       )
 
       // Given
-      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new DummyPlayer(i, playerTiles(i)._1, playerTiles(i)._2)))
-      val subjectPlayers = spyPlayer(new DummyPlayer(
+      val otherPlayers: List[Player] = (0 to 2).toList.map(i => spyPlayer(new Dummy(i, playerTiles(i)._1, playerTiles(i)._2)))
+      val subjectPlayers = spyPlayer(new Dummy(
         3,
         List[Tile](BAMBOO_3, BAMBOO_3, CHARACTER_1, CHARACTER_2, CHARACTER_3, CHARACTER_7, CHARACTER_8, CHARACTER_9, HONOR_DRAGON_RED, HONOR_DRAGON_RED),
         List(ChowGroup(Set[Tile](DOT_7, DOT_8, DOT_9)))))
@@ -474,11 +484,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         Set.empty[Int],
         None,
         List.empty[(Int,Tile)],
-        2)
+        2,
+        f.drawer)
 
-      implicit val stateGenerator = new CurStateGenerator(gameState, f.drawer)
+      implicit val stateGenerator = new CurStateGenerator(gameState)
 
-      val flow = new FlowImpl(gameState, f.drawer)
+      val flow = new FlowImpl(gameState)
 
       // When
       val discarded: Option[Tile] = flow.round(BAMBOO_6)
