@@ -33,40 +33,42 @@ class DummyGameLogger extends GameLogger {
 class DebugGameLogger(val gameState: GameState, val visibleToPlayerID: Option[Int] = None)(implicit val config: Config) extends GameLogger {
   val logger = Logger("EventLogger")
 
-  private def logCurStates() = {
+  private def logCurStates(msg: String) = {
+    var playerInfo = ""
     gameState.players.foreach(
       p => {
-        val curMark = if (gameState.getCurPlayerId == p.id) " ****" else ""
+        val curMark = if (gameState.getCurPlayerId == p.id) " **** " + msg + " **** " else ""
         val playerInfoStr = visibleToPlayerID match {
           case Some(id) if id != p.id => s"fixed: ${p.publicInfo.tileGroups.mkString(" ")}\n"
-          case _ => s"fixed: ${p.privateInfo.tileGroups.mkString(" ")}\n" +
-            s"tiles: ${p.privateInfo.tiles.sortBy(t => t.value.id).mkString(" ")}\n"
+          case _ => s"tiles: ${p.privateInfo.tiles.sortBy(t => t.value.id).mkString(" ")}\n" +
+            s"fixed: ${p.privateInfo.tileGroups.mkString(" ")}\n"
         }
-        logger.debug(s"#### Player ${p.id}$curMark:\n$playerInfoStr\n")
+        playerInfo += s"#### Player ${p.id}$curMark:\n$playerInfoStr\n"
       }
     )
 
-    logger.debug(s"discards: ${gameState.discards.mkString(", ")}\n")
-    logger.debug(s"remaining : ${gameState.drawer.remainingTileNum}")
-    //logger.debug(s"drawer tiles: ${gameState.drawer.drawerState.shuffledTiles}")
-    //logger.debug(s"drawer curPos: ${gameState.drawer.drawerState.curPos}")
+    logger.info("\n" + playerInfo +
+      s"#### discards: ${gameState.discards.mkString(", ")}\n" +
+      s"#### remaining : ${gameState.drawer.remainingTileNum}" )
+    //logger.info(s"drawer tiles: ${gameState.drawer.drawerState.shuffledTiles}")
+    //logger.info(s"drawer curPos: ${gameState.drawer.drawerState.curPos}")
   }
 
-  private def logAndPause(msg: String): Unit = {
-    logger.debug("***** " + msg + " *****\n")
-    logCurStates()
+  private def logAndPause(playerId: Option[Int], msg: String): Unit = {
+    logCurStates(msg)
+    logger.info(s"***** ${if(playerId.isDefined) "player " + playerId.get else ""} $msg *****\n")
     if (config.isPauseWhenLog) readLine()
   }
 
-  def start() = logAndPause("Game Start.")
-  def resume() = logAndPause("Game Resume.")
-  def discard(playerId: Int, tile: Tile) = logAndPause(s"player $playerId > discarded ${tile.toString}")
-  def kong(playerId: Int, tile: Tile) = logAndPause(s"player $playerId < kong with ${tile.toString}")
-  def pong(playerId: Int, tile: Tile) = logAndPause(s"player $playerId < pong with ${tile.toString}")
-  def chow(playerId: Int, tile: Tile, position: ChowPosition) = logAndPause(s"player $playerId < chow with ${tile.toString} in position $position")
+  def start() = logAndPause(None, "Game Start.")
+  def resume() = logAndPause(None, "Game Resume.")
+  def discard(playerId: Int, tile: Tile) = logAndPause(Some(playerId), s"> discarded ${tile.toString}")
+  def kong(playerId: Int, tile: Tile) = logAndPause(Some(playerId), s"< kong with ${tile.toString}")
+  def pong(playerId: Int, tile: Tile) = logAndPause(Some(playerId), s"< pong with ${tile.toString}")
+  def chow(playerId: Int, tile: Tile, position: ChowPosition) = logAndPause(Some(playerId), s"< chow with ${tile.toString} in position $position")
   def end(winnersInfo: Option[WinnersInfo]) = winnersInfo match {
-    case None => logAndPause(s"no player wins")
-    case Some(info) => logAndPause(s"player ${info.winners.mkString(", ")} < " +
+    case None => logAndPause(None, s"no player wins")
+    case Some(info) => logAndPause(None, s"player ${info.winners.mkString(", ")} < " +
       s"${if(info.isSelfWin) "draws and self wins " else "wins"}" +
       s" with ${info.winningTile.toString}\n" +
       s"winners info:\n"
@@ -78,7 +80,7 @@ class DebugGameLogger(val gameState: GameState, val visibleToPlayerID: Option[In
       }).mkString
     )
   }
-  def draw(playerId: Int, tile: Tile) = logAndPause(s"player $playerId < draws ${
+  def draw(playerId: Int, tile: Tile) = logAndPause(Some(playerId), s"< draws ${
     visibleToPlayerID match {
       case Some(id) if id != playerId => "a tile"
       case _ => tile
