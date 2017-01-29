@@ -16,23 +16,30 @@ GameLogger {
   def kong(playerId: Int, tile: Tile)
   def pong(playerId: Int, tile: Tile)
   def chow(playerId: Int, tile: Tile, position: ChowPosition)
-  def end(playerIds: Set[Int], winningTile: Option[Tile])
+  def end(winnersInfo: Option[WinnersInfo])
   def draw(playerId: Int, tile: Tile)
 }
 
-class DebugGameLogger(val gameState: GameState)(implicit val config: Config) extends GameLogger {
+class DebugGameLogger(val gameState: GameState, val visibleToPlayerID: Option[Int] = None)(implicit val config: Config) extends GameLogger {
   val logger = Logger("EventLogger")
 
   private def logCurStates() = {
     gameState.players.foreach(
       p => {
         val curMark = if (gameState.getCurPlayerId == p.id) " ****" else ""
-        logger.debug(s"#### Player ${p.id}$curMark:\n${p.toString}\n")
+        val playerInfoStr = visibleToPlayerID match {
+          case Some(id) if id != p.id => s"fixed: ${p.publicInfo.tileGroups.mkString(" ")}\n"
+          case _ => s"fixed: ${p.privateInfo.tileGroups.mkString(" ")}\n" +
+            s"tiles: ${p.privateInfo.tiles.sortBy(t => t.value.id).mkString(" ")}\n"
+        }
+        logger.debug(s"#### Player ${p.id}$curMark:\n$playerInfoStr\n")
       }
     )
+
     logger.debug(s"discards: ${gameState.discards.mkString(", ")}\n")
-    logger.debug(s"drawer tiles: ${gameState.drawer.drawerState.shuffledTiles}")
-    logger.debug(s"drawer curPos: ${gameState.drawer.drawerState.curPos}")
+    logger.debug(s"remaining : ${gameState.drawer.remainingTileNum}")
+    //logger.debug(s"drawer tiles: ${gameState.drawer.drawerState.shuffledTiles}")
+    //logger.debug(s"drawer curPos: ${gameState.drawer.drawerState.curPos}")
   }
 
   private def logAndPause(msg: String): Unit = {
@@ -47,9 +54,22 @@ class DebugGameLogger(val gameState: GameState)(implicit val config: Config) ext
   def kong(playerId: Int, tile: Tile) = logAndPause(s"player $playerId < kong with ${tile.toString}")
   def pong(playerId: Int, tile: Tile) = logAndPause(s"player $playerId < pong with ${tile.toString}")
   def chow(playerId: Int, tile: Tile, position: ChowPosition) = logAndPause(s"player $playerId < chow with ${tile.toString} in position $position")
-  def end(playerIds: Set[Int], winningTile: Option[Tile]) = playerIds.size match {
-    case 0 => logAndPause(s"no player wins")
-    case _ => logAndPause(s"player ${playerIds.mkString(", ")} < wins with ${winningTile.get.toString}")
+  def end(winnersInfo: Option[WinnersInfo]) = winnersInfo match {
+    case None => logAndPause(s"no player wins")
+    case Some(info) => logAndPause(s"player ${info.winners.mkString(", ")} < wins with ${info.winningTile.toString}\n" +
+      s"winners info:\n"
+      + info.winners.map(id => {
+        val p = gameState.players(id)
+        s"Player $id :" +
+          s"fixed: ${p.privateInfo.tileGroups.mkString(" ")}\n" +
+          s"tiles: ${p.privateInfo.tiles.sortBy(t => t.value.id).mkString(" ")}\n"
+      }).mkString
+    )
   }
-  def draw(playerId: Int, tile: Tile) = logAndPause(s"player $playerId < draws ${tile.toString}")
+  def draw(playerId: Int, tile: Tile) = logAndPause(s"player $playerId < draws ${
+    visibleToPlayerID match {
+      case Some(id) if id != playerId => "a tile"
+      case _ => tile
+    }
+  }")
 }

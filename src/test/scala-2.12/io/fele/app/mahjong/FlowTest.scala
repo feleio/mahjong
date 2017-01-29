@@ -55,6 +55,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
         None,
+        None,
         List.empty[(Int,Tile)],
         1,
         f.drawer)
@@ -99,6 +100,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
+        None,
         None,
         List.empty[(Int,Tile)],
         1,
@@ -147,6 +149,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
+        None,
         None,
         List.empty[(Int,Tile)],
         1,
@@ -200,6 +203,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
         None,
+        None,
         List.empty[(Int,Tile)],
         1,
         f.drawer)
@@ -252,6 +256,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
         None,
+        None,
         List.empty[(Int,Tile)],
         1,
         f.drawer)
@@ -301,6 +306,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
         None,
+        None,
         List.empty[(Int,Tile)],
         1,
         f.drawer)
@@ -345,6 +351,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
+        None,
         None,
         List.empty[(Int,Tile)],
         2,
@@ -393,6 +400,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
         None,
+        None,
         List.empty[(Int,Tile)],
         2,
         f.drawer)
@@ -438,6 +446,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
         None,
+        None,
         List.empty[(Int,Tile)],
         2,
         f.drawer)
@@ -482,6 +491,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         Set.empty[Int],
+        None,
         None,
         List.empty[(Int,Tile)],
         2,

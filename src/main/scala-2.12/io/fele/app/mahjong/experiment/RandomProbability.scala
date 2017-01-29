@@ -41,7 +41,6 @@ object RandomProbability extends App {
       players.head.overrideDiscardDecision(playerTiles.head._1(discardId))
       val state = GameState(
         players,
-        Set.empty[Int],
         None,
         discards,
         3,
@@ -52,7 +51,7 @@ object RandomProbability extends App {
 
       val discarded: Tile = HW_S
       val result: GameResult = flow.resume(Some(discarded))
-      result.winners.contains(0)
+      result.winnersInfo.isDefined && result.winnersInfo.get.winners.contains(0)
     })
     logger.info(s"player 0 discarded ${playerTiles.head._1(discardId)} with winning probability $firstPlayerWinCount / $total = ${firstPlayerWinCount *100.0 / total}%")
   })
