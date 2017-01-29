@@ -46,7 +46,7 @@ object RandomProbability extends App {
         3,
         new RandomTileDrawer(None, Some(shuffledRemainings), curPos))
 
-      implicit val gameLogger: GameLogger = new DebugGameLogger(state)
+      implicit val gameLogger: GameLogger = new DummyGameLogger()
       val flow: Flow = new FlowImpl(state)
 
       val discarded: Tile = HW_S

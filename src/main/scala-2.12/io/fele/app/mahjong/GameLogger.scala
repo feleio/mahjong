@@ -8,8 +8,7 @@ import scala.io.StdIn.readLine
 /**
   * Created by felix.ling on 01/01/2017.
   */
-trait
-GameLogger {
+trait GameLogger {
   def start()
   def resume()
   def discard(playerId: Int, tile: Tile)
@@ -18,6 +17,17 @@ GameLogger {
   def chow(playerId: Int, tile: Tile, position: ChowPosition)
   def end(winnersInfo: Option[WinnersInfo])
   def draw(playerId: Int, tile: Tile)
+}
+
+class DummyGameLogger extends GameLogger {
+  override def start(): Unit = ()
+  override def resume(): Unit = ()
+  override def discard(playerId: Int, tile: Tile): Unit = ()
+  override def kong(playerId: Int, tile: Tile): Unit = ()
+  override def pong(playerId: Int, tile: Tile): Unit = ()
+  override def chow(playerId: Int, tile: Tile, position: ChowPosition): Unit = ()
+  override def end(winnersInfo: Option[WinnersInfo]): Unit = ()
+  override def draw(playerId: Int, tile: Tile): Unit = ()
 }
 
 class DebugGameLogger(val gameState: GameState, val visibleToPlayerID: Option[Int] = None)(implicit val config: Config) extends GameLogger {
@@ -56,7 +66,9 @@ class DebugGameLogger(val gameState: GameState, val visibleToPlayerID: Option[In
   def chow(playerId: Int, tile: Tile, position: ChowPosition) = logAndPause(s"player $playerId < chow with ${tile.toString} in position $position")
   def end(winnersInfo: Option[WinnersInfo]) = winnersInfo match {
     case None => logAndPause(s"no player wins")
-    case Some(info) => logAndPause(s"player ${info.winners.mkString(", ")} < wins with ${info.winningTile.toString}\n" +
+    case Some(info) => logAndPause(s"player ${info.winners.mkString(", ")} < " +
+      s"${if(info.isSelfWin) "draws and self wins " else "wins"}" +
+      s" with ${info.winningTile.toString}\n" +
       s"winners info:\n"
       + info.winners.map(id => {
         val p = gameState.players(id)
