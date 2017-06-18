@@ -14,20 +14,23 @@ import io.fele.app.mahjong.player.{Chicken, Dummy, Player}
 case class WinnersInfo(winners: Set[Int], winningTile: Tile, isSelfWin: Boolean)
 
 case class GameResult(winnersInfo: Option[WinnersInfo])
+
+case class DiscardInfo(playerId: Int, tile: Tile)
 case class GameState(players: List[Player],
                      var winnersInfo: Option[WinnersInfo],
-                     var discards: List[(Int, Tile)],
+                     var discards: List[DiscardInfo],
                      var curPlayerId: Int,
                      drawer: TileDrawer){
-  def addDiscarded(tile: Tile) = discards = (curPlayerId, tile) :: discards
+  def addDiscarded(tile: Tile) = discards = DiscardInfo(curPlayerId, tile) :: discards
   def setCurPlayer(playerId: Int) = curPlayerId = playerId
 
-  def curPlayer(): Player = players(curPlayerId)
-  def getCurPlayerId: Int = curPlayerId
-  def nextPlayer(): Player = players((curPlayerId + 1) % 4)
-  def getNextPlayerId: Int = (curPlayerId + 1) % 4
+  def nextPlayerId: Int = (curPlayerId + 1) % 4
+
+  def curPlayer: Player = players(curPlayerId)
+  def nextPlayer: Player = players(nextPlayerId)
+
   def otherPlayers(): List[(Int, Player)] = {
-    (1 to 3).map(x => (x + curPlayerId) % 4).map(x => (x, players(x))).toList
+    (1 to 3).map(x => (x + curPlayerId) % 4).map(y => (y, players(y))).toList
   }
 }
 
@@ -47,46 +50,49 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
     state.otherPlayers().filter(f).map(_._1).toSet
   }
 
+  // check if there are players who can Win with this tile
   private object WiningTile {
     def unapply(tile: Tile): Option[Set[Int]] = {
-      val ws = checkPlayersTile{
-        case (i: Int, p: Player) => p.canWin(tile) && p.decideWin(tile, curStateGenerator.curState(i))
-      }
-      if (ws.isEmpty) None else Some(ws)
+      val anyoneWin: ((Int, Player)) => Boolean
+        = {case (i: Int, p: Player) => p.canWin(tile) && p.decideWin(tile, curStateGenerator.curState(i))}
+      val winners = checkPlayersTile(anyoneWin)
+      if (winners.isEmpty) None else Some(winners)
     }
   }
 
+  // check if there are players who can Kong with this tile
   private object KongableTile {
     def unapply(tile: Tile): Option[Int] = {
-      checkPlayersTile{
-        case (i: Int, p: Player) => p.canKong(tile) && p.decideKong(tile, curStateGenerator.curState(i))
-      }.headOption
+      val anyoneKong: ((Int, Player)) => Boolean
+        = {case (i: Int, p: Player) => p.canKong(tile) && p.decideKong(tile, curStateGenerator.curState(i))}
+      checkPlayersTile(anyoneKong).headOption
     }
   }
 
   private object PongableTile {
     def unapply(tile: Tile): Option[Int] = {
-      checkPlayersTile{
-        case (i: Int, p: Player) => p.canPong(tile) && p.decidePong(tile, curStateGenerator.curState(i))
-      }.headOption
+      val anyonePong: ((Int, Player)) => Boolean
+        = {case (i: Int, p: Player) => p.canPong(tile) && p.decidePong(tile, curStateGenerator.curState(i))}
+      checkPlayersTile(anyonePong).headOption
     }
   }
 
   private object ChowableTile {
     def unapply(tile: Tile): Option[(Int, ChowPosition)] = {
-      val canChowPositions = state.nextPlayer().canChow(tile)
+      val canChowPositions = state.nextPlayer.canChow(tile)
       if (canChowPositions.nonEmpty) {
-        val chowPosition = verify(state.getNextPlayerId, canChowPositions)(
-          state.nextPlayer().decideChow(tile, canChowPositions, curStateGenerator.curState(state.getNextPlayerId))
+        val chowPosition = verify(state.nextPlayerId, canChowPositions)(
+          state.nextPlayer.decideChow(tile, canChowPositions, curStateGenerator.curState(state.nextPlayerId))
         )
         if (chowPosition.isDefined)
-          Some((state.getNextPlayerId, chowPosition.get))
+          Some((state.nextPlayerId, chowPosition.get))
         else
           None
       }
       else
         None
     }
+
     private def verify(playerId: Int, positions: Set[ChowPosition])(decision: Option[ChowPosition]): Option[ChowPosition] = decision match {
       case Some(position) if !positions.contains(position) =>
         throw new Exception(s"Player $playerId: invalid self kong decision, $position not found in $positions")
@@ -100,23 +106,23 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
       None
     case KongableTile(playerId) =>
       state.setCurPlayer(playerId)
-      state.curPlayer().kong(discardedTile, state.drawer) match {
+      state.curPlayer.kong(discardedTile, state.drawer) match {
         case (DISCARD, discarded: Option[Tile]) => discarded
         case (WIN, Some(winningTile)) => state.winnersInfo = Some(WinnersInfo(Set(playerId), winningTile, true)); None
         case (NO_TILE, _) => None
       }
     case PongableTile(playerId) =>
       state.setCurPlayer(playerId)
-      Some(state.curPlayer().pong(discardedTile))
+      Some(state.curPlayer.pong(discardedTile))
     case ChowableTile(playerId, chowPosition) =>
       state.setCurPlayer(playerId)
-      Some(state.curPlayer().chow(discardedTile, chowPosition))
+      Some(state.curPlayer.chow(discardedTile, chowPosition))
     case _ =>
       state.addDiscarded(discardedTile)
-      state.setCurPlayer(state.getNextPlayerId)
-      state.curPlayer().draw(state.drawer) match {
+      state.setCurPlayer(state.nextPlayerId)
+      state.curPlayer.draw(state.drawer) match {
         case (DISCARD, discarded: Option[Tile]) => discarded
-        case (WIN, Some(winningTile)) => state.winnersInfo = Some(WinnersInfo(Set(state.getCurPlayerId), winningTile, true)); None
+        case (WIN, Some(winningTile)) => state.winnersInfo = Some(WinnersInfo(Set(state.curPlayerId), winningTile, true)); None
         case (NO_TILE, _) => None
       }
   }
@@ -125,13 +131,13 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
     gameLogger.start()
 
     // TODO: check if kong at the first place is allowed?
-    var discardedTile = state.curPlayer().draw(state.drawer) match {
+    var discardedTile = state.curPlayer.draw(state.drawer) match {
       case (DISCARD, discarded: Option[Tile]) => discarded
-      case (WIN, Some(winningTile)) => state.winnersInfo = Some(WinnersInfo(Set(state.getCurPlayerId), winningTile, true)); None
+      case (WIN, Some(winningTile)) => state.winnersInfo = Some(WinnersInfo(Set(state.curPlayerId), winningTile, true)); None
     }
 
     while (discardedTile.isDefined) {
-      gameLogger.discard(state.getCurPlayerId, discardedTile.get)
+      gameLogger.discard(state.curPlayerId, discardedTile.get)
       discardedTile = round(discardedTile.get)
     }
     gameLogger.end(state.winnersInfo)
@@ -143,7 +149,7 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
 
     var discardedTile = discarded
     while (discardedTile.isDefined) {
-      gameLogger.discard(state.getCurPlayerId, discardedTile.get)
+      gameLogger.discard(state.curPlayerId, discardedTile.get)
       discardedTile = round(discardedTile.get)
     }
     gameLogger.end(state.winnersInfo)

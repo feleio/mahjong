@@ -18,12 +18,12 @@ trait TileGroup {
 
 case class KongGroup(tile: Tile) extends TileGroup{
   override def getCount: Int = 4
-  override def toString: String = s"Kong(${List.fill(getCount)(tile).sortBy(t => t.value.id).mkString(", ")})"
+  override def toString: String = s"Kong(${List.fill(getCount)(tile).mkString(", ")})"
 }
 
 case class PongGroup(tile: Tile) extends TileGroup{
   override def getCount: Int = 3
-  override def toString: String = s"Pong(${List.fill(getCount)(tile).sortBy(t => t.value.id).mkString(", ")})"
+  override def toString: String = s"Pong(${List.fill(getCount)(tile).mkString(", ")})"
 }
 
 case class ChowGroup(tiles: Set[Tile]) extends TileGroup{
@@ -42,35 +42,34 @@ class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup]) {
     tileStats(x.value) += 1
   })
 
+  // check if a tile exist in this hand. Tiles in TileGroups are not counted
   private def isExist(tileValue: TileValue): Boolean = tileStats(tileValue) >= 1
-  private def getExistingChowTiles(tile: Tile, position: ChowPosition): List[Tile] = position match {
-    case LEFT => List[Tile](tile + 1, tile + 2)
-    case MIDDLE => List[Tile](tile - 1, tile + 1)
-    case RIGHT => List[Tile](tile - 2, tile - 1)
-  }
 
-  private def validate(tiles: List[Tile]): Boolean = tiles match {
+  // recursively check if the hand is winning with a sorted tile List
+  private def validate(sortedTiles: List[Tile]): Boolean = sortedTiles match {
     case t if t.isEmpty => true
-    case t if t.head == t(1) && t(1) == t(2) => validate(tiles.drop(3))
-    case t if t.head.`type` != HONOR && t.head.num <= 7 && t.contains(t.head+1) && t.contains(t.head+2) => validate(tiles diff List(t.head, t.head+1, t.head+2))
+    case t if t.head == t(1) && t(1) == t(2) => validate(sortedTiles.drop(3))
+    case t if t.head.`type` != HONOR && t.head.num <= 7 && t.contains(t.head+1) && t.contains(t.head+2) => validate(sortedTiles diff List(t.head, t.head+1, t.head+2))
     case _ => false
   }
 
-  def isToDiscard: Boolean = tiles.size % 3 == 2
-
+  // check if this hand can win with the specific tile
   def canWin(tile: Tile): Boolean = {
+    // filter the eyes tile value id, check there exists winning hands with these eyes
     tileStats.zipWithIndex
-      .filter{case (tileCount, i) => tileCount >= 2 || (i == tile.value.id && tileCount >= 1)}
+      .filter{case (tileCount, i) => tileCount >= 2 || (tileCount == 1 && i == tile.value.id )}
       .map(_._2)
-      .exists(eyeTileId => validate((tiles + tile) diff List[Tile](TileValue(eyeTileId), TileValue(eyeTileId))))
+      .exists(eyeTileId => validate((tiles + tile) diff List.fill[Tile](2)(TileValue(eyeTileId))))
   }
 
-  def canKong(tile: Tile): Boolean = tileStats(tile.value) >= 3
-  def selfKongableTiles(): Set[Tile] = {
+  // find which tile can be kong in current hand. It can be tile count == 4 OR pong group + count == 1
+  def canSelfKong(): Set[Tile] = {
     val kongableTiles = tileStats.zipWithIndex.collect{case (count, tileId) if count >= 4 => Tile(TileValue(tileId))}.toSet
     val kongablePongGroupTiles = fixedTileGroups.collect{case PongGroup(tile) if tileStats(tile.value) >= 1 => tile}.toSet
     kongableTiles | kongablePongGroupTiles
   }
+
+  def canKong(tile: Tile): Boolean = tileStats(tile.value) >= 3
   def canPong(tile: Tile): Boolean = tileStats(tile.value) >= 2
   def canChow(tile: Tile): Set[ChowPosition] = {
     if (tile.`type` != HONOR){
@@ -111,7 +110,12 @@ class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup]) {
   }
 
   def chow(tile: Tile, position: ChowPosition): Unit = {
-    val existTiles = getExistingChowTiles(tile, position)
+    val existTiles: List[Tile] = position match {
+      case LEFT => List[Tile](tile + 1, tile + 2)
+      case MIDDLE => List[Tile](tile - 1, tile + 1)
+      case RIGHT => List[Tile](tile - 2, tile - 1)
+    }
+
     existTiles.foreach(x => {
       tileStats(x.value) -= 1
       tiles -= x

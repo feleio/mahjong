@@ -26,7 +26,10 @@ object RandomProbability extends App {
   )
 
   // inital discards
-  val discards = List[(Int, Tile)]((2,HW_S), (1,C6), (0,C4), (3,C9), (2,C3), (0,B9), (2,B5), (0,B3), (3,D4), (2,D8), (1,D5), (0,B1))
+  val discards = List[(Int, Tile)](
+    (2,HW_S), (1,C6), (0,C4), (3,C9), (2,C3), (0,B9), (2,B5), (0,B3), (3,D4), (2,D8), (1,D5), (0,B1)
+  ).map(x => DiscardInfo(x._1, x._2))
+
   val total = 1000000
   var count = 0
   (0 to 3).foreach(discardId => {

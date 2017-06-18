@@ -37,7 +37,7 @@ class DebugGameLogger(val gameState: GameState, val visibleToPlayerID: Option[In
     var playerInfo = ""
     gameState.players.foreach(
       p => {
-        val curMark = if (gameState.getCurPlayerId == p.id) " **** " + msg + " **** " else ""
+        val curMark = if (gameState.curPlayerId == p.id) " **** " + msg + " **** " else ""
         val playerInfoStr = visibleToPlayerID match {
           case Some(id) if id != p.id => s"fixed: ${p.publicInfo.tileGroups.mkString(" ")}\n"
           case _ => s"tiles: ${p.privateInfo.tiles.sortBy(t => t.value.id).mkString(" ")}\n" +

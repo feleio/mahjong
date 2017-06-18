@@ -29,7 +29,7 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
 
   private object SelfKongDecision {
     def unapply(hand: Hand)(implicit stateGenerator: CurStateGenerator): Option[Tile] = {
-      hand.selfKongableTiles() match {
+      hand.canSelfKong() match {
         case kongSet if kongSet.nonEmpty => verify(kongSet)(decideSelfKong(kongSet, stateGenerator.curState(id)))
         case _ => None
       }
