@@ -19,7 +19,7 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
 
   var discardDecision: Option[Tile] = None
 
-  def privateInfo = PrivateState(hand.tiles, hand.fixedTileGroups)
+  def privateInfo = PrivateState(hand.dynamicTiles, hand.fixedTileGroups)
   def publicInfo = PublicState(hand.fixedTileGroups)
 
   def canWin(tile: Tile): Boolean = hand.canWin(tile)
@@ -101,8 +101,8 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
       case Some(decision) => discardDecision = None; decision
       case None => decideDiscard(stateGenerator.curState(id))
     }
-    if (!hand.tiles.contains(discarded))
-      throw new Exception(s"Player $id: discarded tile $discarded does not exist in ${hand.tiles}")
+    if (!hand.dynamicTiles.contains(discarded))
+      throw new Exception(s"Player $id: discarded tile $discarded does not exist in ${hand.dynamicTiles}")
     discarded
   }
 

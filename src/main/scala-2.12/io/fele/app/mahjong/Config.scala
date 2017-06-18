@@ -11,5 +11,7 @@ class Config(configResource: Option[String] = None) {
   else
     ConfigFactory.load()
 
-  val isPauseWhenLog = c.getBoolean("isPauseWhenLog")
+  val isPauseWhenLog: Boolean = c.getBoolean("isPauseWhenLog")
+  val minScore: Int = c.getInt("minScore")
+  val maxScore: Int = c.getInt("maxScore")
 }

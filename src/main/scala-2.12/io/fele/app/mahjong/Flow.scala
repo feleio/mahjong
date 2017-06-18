@@ -53,8 +53,9 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
   // check if there are players who can Win with this tile
   private object WiningTile {
     def unapply(tile: Tile): Option[Set[Int]] = {
-      val anyoneWin: ((Int, Player)) => Boolean
-        = {case (i: Int, p: Player) => p.canWin(tile) && p.decideWin(tile, curStateGenerator.curState(i))}
+      val anyoneWin: ((Int, Player)) => Boolean = {
+        case (i: Int, p: Player) => p.canWin(tile) && p.decideWin(tile, curStateGenerator.curState(i))
+      }
       val winners = checkPlayersTile(anyoneWin)
       if (winners.isEmpty) None else Some(winners)
     }
@@ -63,16 +64,18 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
   // check if there are players who can Kong with this tile
   private object KongableTile {
     def unapply(tile: Tile): Option[Int] = {
-      val anyoneKong: ((Int, Player)) => Boolean
-        = {case (i: Int, p: Player) => p.canKong(tile) && p.decideKong(tile, curStateGenerator.curState(i))}
+      val anyoneKong: ((Int, Player)) => Boolean = {
+        case (i: Int, p: Player) => p.canKong(tile) && p.decideKong(tile, curStateGenerator.curState(i))
+      }
       checkPlayersTile(anyoneKong).headOption
     }
   }
 
   private object PongableTile {
     def unapply(tile: Tile): Option[Int] = {
-      val anyonePong: ((Int, Player)) => Boolean
-        = {case (i: Int, p: Player) => p.canPong(tile) && p.decidePong(tile, curStateGenerator.curState(i))}
+      val anyonePong: ((Int, Player)) => Boolean = {
+        case (i: Int, p: Player) => p.canPong(tile) && p.decidePong(tile, curStateGenerator.curState(i))
+      }
       checkPlayersTile(anyonePong).headOption
     }
   }
@@ -84,18 +87,16 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
         val chowPosition = verify(state.nextPlayerId, canChowPositions)(
           state.nextPlayer.decideChow(tile, canChowPositions, curStateGenerator.curState(state.nextPlayerId))
         )
-        if (chowPosition.isDefined)
-          Some((state.nextPlayerId, chowPosition.get))
-        else
-          None
+        chowPosition.map(pos => (state.nextPlayerId, pos))
       }
       else
         None
     }
 
-    private def verify(playerId: Int, positions: Set[ChowPosition])(decision: Option[ChowPosition]): Option[ChowPosition] = decision match {
+    // verify if the next player can chow with its decided position
+    private def verify(nextPlayerId: Int, positions: Set[ChowPosition])(decision: Option[ChowPosition]): Option[ChowPosition] = decision match {
       case Some(position) if !positions.contains(position) =>
-        throw new Exception(s"Player $playerId: invalid self kong decision, $position not found in $positions")
+        throw new Exception(s"Player $nextPlayerId: invalid self kong decision, $position not found in $positions")
       case _ => decision
     }
   }

@@ -9,7 +9,10 @@ import scala.util.Random
 
 object TileType extends Enumeration {
   type TileType = Value
-  val DOT, BAMBOO, CHARACTER, HONOR = Value
+  val DOT = Value(0)
+  val BAMBOO = Value(1)
+  val CHARACTER = Value(2)
+  val HONOR = Value(3)
 }
 
 object TileValue extends Enumeration {

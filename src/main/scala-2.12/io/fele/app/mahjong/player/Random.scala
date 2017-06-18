@@ -17,7 +17,7 @@ class RandomDiscard(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = Li
   override def decideKong(tile: Tile, curState: CurState): Boolean = true
   override def decidePong(tile: Tile, curState: CurState): Boolean = true
   override def decideChow(tile: Tile, positions: Set[ChowPosition], curState: CurState): Option[ChowPosition] = positions.headOption
-  override def decideDiscard(curState: CurState): Tile = hand.tiles(random.nextInt(hand.tiles.size))
+  override def decideDiscard(curState: CurState): Tile = hand.dynamicTiles(random.nextInt(hand.dynamicTiles.size))
 
   override def name: String = this.getClass.getName
 }

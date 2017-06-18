@@ -34,16 +34,16 @@ case class ChowGroup(tiles: Set[Tile]) extends TileGroup{
 class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup]) {
   if (ts.length + (gs.length * 3) != 13) throw new IllegalArgumentException("invalid number of tiles.")
 
-  var tiles: List[Tile] = ts.sortBy(_.value.id)
+  var dynamicTiles: List[Tile] = ts.sortBy(_.value.id)
   var fixedTileGroups: List[TileGroup] = gs
-  var tileStats = mutable.ArraySeq.fill[Int](34)(0)
+  var dynamicTileStats = mutable.ArraySeq.fill[Int](34)(0)
 
-  tiles.foreach(x => {
-    tileStats(x.value) += 1
+  dynamicTiles.foreach(x => {
+    dynamicTileStats(x.value) += 1
   })
 
   // check if a tile exist in this hand. Tiles in TileGroups are not counted
-  private def isExist(tileValue: TileValue): Boolean = tileStats(tileValue) >= 1
+  private def isExist(tileValue: TileValue): Boolean = dynamicTileStats(tileValue) >= 1
 
   // recursively check if the hand is winning with a sorted tile List
   private def validate(sortedTiles: List[Tile]): Boolean = sortedTiles match {
@@ -56,21 +56,21 @@ class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup]) {
   // check if this hand can win with the specific tile
   def canWin(tile: Tile): Boolean = {
     // filter the eyes tile value id, check there exists winning hands with these eyes
-    tileStats.zipWithIndex
+    dynamicTileStats.zipWithIndex
       .filter{case (tileCount, i) => tileCount >= 2 || (tileCount == 1 && i == tile.value.id )}
       .map(_._2)
-      .exists(eyeTileId => validate((tiles + tile) diff List.fill[Tile](2)(TileValue(eyeTileId))))
+      .exists(eyeTileId => validate((dynamicTiles + tile) diff List.fill[Tile](2)(TileValue(eyeTileId))))
   }
 
   // find which tile can be kong in current hand. It can be tile count == 4 OR pong group + count == 1
   def canSelfKong(): Set[Tile] = {
-    val kongableTiles = tileStats.zipWithIndex.collect{case (count, tileId) if count >= 4 => Tile(TileValue(tileId))}.toSet
-    val kongablePongGroupTiles = fixedTileGroups.collect{case PongGroup(tile) if tileStats(tile.value) >= 1 => tile}.toSet
+    val kongableTiles = dynamicTileStats.zipWithIndex.collect{case (count, tileId) if count >= 4 => Tile(TileValue(tileId))}.toSet
+    val kongablePongGroupTiles = fixedTileGroups.collect{case PongGroup(tile) if dynamicTileStats(tile.value) >= 1 => tile}.toSet
     kongableTiles | kongablePongGroupTiles
   }
 
-  def canKong(tile: Tile): Boolean = tileStats(tile.value) >= 3
-  def canPong(tile: Tile): Boolean = tileStats(tile.value) >= 2
+  def canKong(tile: Tile): Boolean = dynamicTileStats(tile.value) >= 3
+  def canPong(tile: Tile): Boolean = dynamicTileStats(tile.value) >= 2
   def canChow(tile: Tile): Set[ChowPosition] = {
     if (tile.`type` != HONOR){
       Set(
@@ -82,21 +82,21 @@ class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup]) {
   }
 
   def kong(tile: Tile): Unit = {
-    tileStats(tile.value) -= 3
-    (1 to 3).foreach(_ => tiles = tiles - tile)
+    dynamicTileStats(tile.value) -= 3
+    (1 to 3).foreach(_ => dynamicTiles = dynamicTiles - tile)
     fixedTileGroups = KongGroup(tile) :: fixedTileGroups
   }
 
   def selfKong(tile: Tile): Unit = {
-    tileStats(tile.value) match {
+    dynamicTileStats(tile.value) match {
       case 4 => {
-        tileStats(tile.value) -= 4
-        (1 to 4).foreach(_ => tiles = tiles - tile)
+        dynamicTileStats(tile.value) -= 4
+        (1 to 4).foreach(_ => dynamicTiles = dynamicTiles - tile)
         fixedTileGroups = KongGroup(tile) :: fixedTileGroups
       }
       case 1 => {
-        tileStats(tile.value) -= 1
-        tiles = tiles - tile
+        dynamicTileStats(tile.value) -= 1
+        dynamicTiles = dynamicTiles - tile
         fixedTileGroups = fixedTileGroups diff List(PongGroup(tile))
         fixedTileGroups = KongGroup(tile) :: fixedTileGroups
       }
@@ -104,8 +104,8 @@ class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup]) {
   }
 
   def pong(tile: Tile): Unit = {
-    tileStats(tile.value) -= 2
-    (1 to 2).foreach(_ => tiles = tiles - tile)
+    dynamicTileStats(tile.value) -= 2
+    (1 to 2).foreach(_ => dynamicTiles = dynamicTiles - tile)
     fixedTileGroups = PongGroup(tile) :: fixedTileGroups
   }
 
@@ -117,23 +117,23 @@ class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup]) {
     }
 
     existTiles.foreach(x => {
-      tileStats(x.value) -= 1
-      tiles -= x
+      dynamicTileStats(x.value) -= 1
+      dynamicTiles -= x
     })
     fixedTileGroups = ChowGroup(existTiles.toSet + tile) :: fixedTileGroups
   }
 
   def add(tile: Tile): Unit = {
-    tileStats(tile.value) += 1
-    tiles = tiles + tile
+    dynamicTileStats(tile.value) += 1
+    dynamicTiles = dynamicTiles + tile
   }
 
   def discard(tile: Tile): Unit = {
-    tileStats(tile.value) -= 1
-    tiles = tiles - tile
+    dynamicTileStats(tile.value) -= 1
+    dynamicTiles = dynamicTiles - tile
   }
 
   override def toString: String = {
-    s"fixed: ${fixedTileGroups.mkString(" ")}\ntiles: ${tiles.sortBy(t => t.value.id).mkString(" ")}\n"
+    s"fixed: ${fixedTileGroups.mkString(" ")}\ntiles: ${dynamicTiles.sortBy(t => t.value.id).mkString(" ")}\n"
   }
 }

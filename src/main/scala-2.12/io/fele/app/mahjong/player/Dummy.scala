@@ -13,7 +13,7 @@ class Dummy(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty
   override def decideKong(tile: Tile, curState: CurState): Boolean = true
   override def decidePong(tile: Tile, curState: CurState): Boolean = true
   override def decideChow(tile: Tile, positions: Set[ChowPosition], curState: CurState): Option[ChowPosition] = positions.headOption
-  override def decideDiscard(curState: CurState): Tile = hand.tiles.head
+  override def decideDiscard(curState: CurState): Tile = hand.dynamicTiles.head
 
   override def name: String = this.getClass.getName
 }

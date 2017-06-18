@@ -113,8 +113,8 @@ class HandTest extends FreeSpec with Matchers {
       val hand = new Hand(tiles)
       hand.kong(B8)
 
-      hand.tiles.size should equal(10)
-      hand.tiles.sortBy(_.value.id) should equal((tiles diff List.fill[Tile](3)(B8)).sortBy(_.value.id))
+      hand.dynamicTiles.size should equal(10)
+      hand.dynamicTiles.sortBy(_.value.id) should equal((tiles diff List.fill[Tile](3)(B8)).sortBy(_.value.id))
       hand.fixedTileGroups
     }
 
@@ -123,8 +123,8 @@ class HandTest extends FreeSpec with Matchers {
       val hand = new Hand(tiles)
       hand.pong(B8)
 
-      hand.tiles.size should equal(11)
-      hand.tiles.sortBy(_.value.id) should equal((tiles diff List.fill[Tile](2)(B8)).sortBy(_.value.id))
+      hand.dynamicTiles.size should equal(11)
+      hand.dynamicTiles.sortBy(_.value.id) should equal((tiles diff List.fill[Tile](2)(B8)).sortBy(_.value.id))
     }
 
     "chow" in {
@@ -132,37 +132,37 @@ class HandTest extends FreeSpec with Matchers {
       var hand = new Hand(tiles)
       hand.chow(C3, RIGHT)
 
-      hand.tiles.size should equal(11)
-      hand.tiles.sortBy(_.value.id) should equal((tiles diff List[Tile](C1, C2)).sortBy(_.value.id))
-      hand.tileStats(C1) should equal(1)
-      hand.tileStats(C2) should equal(0)
+      hand.dynamicTiles.size should equal(11)
+      hand.dynamicTiles.sortBy(_.value.id) should equal((tiles diff List[Tile](C1, C2)).sortBy(_.value.id))
+      hand.dynamicTileStats(C1) should equal(1)
+      hand.dynamicTileStats(C2) should equal(0)
 
       tiles = List[Tile](B6, HD_G, C6, D3, C1, B2, D8, B6, B3, C9, B1, HD_R, C3)
       hand = new Hand(tiles)
       hand.chow(B1, LEFT)
 
-      hand.tiles.size should equal(11)
-      hand.tiles.sortBy(_.value.id) should equal((tiles diff List[Tile](B2, B3)).sortBy(_.value.id))
-      hand.tileStats(B2) should equal(0)
-      hand.tileStats(B3) should equal(0)
+      hand.dynamicTiles.size should equal(11)
+      hand.dynamicTiles.sortBy(_.value.id) should equal((tiles diff List[Tile](B2, B3)).sortBy(_.value.id))
+      hand.dynamicTileStats(B2) should equal(0)
+      hand.dynamicTileStats(B3) should equal(0)
 
       tiles = List[Tile](B6, HD_G, C6, D3, C1, B2, D8, B6, B3, D6, B1, HD_R, C3)
       hand = new Hand(tiles)
       hand.chow(D7, MIDDLE)
 
-      hand.tiles.size should equal(11)
-      hand.tiles.sortBy(_.value.id) should equal((tiles diff List[Tile](D6, D8)).sortBy(_.value.id))
-      hand.tileStats(D6) should equal(0)
-      hand.tileStats(D8) should equal(0)
+      hand.dynamicTiles.size should equal(11)
+      hand.dynamicTiles.sortBy(_.value.id) should equal((tiles diff List[Tile](D6, D8)).sortBy(_.value.id))
+      hand.dynamicTileStats(D6) should equal(0)
+      hand.dynamicTileStats(D8) should equal(0)
 
       tiles = List[Tile](B6, HD_G, C6, D3, C1, B2, D8, D9, B3, D6, B1, HD_R, C3)
       hand = new Hand(tiles)
       hand.chow(D7, LEFT)
 
-      hand.tiles.size should equal(11)
-      hand.tiles.sortBy(_.value.id) should equal((tiles diff List[Tile](D8, D9)).sortBy(_.value.id))
-      hand.tileStats(D8) should equal(0)
-      hand.tileStats(D9) should equal(0)
+      hand.dynamicTiles.size should equal(11)
+      hand.dynamicTiles.sortBy(_.value.id) should equal((tiles diff List[Tile](D8, D9)).sortBy(_.value.id))
+      hand.dynamicTileStats(D8) should equal(0)
+      hand.dynamicTileStats(D9) should equal(0)
     }
   }
 
@@ -170,18 +170,18 @@ class HandTest extends FreeSpec with Matchers {
   "tiles in hand should always be sorted" in {
     var tiles = List[Tile](D9, HW_N, C3, HD_G, HW_E, B8, HW_W, D2, B8, C9, D6, D8, B8)
     val hand = new Hand(tiles)
-    hand.tiles should equal(tiles.sortBy(_.value.id))
+    hand.dynamicTiles should equal(tiles.sortBy(_.value.id))
 
     tiles = tiles diff List[Tile](B8, B8)
     hand.pong(B8)
-    hand.tiles should equal(tiles.sortBy(_.value.id))
+    hand.dynamicTiles should equal(tiles.sortBy(_.value.id))
 
     tiles = D9 :: tiles
     hand.add(D9)
-    hand.tiles should equal(tiles.sortBy(_.value.id))
+    hand.dynamicTiles should equal(tiles.sortBy(_.value.id))
 
     tiles = tiles diff List[Tile](HW_E)
     hand.discard(HW_E)
-    hand.tiles should equal(tiles.sortBy(_.value.id))
+    hand.dynamicTiles should equal(tiles.sortBy(_.value.id))
   }
 }

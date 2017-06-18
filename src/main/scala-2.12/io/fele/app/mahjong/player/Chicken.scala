@@ -14,12 +14,12 @@ class Chicken(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.emp
   override def decidePong(tile: Tile, curState: CurState): Boolean = true
   override def decideChow(tile: Tile, positions: Set[ChowPosition], curState: CurState): Option[ChowPosition] = positions.headOption
   override def decideDiscard(curState: CurState): Tile = {
-    val uselessTiles = hand.tiles.filter(tile => {
-      hand.tileStats(tile.value.id) < 2 && !isContinues(tile, hand.tiles)
+    val uselessTiles = hand.dynamicTiles.filter(tile => {
+      hand.dynamicTileStats(tile.value.id) < 2 && !isContinues(tile, hand.dynamicTiles)
     })
 
     uselessTiles.size match {
-      case 0 => hand.tiles.head
+      case 0 => hand.dynamicTiles.head
       case _ => uselessTiles.head
     }
   }
