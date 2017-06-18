@@ -68,4 +68,52 @@ class ScoreCalculatorTest extends FreeSpec with Matchers {
       calculator.cal should equal(1)
     }
   }
+
+  "different suit and all chow " - {
+    "scores 4 points" in {
+      val calculator = new ScoreCalculator(
+        List[Tile](D2, D3, D4, D2, D3, D4, D6, D7, D8, D6, D7, D8, HW_W, HW_W),
+        List.empty[TileGroup],
+        Tile(HW_W),
+        maxScore
+      )
+      calculator.cal should equal(4)
+    }
+  }
+
+  "different suit and all pong " - {
+    "scores 6 points" in {
+      val calculator = new ScoreCalculator(
+        List[Tile](C4, C4, C4, C6, C6, C6, HW_W, HW_W),
+        List[TileGroup](PongGroup(HW_S), PongGroup(HW_E)),
+        Tile(HW_W),
+        maxScore
+      )
+      calculator.cal should equal(6)
+    }
+  }
+
+  "hand with same suit and all chow" - {
+    "scores 8 points" in {
+      val calculator = new ScoreCalculator(
+        List[Tile](C2, C3, C4, C6, C7, C8, C3, C3),
+        List[TileGroup](ChowGroup(Set[Tile](C6, C7, C8)), ChowGroup(Set[Tile](C1, C2, C3))),
+        Tile(C3),
+        maxScore
+      )
+      calculator.cal should equal(8)
+    }
+  }
+
+  "same suit and all pong " - {
+    "scores 10 points" in {
+      val calculator = new ScoreCalculator(
+        List[Tile](B4, B4, B4, B6, B6, B6, B9, B9),
+        List[TileGroup](KongGroup(B8), PongGroup(B7)),
+        Tile(B9),
+        maxScore
+      )
+      calculator.cal should equal(10)
+    }
+  }
 }

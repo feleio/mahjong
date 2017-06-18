@@ -82,8 +82,6 @@ class ScoreCalculator(
       sameSuit -> 7,
       allHonor -> maxScore
     ).foldLeft(0){(score, rule) => {
-      println(s"tileTypeStats: ${tileTypeStats}")
-      println(rule)
       score + (if (rule._1) rule._2 else 0)}
     }
     Math.min(score, maxScore)
