@@ -78,7 +78,8 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
     drawer.pop() match {
       case Some(drawnTile) =>
         // check self win
-        if (hand.canWin(drawnTile).canWin && decideSelfWin(drawnTile, stateGenerator.curState(id)))
+        val canWinResult = hand.canWin(drawnTile)
+        if (canWinResult.canWin && decideSelfWin(drawnTile, canWinResult.score, stateGenerator.curState(id)))
           (WIN, Some(drawnTile))
         else {
           // check self kong
@@ -111,8 +112,8 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   override def toString = hand.toString
 
   // abstract decision method
-  def decideSelfWin(tile: Tile, curState: CurState): Boolean
-  def decideWin(tile: Tile, curState: CurState): Boolean
+  def decideSelfWin(tile: Tile, score:Int, curState: CurState): Boolean
+  def decideWin(tile: Tile, score:Int, curState: CurState): Boolean
   def decideSelfKong(selfKongTiles: Set[Tile], curState: CurState): Option[Tile]
   def decideKong(tile: Tile, curState: CurState): Boolean
   def decidePong(tile: Tile, curState: CurState): Boolean

@@ -54,7 +54,10 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
   private object WiningTile {
     def unapply(tile: Tile): Option[Set[Int]] = {
       val anyoneWin: ((Int, Player)) => Boolean = {
-        case (i: Int, p: Player) => p.canWin(tile).canWin && p.decideWin(tile, curStateGenerator.curState(i))
+        case (i: Int, p: Player) => {
+          val canWinResult = p.canWin(tile)
+          canWinResult.canWin && p.decideWin(tile, canWinResult.score,curStateGenerator.curState(i))
+        }
       }
       val winners = checkPlayersTile(anyoneWin)
       if (winners.isEmpty) None else Some(winners)

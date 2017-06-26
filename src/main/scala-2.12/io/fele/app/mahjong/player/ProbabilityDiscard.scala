@@ -11,8 +11,8 @@ import scala.util.Random
 class ProbabilityDiscard(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup])(implicit c: Config) extends Player(id, tiles, tileGroups)(c) {
   val random = new Random()
 
-  override def decideSelfWin(tile: Tile, curState: CurState): Boolean = true
-  override def decideWin(tile: Tile, curState: CurState): Boolean = true
+  override def decideSelfWin(tile: Tile, score: Int, curState: CurState): Boolean = true
+  override def decideWin(tile: Tile, score: Int, curState: CurState): Boolean = true
   override def decideSelfKong(selfKongTiles: Set[Tile], curState: CurState): Option[Tile] = selfKongTiles.headOption
   override def decideKong(tile: Tile, curState: CurState): Boolean = true
   override def decidePong(tile: Tile, curState: CurState): Boolean = true
