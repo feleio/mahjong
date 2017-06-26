@@ -15,6 +15,7 @@ import io.fele.app.mahjong.player.{Dummy, Player}
 class FlowTest extends FreeSpec with Matchers with MockitoSugar {
   private val DEFAULT_DISCARDED: Tile = C1
   implicit val mockLogger = mock[GameLogger]
+  implicit val config = new Config(Some("application-test.conf"))
 
   private def fixture = new {
     val drawer: TileDrawer = mock[TileDrawer]

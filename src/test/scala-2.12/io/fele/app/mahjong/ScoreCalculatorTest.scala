@@ -1,12 +1,14 @@
 package io.fele.app.mahjong
 
 import org.scalatest.{FreeSpec, Matchers}
+import io.fele.app.mahjong.ScoreType._
 import io.fele.app.mahjong.TileValue._
 
 /**
   * Created by felix.ling on 18/06/2017.
   */
 class ScoreCalculatorTest extends FreeSpec with Matchers {
+  implicit val config = new Config()
   val maxScore = 100
 
   "hand with different suit " - {
@@ -17,7 +19,7 @@ class ScoreCalculatorTest extends FreeSpec with Matchers {
         Tile(D7),
         maxScore
       )
-      calculator.cal should equal(3)
+      calculator.cal should equal(ScoreResult(3, Set(DifferentSuit)))
     }
   }
 
@@ -29,19 +31,19 @@ class ScoreCalculatorTest extends FreeSpec with Matchers {
         Tile(C3),
         maxScore
       )
-      calculator.cal should equal(7)
+      calculator.cal should equal(ScoreResult(7, Set(SameSuit)))
     }
   }
 
   "all honor " - {
-    "scores 11 points" in {
+    "scores maxScore" in {
       val calculator = new ScoreCalculator(
         List[Tile](HW_W, HW_W, HD_B, HD_B, HD_B, HD_G, HD_G, HD_G),
         List[TileGroup](KongGroup(HW_N), KongGroup(HD_R)),
         Tile(HW_W),
         maxScore
       )
-      calculator.cal should equal(maxScore)
+      calculator.cal should equal(ScoreResult(maxScore, Set(AllPong, BigThreeCircle, AllHonor)))
     }
   }
 
@@ -53,7 +55,7 @@ class ScoreCalculatorTest extends FreeSpec with Matchers {
         Tile(HW_W),
         maxScore
       )
-      calculator.cal should equal(3)
+      calculator.cal should equal(ScoreResult(3, Set(AllPong)))
     }
   }
 
@@ -65,7 +67,7 @@ class ScoreCalculatorTest extends FreeSpec with Matchers {
         Tile(HW_W),
         maxScore
       )
-      calculator.cal should equal(1)
+      calculator.cal should equal(ScoreResult(1, Set(AllChow)))
     }
   }
 
@@ -77,7 +79,7 @@ class ScoreCalculatorTest extends FreeSpec with Matchers {
         Tile(HW_W),
         maxScore
       )
-      calculator.cal should equal(4)
+      calculator.cal should equal(ScoreResult(3 + 1, Set(DifferentSuit, AllChow)))
     }
   }
 
@@ -89,7 +91,7 @@ class ScoreCalculatorTest extends FreeSpec with Matchers {
         Tile(HW_W),
         maxScore
       )
-      calculator.cal should equal(6)
+      calculator.cal should equal(ScoreResult(3 + 3, Set(DifferentSuit, AllPong)))
     }
   }
 
@@ -101,7 +103,7 @@ class ScoreCalculatorTest extends FreeSpec with Matchers {
         Tile(C3),
         maxScore
       )
-      calculator.cal should equal(8)
+      calculator.cal should equal(ScoreResult(7 + 1, Set(SameSuit, AllChow)))
     }
   }
 
@@ -113,7 +115,103 @@ class ScoreCalculatorTest extends FreeSpec with Matchers {
         Tile(B9),
         maxScore
       )
-      calculator.cal should equal(10)
+      calculator.cal should equal(ScoreResult(7 + 3, Set(SameSuit, AllPong)))
+    }
+  }
+
+  "hand with pong big four direction " - {
+    "scores max points" in {
+      val calculator = new ScoreCalculator(
+        List[Tile](HW_E, HW_E, HW_E, HW_N, HW_N, HW_N, D7, D7),
+        List[TileGroup](KongGroup(HW_S), PongGroup(HW_W)),
+        Tile(D7),
+        maxScore
+      )
+      calculator.cal should equal(ScoreResult(maxScore, Set(DifferentSuit, BigFourDirection, AllPong)))
+    }
+  }
+
+  "hand with pong small four direction " - {
+    "scores max points" in {
+      val calculator = new ScoreCalculator(
+        List[Tile](HW_E, HW_E, HW_E, HW_N, HW_N, D7, D8, D9),
+        List[TileGroup](PongGroup(HW_S), KongGroup(HW_W)),
+        Tile(HW_N),
+        maxScore
+      )
+      calculator.cal should equal(ScoreResult(maxScore, Set(DifferentSuit, SmallFourDirection)))
+    }
+  }
+
+  "hand with pong big three circle" - {
+    "scores 8 points" in {
+      val calculator = new ScoreCalculator(
+        List[Tile](HD_R, HD_R, HD_R, B6, B7, B8, D7, D7),
+        List[TileGroup](KongGroup(HD_B), PongGroup(HD_G)),
+        Tile(D7),
+        maxScore
+      )
+      calculator.cal should equal(ScoreResult(8, Set(BigThreeCircle)))
+    }
+  }
+
+  "hand with pong small three circle" - {
+    "scores 5 points" in {
+      val calculator = new ScoreCalculator(
+        List[Tile](HD_R, HD_R, B6, B7, B8, D7, D7, D7),
+        List[TileGroup](KongGroup(HD_B), PongGroup(HD_G)),
+        Tile(HD_R),
+        maxScore
+      )
+      calculator.cal should equal(ScoreResult(5, Set(SmallThreeCircle)))
+    }
+  }
+
+  "hand with eighteen gods" - {
+    "scores max points" in {
+      val calculator = new ScoreCalculator(
+        List[Tile](D9, D9),
+        List[TileGroup](KongGroup(B7), KongGroup(D6), KongGroup(HD_R), KongGroup(B6)),
+        Tile(D9),
+        maxScore
+      )
+      calculator.cal should equal(ScoreResult(maxScore, Set(EighteenGods, AllPong)))
+    }
+  }
+
+  "hand with honor and one nine" - {
+    "scores 1 more points" in {
+      val calculator = new ScoreCalculator(
+        List[Tile](HD_R, HD_R, HD_R, B1, B1, B1, D9, D9),
+        List[TileGroup](KongGroup(HW_E), PongGroup(HW_W)),
+        Tile(D9),
+        maxScore
+      )
+      calculator.cal should equal(ScoreResult(3 + 1, Set(OneNine, AllPong)))
+    }
+  }
+
+  "hand with pure one nine" - {
+    "scores max point" in {
+      val calculator = new ScoreCalculator(
+        List[Tile](B9, B9, B9, B1, B1, B1, D9, D9),
+        List[TileGroup](KongGroup(C9), PongGroup(C1)),
+        Tile(D9),
+        maxScore
+      )
+      calculator.cal should equal(ScoreResult(maxScore, Set(PureOneNine, AllPong)))
+    }
+  }
+
+  "hand with Thirteen " - {
+    "scores max points" in {
+      val calculator = new ScoreCalculator(
+        List[Tile](B1, D1, C1, D9, B9, C9, C9, HW_E, HW_S, HW_W, HW_N, HD_R, HD_G, HD_B).sortBy(_.value.id),
+        List.empty[TileGroup],
+        Tile(C9),
+        maxScore
+      )
+      calculator.cal should equal(ScoreResult(maxScore, Set(Thirteen)))
     }
   }
 }

@@ -9,7 +9,7 @@ import scala.util.Try
 /**
   * Created by felix.ling on 28/01/2017.
   */
-class Manual(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup]) extends Player(id, tiles, tileGroups) {
+class Manual(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup])(implicit c: Config) extends Player(id, tiles, tileGroups)(c) {
   val logger = Logger(classOf[Manual])
 
   // abstract decision method

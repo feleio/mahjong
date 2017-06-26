@@ -31,7 +31,13 @@ case class ChowGroup(tiles: Set[Tile]) extends TileGroup{
   override def toString: String = s"Chow(${tiles.toList.sortBy(t => t.value.id).mkString(", ")})"
 }
 
-class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup]) {
+case class CanWinResult(canWin: Boolean = false, score: Int = 0)
+
+object Hand{
+  val thirteenValidateTiles: List[Tile] = List(D1, D9, B1, B9, C1, C9, HW_E, HW_S, HW_W, HW_N, HD_R, HD_G, HD_B)
+}
+
+class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup])(implicit val config: Config) {
   if (ts.length + (gs.length * 3) != 13) throw new IllegalArgumentException("invalid number of tiles.")
 
   var dynamicTiles: List[Tile] = ts.sortBy(_.value.id)
@@ -53,13 +59,37 @@ class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup]) {
     case _ => false
   }
 
+  private def validateThirteen(sortedTiles: List[Tile]): Boolean = sortedTiles == Hand.thirteenValidateTiles
+
   // check if this hand can win with the specific tile
-  def canWin(tile: Tile): Boolean = {
+  def canWin(tile: Tile): CanWinResult = {
     // filter the eyes tile value id, check there exists winning hands with these eyes
-    dynamicTileStats.zipWithIndex
+    val eyeTileIds = dynamicTileStats.zipWithIndex
       .filter{case (tileCount, i) => tileCount >= 2 || (tileCount == 1 && i == tile.value.id )}
       .map(_._2)
-      .exists(eyeTileId => validate((dynamicTiles + tile) diff List.fill[Tile](2)(TileValue(eyeTileId))))
+
+    var res = eyeTileIds.foldLeft(CanWinResult())((result, eyeTileId) => {
+      if(validate((dynamicTiles + tile) diff List.fill[Tile](2)(TileValue(eyeTileId)))) {
+        val scoreResult = new ScoreCalculator(
+          dynamicTiles + tile,
+          fixedTileGroups,
+          Tile(TileValue(eyeTileId)),
+          10
+        ).cal
+        CanWinResult(scoreResult.score >= config.minScore, Math.max(result.score, scoreResult.score))
+      } else result
+    })
+
+    if(eyeTileIds.size == 1 && validateThirteen((dynamicTiles + tile) diff List[Tile](TileValue(eyeTileIds.head)))) {
+      val scoreResult = new ScoreCalculator(
+        dynamicTiles + tile,
+        fixedTileGroups,
+        Tile(TileValue(eyeTileIds.head)),
+        config.maxScore
+      ).cal
+      res = CanWinResult(scoreResult.score >= config.minScore, Math.max(res.score, scoreResult.score))
+    }
+    res
   }
 
   // find which tile can be kong in current hand. It can be tile count == 4 OR pong group + count == 1

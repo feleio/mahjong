@@ -10,8 +10,8 @@ import io.fele.app.mahjong.TileValue._
   * Created by felix.ling on 21/01/2017.
   */
 object RandomProbability extends App {
+  implicit val config = new Config()
   val logger = Logger("RandomProbability")
-  implicit val config: Config = new Config()
 
   // initial drawer
   val drawerTiles =  Seq[Tile](D6, D9, B3, HD_B, B3, D8, B2, C3, B8, B1, C1, C5, B7, C8, B6, C9, D5, B5, B2, HW_E, B2, HW_E, HD_R, B8, HD_B, C4, B5, D2, C7, D3, D2, B6, C3, C4, HW_S, D8, C4, D3, B7, B5, D6, B9, HW_W, C5, B4, HW_W, D6, C5, B1, C9, C2, HW_W, B9, C6, C7, D4, C8, B4, HD_G, B3, HD_R, C4, HW_N, D1, D1, B8, C9, C9, HW_E, HW_N, HW_S, HD_B, D9, D4, C3, B7, D7, D9, B5, B6, D4, D1, D5, C7, D2, HW_S, B8, B9, B4, D9, C3, C1, B3, B9, D5, B7, D1, D2, HW_E, D3, C6, C1, B1, C8, HD_G, C1, C2, B6, B1, HD_G, D3, HD_R, D7, HW_N, HW_S, C7, HD_B, D8, HD_G, D7, C6, C2, C5, D6, HW_W, HW_N, B4, D8, C6, D4, B2, C2, D5, C8, HD_R, D7)

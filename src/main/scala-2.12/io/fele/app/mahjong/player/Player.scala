@@ -13,7 +13,7 @@ object DrawResult extends Enumeration {
 
 import io.fele.app.mahjong.player.DrawResult._
 
-abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup]) {
+abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup])(implicit val config: Config) {
   // TODO: change to private
   protected val hand = new Hand(tiles, tileGroups)
 
@@ -22,7 +22,7 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   def privateInfo = PrivateState(hand.dynamicTiles, hand.fixedTileGroups)
   def publicInfo = PublicState(hand.fixedTileGroups)
 
-  def canWin(tile: Tile): Boolean = hand.canWin(tile)
+  def canWin(tile: Tile): CanWinResult = hand.canWin(tile)
   def canKong(tile: Tile): Boolean = hand.canKong(tile)
   def canPong(tile: Tile): Boolean = hand.canPong(tile)
   def canChow(tile: Tile): Set[ChowPosition] = hand.canChow(tile)
@@ -78,7 +78,7 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
     drawer.pop() match {
       case Some(drawnTile) =>
         // check self win
-        if (hand.canWin(drawnTile) && decideSelfWin(drawnTile, stateGenerator.curState(id)))
+        if (hand.canWin(drawnTile).canWin && decideSelfWin(drawnTile, stateGenerator.curState(id)))
           (WIN, Some(drawnTile))
         else {
           // check self kong

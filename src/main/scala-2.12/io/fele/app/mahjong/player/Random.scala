@@ -1,14 +1,14 @@
 package io.fele.app.mahjong.player
 
 import io.fele.app.mahjong.ChowPosition._
-import io.fele.app.mahjong.{CurState, Tile, TileGroup}
+import io.fele.app.mahjong.{Config, CurState, Tile, TileGroup}
 
 import scala.util.Random
 
 /**
   * Created by felix.ling on 21/01/2017.
   */
-class RandomDiscard(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup]) extends Player(id, tiles, tileGroups) {
+class RandomDiscard(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup])(implicit c: Config) extends Player(id, tiles, tileGroups)(c) {
   val random = new Random()
 
   override def decideSelfWin(tile: Tile, curState: CurState): Boolean = true
