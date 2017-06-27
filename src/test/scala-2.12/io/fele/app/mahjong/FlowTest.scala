@@ -69,7 +69,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       // Then
       discarded should equal(None)
       gameState.winnersInfo.isDefined should equal(true)
-      gameState.winnersInfo.get.winners should equal(Set(subjectPlayers.id))
+      gameState.winnersInfo.get.winners should equal(Set(WinnerInfo(subjectPlayers.id, 0)))
       gameState.winnersInfo.get.winningTile should equal(Tile(B3))
       gameState.winnersInfo.get.isSelfWin should equal(false)
       verify(subjectPlayers, never()).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
@@ -211,7 +211,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       // Then
       discarded should equal(None)
       gameState.winnersInfo.isDefined should equal(true)
-      gameState.winnersInfo.get.winners should equal(Set(subjectPlayers.id))
+      gameState.winnersInfo.get.winners should equal(Set(WinnerInfo(subjectPlayers.id, 0)))
       gameState.winnersInfo.get.winningTile should equal(Tile(HD_R))
       gameState.winnersInfo.get.isSelfWin should equal(true)
       gameState.curPlayerId should equal(subjectPlayers.id)
@@ -442,7 +442,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       // Then
       discarded should equal(None)
       gameState.winnersInfo.isDefined should equal(true)
-      gameState.winnersInfo.get.winners should equal(Set(subjectPlayers.id))
+      gameState.winnersInfo.get.winners should equal(Set(WinnerInfo(subjectPlayers.id, 0)))
       gameState.winnersInfo.get.winningTile should equal(Tile(B3))
       assert(gameState.winnersInfo.get.isSelfWin)
       gameState.curPlayerId should equal(subjectPlayers.id)

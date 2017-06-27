@@ -6,12 +6,14 @@ import io.fele.app.mahjong._
 /**
   * Created by felix.ling on 12/12/2016.
   */
-object DrawResult extends Enumeration {
-  type DrawResult = Value
+object DrawResultType extends Enumeration {
+  type DrawResultType = Value
   val DISCARD, NO_TILE, WIN = Value
 }
 
-import io.fele.app.mahjong.player.DrawResult._
+import io.fele.app.mahjong.player.DrawResultType._
+
+case class DrawResult(result: DrawResultType, tile: Option[Tile] = None, winningScore: Option[Int] = None)
 
 abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup])(implicit val config: Config) {
   // TODO: change to private
@@ -42,14 +44,14 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   }
 
   def kong(tile: Tile, drawer: TileDrawer)
-          (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
+          (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): DrawResult = {
     hand.kong(tile)
     gameLogger.kong(id, tile)
     draw(drawer)
   }
 
   def selfKong(tile: Tile, drawer: TileDrawer)
-          (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
+          (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): DrawResult = {
     hand.selfKong(tile)
     gameLogger.kong(id, tile)
     draw(drawer)
@@ -74,13 +76,13 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   }
 
   def draw(drawer: TileDrawer)
-          (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
+          (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): DrawResult = {
     drawer.pop() match {
       case Some(drawnTile) =>
         // check self win
         val canWinResult = hand.canWin(drawnTile)
         if (canWinResult.canWin && decideSelfWin(drawnTile, canWinResult.score, stateGenerator.curState(id)))
-          (WIN, Some(drawnTile))
+          DrawResult(WIN, Some(drawnTile), Some(canWinResult.score))
         else {
           // check self kong
           hand.add(drawnTile)
@@ -90,10 +92,10 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
             case _ =>
               val discarded = discard()
               hand.discard(discarded)
-              (DISCARD, Some(discarded))
+              DrawResult(DISCARD, Some(discarded), None)
           }
         }
-      case None => (NO_TILE, None)
+      case None => DrawResult(NO_TILE, None, None)
     }
   }
 

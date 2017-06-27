@@ -12,7 +12,7 @@ import io.fele.app.mahjong.player.{Chicken, Manual}
 object Play extends App{
   implicit val config: Config = new Config()
 
-  var seed = 0
+  var seed = 45
   val drawer: TileDrawer = new RandomTileDrawer(Some(seed))
   val state = GameState(
     new Manual(0, drawer.popHand()) :: (1 to 3).map(new Chicken(_, drawer.popHand())).toList,

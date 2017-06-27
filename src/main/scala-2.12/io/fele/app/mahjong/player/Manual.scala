@@ -14,7 +14,7 @@ class Manual(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empt
 
   // abstract decision method
   override def decideSelfWin(tile: Tile, score: Int, curState: CurState): Boolean = {
-    logger.info(s"you draw $tile do you want to win? [y/n]")
+    logger.info(s"you draw $tile do you want to win with score $score? [y/n]")
     scala.io.StdIn.readLine() match {
       case y => true
       case n => false
@@ -23,7 +23,7 @@ class Manual(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empt
   }
 
   override def decideWin(tile: Tile, score: Int, curState: CurState): Boolean = {
-    logger.info(s"player ${curState.curPlayerId} discarded $tile, do you want to win? [y/n]")
+    logger.info(s"player ${curState.curPlayerId} discarded $tile, do you want to win with score $score? [y/n]")
     scala.io.StdIn.readLine() match {
       case y => true
       case n => false

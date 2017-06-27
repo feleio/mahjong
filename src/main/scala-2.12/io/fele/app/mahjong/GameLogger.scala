@@ -72,11 +72,12 @@ class DebugGameLogger(val gameState: GameState, val visibleToPlayerID: Option[In
       s"${if(info.isSelfWin) "draws and self wins " else "wins"}" +
       s" with ${info.winningTile.toString}\n" +
       s"winners info:\n"
-      + info.winners.map(id => {
-        val p = gameState.players(id)
-        s"Player $id :" +
+      + info.winners.map(winner => {
+        val p = gameState.players(winner.id)
+        s"Player ${winner.id} :" +
           s"fixed: ${p.privateInfo.tileGroups.mkString(" ")}\n" +
-          s"tiles: ${p.privateInfo.tiles.sortBy(t => t.value.id).mkString(" ")}\n"
+          s"tiles: ${p.privateInfo.tiles.sortBy(t => t.value.id).mkString(" ")}\n" +
+          s"score: ${winner.score}\n"
       }).mkString
     )
   }

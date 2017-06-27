@@ -4,14 +4,16 @@ import java.util.Random
 
 import com.typesafe.scalalogging.Logger
 import io.fele.app.mahjong.ChowPosition.ChowPosition
-import io.fele.app.mahjong.player.DrawResult._
-import io.fele.app.mahjong.player.{Chicken, Dummy, Player}
+import io.fele.app.mahjong.player.DrawResultType._
+import io.fele.app.mahjong.player.{Chicken, Dummy, DrawResult, Player}
 
 /**
   * Created by felix.ling on 12/12/2016.
   */
 
-case class WinnersInfo(winners: Set[Int], winningTile: Tile, isSelfWin: Boolean)
+case class WinnerInfo(id: Int, score: Int)
+
+case class WinnersInfo(winners: Set[WinnerInfo], winningTile: Tile, isSelfWin: Boolean)
 
 case class GameResult(winnersInfo: Option[WinnersInfo])
 
@@ -52,14 +54,14 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
 
   // check if there are players who can Win with this tile
   private object WiningTile {
-    def unapply(tile: Tile): Option[Set[Int]] = {
-      val anyoneWin: ((Int, Player)) => Boolean = {
+    def unapply(tile: Tile): Option[Set[WinnerInfo]] = {
+      val anyoneWin: ((Int, Player)) => (Boolean, Int, Int) = {
         case (i: Int, p: Player) => {
           val canWinResult = p.canWin(tile)
-          canWinResult.canWin && p.decideWin(tile, canWinResult.score,curStateGenerator.curState(i))
+          (canWinResult.canWin && p.decideWin(tile, canWinResult.score,curStateGenerator.curState(i)), i, canWinResult.score)
         }
       }
-      val winners = checkPlayersTile(anyoneWin)
+      val winners = state.otherPlayers().map(anyoneWin).filter(_._1).map(w => WinnerInfo(w._2, w._3)).toSet
       if (winners.isEmpty) None else Some(winners)
     }
   }
@@ -105,15 +107,18 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
   }
 
   def round(discardedTile: Tile): Option[Tile] = discardedTile match {
-    case WiningTile(playerIds) =>
-      state.winnersInfo = Some(WinnersInfo(playerIds, discardedTile, false))
+    case WiningTile(playerInfos) =>
+      state.winnersInfo = Some(WinnersInfo(playerInfos, discardedTile, false))
       None
     case KongableTile(playerId) =>
       state.setCurPlayer(playerId)
       state.curPlayer.kong(discardedTile, state.drawer) match {
-        case (DISCARD, discarded: Option[Tile]) => discarded
-        case (WIN, Some(winningTile)) => state.winnersInfo = Some(WinnersInfo(Set(playerId), winningTile, true)); None
-        case (NO_TILE, _) => None
+        case DrawResult(DISCARD, discarded: Option[Tile], _) => discarded
+        case DrawResult(WIN, Some(winningTile), Some(score)) => {
+          state.winnersInfo = Some(WinnersInfo(Set(WinnerInfo(playerId, score)), winningTile, true))
+          None
+        }
+        case DrawResult(NO_TILE, _, _) => None
       }
     case PongableTile(playerId) =>
       state.setCurPlayer(playerId)
@@ -125,9 +130,12 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
       state.addDiscarded(discardedTile)
       state.setCurPlayer(state.nextPlayerId)
       state.curPlayer.draw(state.drawer) match {
-        case (DISCARD, discarded: Option[Tile]) => discarded
-        case (WIN, Some(winningTile)) => state.winnersInfo = Some(WinnersInfo(Set(state.curPlayerId), winningTile, true)); None
-        case (NO_TILE, _) => None
+        case DrawResult(DISCARD, discarded: Option[Tile], _) => discarded
+        case DrawResult(WIN, Some(winningTile), Some(score)) => {
+          state.winnersInfo = Some(WinnersInfo(Set(WinnerInfo(state.curPlayerId, score)), winningTile, true))
+          None
+        }
+        case DrawResult(NO_TILE, _, _) => None
       }
   }
 
@@ -136,8 +144,11 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
 
     // TODO: check if kong at the first place is allowed?
     var discardedTile = state.curPlayer.draw(state.drawer) match {
-      case (DISCARD, discarded: Option[Tile]) => discarded
-      case (WIN, Some(winningTile)) => state.winnersInfo = Some(WinnersInfo(Set(state.curPlayerId), winningTile, true)); None
+      case DrawResult(DISCARD, discarded: Option[Tile], _) => discarded
+      case DrawResult(WIN, Some(winningTile), Some(score)) => {
+        state.winnersInfo = Some(WinnersInfo(Set(WinnerInfo(state.curPlayerId, score)), winningTile, true))
+        None
+      }
     }
 
     while (discardedTile.isDefined) {
