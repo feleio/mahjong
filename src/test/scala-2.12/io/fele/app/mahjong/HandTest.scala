@@ -89,6 +89,31 @@ class HandTest extends FreeSpec with Matchers {
       hand.canWin(HD_B) should equal(CanWinResult(canWin = false, 0))
     }
 
+    "can win with min score 3" in {
+      val configWithMinScore = new Config()
+      var hand = new Hand(List[Tile](D9), List[TileGroup](PongGroup(D1), ChowGroup(Set[Tile](D2, D3, D4)), KongGroup(D6), PongGroup(D4)))(configWithMinScore)
+      hand.canWin(D9) should equal(CanWinResult(canWin = true, 7))
+      hand.canWin(HW_E) should equal(CanWinResult(canWin = false, 0))
+
+      hand = new Hand(List[Tile](HW_E), List[TileGroup](PongGroup(D1), ChowGroup(Set[Tile](D2, D3, D4)), KongGroup(D6), PongGroup(D4)))(configWithMinScore)
+      hand.canWin(HW_E) should equal(CanWinResult(canWin = true, 3))
+      hand.canWin(D9) should equal(CanWinResult(canWin = false, 0))
+
+      hand = new Hand(List[Tile](HW_E, D8,  HW_E, D7), List[TileGroup](PongGroup(D1), ChowGroup(Set[Tile](D2, D3, D4)), KongGroup(D6)))(configWithMinScore)
+      hand.canWin(D9) should equal(CanWinResult(canWin = true, 3))
+      hand.canWin(D6) should equal(CanWinResult(canWin = true, 3))
+      hand.canWin(D7) should equal(CanWinResult(canWin = false, 0))
+      hand.canWin(D8) should equal(CanWinResult(canWin = false, 0))
+
+      hand = new Hand(List[Tile](C3, C3, C3, C4), List[TileGroup](PongGroup(D1), ChowGroup(Set[Tile](D2, D3, D4)), KongGroup(D6)))(configWithMinScore)
+      hand.canWin(C2) should equal(CanWinResult(canWin = false, 0))
+      hand.canWin(C4) should equal(CanWinResult(canWin = false, 0))
+      hand.canWin(C5) should equal(CanWinResult(canWin = false, 0))
+      hand.canWin(C1) should equal(CanWinResult(canWin = false, 0))
+      hand.canWin(C6) should equal(CanWinResult(canWin = false, 0))
+      hand.canWin(D2) should equal(CanWinResult(canWin = false, 0))
+    }
+
     "can kong" in {
       val tiles = List[Tile](D8, HW_N, C3, HD_G, HW_E, B8, HW_W, D2, B8, C9, D6, D8, B8)
       val hand = new Hand(tiles)
