@@ -5,7 +5,9 @@ import java.util.Random
 import com.typesafe.scalalogging.Logger
 import io.fele.app.mahjong.ChowPosition.ChowPosition
 import io.fele.app.mahjong.player.DrawResultType._
-import io.fele.app.mahjong.player.{Chicken, Dummy, DrawResult, Player}
+import io.fele.app.mahjong.player._
+
+import scala.util.Try
 
 /**
   * Created by felix.ling on 12/12/2016.
@@ -175,38 +177,48 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
 object Main extends App{
   val logger = Logger("main")
   implicit val config: Config = new Config()
-  val total = 100000
+  val total = 1000
   var count = 0
 
-  val results = (0 to total).par.map(roundNum => {
+  val randomSeed = 10009
+  val random = new Random(randomSeed)
+
+  val results = (0 until total).par.map(roundNum => (roundNum, random.nextInt(4)))
+    .map{case (roundNum, initPlayer) => {
     count += 1
     if (count % 2000 == 0)
       logger.info(s"$count/$total")
 
     val drawer: TileDrawer = new RandomTileDrawer(Some(roundNum))
+
     val state = GameState(
-      new Chicken(0, drawer.popHand()) :: (1 to 3).map(new Dummy(_, drawer.popHand())).toList,
+      new FirstFelix(0, drawer.popHand()) :: (1 to 3).map(new Chicken(_, drawer.popHand())).toList,
+      //(0 to 3).map(new Chicken(_, drawer.popHand())).toList,
       None,
       Nil,
-      new Random(roundNum).nextInt(4),
+      initPlayer,
       drawer)
 
-    implicit val gameLogger: GameLogger = new DebugGameLogger(state)
+    // implicit val gameLogger: GameLogger = new DebugGameLogger(state)
+    implicit val gameLogger: GameLogger = new DummyGameLogger()
     val flow: Flow = new FlowImpl(state, Some(roundNum))
 
     flow.start()
-  })
+  }}
 
   logger.info(s"Total games: $total")
   val winnerCount = results.groupBy(_.winnersInfo match{
     case Some(info) => info.winners.size
     case None => 0
   }).mapValues(_.size)
+  logger.info(results.toString())
   logger.info(winnerCount.toList.sortBy(_._1).toString())
 
-  val playerWinCount = results.flatMap(_.winnersInfo match{
-    case Some(info) => info.winners.toList
+  val playerWinCount = results.flatMap(x => x.winnersInfo match {
+    case Some(info) => info.winners.map(_.id).toList
     case None => List.empty[Int]
-  }).groupBy(identity).mapValues(_.size)
-  (0 to 3).foreach(id => logger.info(s"Player $id wins: ${playerWinCount(id)}"))
+  }).groupBy[Int](identity).mapValues(_.size)
+
+  (0 to 3).foreach(id => logger.info(s"Player $id wins: ${Try{playerWinCount(id)}.getOrElse(0)}"))
 }
+
