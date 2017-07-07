@@ -177,10 +177,10 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
 object Main extends App{
   val logger = Logger("main")
   implicit val config: Config = new Config()
-  val total = 1000
+  val total = 10000
   var count = 0
 
-  val randomSeed = 10009
+  val randomSeed = 10001
   val random = new Random(randomSeed)
 
   val results = (0 until total).par.map(roundNum => (roundNum, random.nextInt(4)))
@@ -193,7 +193,7 @@ object Main extends App{
 
     val state = GameState(
       new FirstFelix(0, drawer.popHand()) :: (1 to 3).map(new Chicken(_, drawer.popHand())).toList,
-      //(0 to 3).map(new Chicken(_, drawer.popHand())).toList,
+      //(0 to 3).map(new FirstFelix(_, drawer.popHand())).toList,
       None,
       Nil,
       initPlayer,

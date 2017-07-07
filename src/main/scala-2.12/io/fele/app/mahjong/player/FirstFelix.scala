@@ -2,7 +2,6 @@ package io.fele.app.mahjong.player
 
 import io.fele.app.mahjong.ChowPosition._
 import io.fele.app.mahjong.TileType._
-import io.fele.app.mahjong.TileValue._
 import io.fele.app.mahjong.{ChowPosition => _, _}
 
 /**
@@ -11,7 +10,7 @@ import io.fele.app.mahjong.{ChowPosition => _, _}
 
 object TargetType extends Enumeration {
   type TargetType = Value
-  val SameSuit, DiffSuitAllPong = Value
+  val SameSuit, DiffSuitAllPong, DiffSuit = Value
 }
 
 import TargetType._
@@ -27,17 +26,28 @@ class FirstFelix(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.
     println(hand)
     true
   }
+
   override def decideWin(tile: Tile, score: Int, curState: CurState): Boolean ={
     println(score)
     println(hand)
     true
   }
+
   override def decideSelfKong(selfKongTiles: Set[Tile], curState: CurState): Option[Tile] = target match {
     case Some(DiffSuitAllPong) => selfKongTiles.headOption
     case _ => None
   }
-  override def decideKong(tile: Tile, curState: CurState): Boolean = target.exists(_.`type` == DiffSuitAllPong)
-  override def decidePong(tile: Tile, curState: CurState): Boolean = target.exists(_.`type` == DiffSuitAllPong)
+
+  override def decideKong(tile: Tile, curState: CurState): Boolean = {
+    ((target.exists(_.`type` == DiffSuit) && (!isContinues(tile, hand.dynamicTiles) && tile.`type` != HONOR || tile.`type` == HONOR) )|| target.exists(_.`type` == DiffSuitAllPong)) &&
+      (tile.`type` == HONOR || target.exists(_.`type` == tile.`type`))
+  }
+
+  override def decidePong(tile: Tile, curState: CurState): Boolean = {
+    ((target.exists(_.`type` == DiffSuit) && (!isContinues(tile, hand.dynamicTiles) && tile.`type` != HONOR || tile.`type` == HONOR) )|| target.exists(_.`type` == DiffSuitAllPong)) &&
+      (tile.`type` == HONOR || target.exists(_.`type` == tile.`type`))
+  }
+
   override def decideChow(tile: Tile, positions: Set[ChowPosition], curState: CurState): Option[ChowPosition] = {
     target match {
       case Some(t) if t.`type` == tile.`type` => positions.headOption
@@ -74,7 +84,7 @@ class FirstFelix(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.
         decisionDeadline -= 1
       else{
         // can't decide target when deadline reached
-        target = Some(TargetDecision(SameSuit, maxSuit))
+        target = Some(TargetDecision(DiffSuit, maxSuit))
       }
     }
   }
@@ -93,8 +103,8 @@ class FirstFelix(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.
       // decision already made
       hand.dynamicTiles.find(_.`type` != target.get.`type`).getOrElse(
         hand.dynamicTiles.find(tile => tile.`type` == HONOR || hand.dynamicTileStats(tile.value.id) == 1).getOrElse(
-          hand.dynamicTiles.find(tile => tile.`type` == HONOR).getOrElse(
-            hand.dynamicTiles.find(tile => hand.dynamicTileStats(tile.value.id) < 2 && !isContinues(tile, hand.dynamicTiles)).getOrElse(
+          hand.dynamicTiles.find(tile => target.exists(_.`type` == SameSuit) && tile.`type` == HONOR).getOrElse(
+            hand.dynamicTiles.find(tile => tile.`type` != HONOR && hand.dynamicTileStats(tile.value.id) < 2 && !isContinues(tile, hand.dynamicTiles)).getOrElse(
               hand.dynamicTiles.head
             )
           )
