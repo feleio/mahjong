@@ -39,8 +39,7 @@ class FirstFelix(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.
   }
 
   override def decideKong(tile: Tile, curState: CurState): Boolean = {
-    ((target.exists(_.`type` == DiffSuit) && (!isContinues(tile, hand.dynamicTiles) && tile.`type` != HONOR || tile.`type` == HONOR) )|| target.exists(_.`type` == DiffSuitAllPong)) &&
-      (tile.`type` == HONOR || target.exists(_.`type` == tile.`type`))
+    target.exists(_.`type` == DiffSuitAllPong) || tile.`type` == HONOR
   }
 
   override def decidePong(tile: Tile, curState: CurState): Boolean = {
