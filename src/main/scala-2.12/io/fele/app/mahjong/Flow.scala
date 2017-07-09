@@ -175,7 +175,7 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
   }
 }
 
-object Main extends App{
+object Main extends App {
   val logger = Logger("main")
   implicit val config: Config = new Config()
   val total = 10000

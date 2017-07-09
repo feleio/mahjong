@@ -53,8 +53,12 @@ class FirstFelix(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.
   private def makeTargetDecision(tileTypeStat: Map[TileType, Int]): Unit = {
     val tileTypeStat: Map[TileType, Int] = hand.dynamicTiles.groupBy(_.`type`).mapValues(_.size)
 
-    val manySuit: Option[TileType] = tileTypeStat.keySet.filter(_ != HONOR).find(tileType => tileTypeStat(tileType) > 6)
-    val maxSuit: TileType = tileTypeStat.keySet.filter(_ != HONOR).maxBy(tileType => tileTypeStat(tileType))
+    val manySuit: Option[TileType] = tileTypeStat.keySet.filter(_ != HONOR).find(tileType => tileTypeStat(tileType) > 7)
+    val nonHonorType = tileTypeStat.keySet.filter(_ != HONOR)
+    val maxSuit: TileType = nonHonorType match {
+      case types if types.nonEmpty => types.maxBy(tileType => tileTypeStat(tileType))
+      case _ => DOT
+    }
 
     var maxPairSuit: Option[TileType] = None
     val isDecideDiffSuitAllPong = {
@@ -70,12 +74,12 @@ class FirstFelix(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.
         (pairTileStat(maxPairSuit.get) >= 3 || (pairTileStat.contains(HONOR) && pairTileStat(HONOR) >= 1 && pairTileStat(maxPairSuit.get) >= 2))
     }
 
-    if(manySuit.isDefined){
+    if (manySuit.isDefined){
       target = Some(TargetDecision(SameSuit, manySuit.get))
     } else if(isDecideDiffSuitAllPong) {
       target = Some(TargetDecision(DiffSuitAllPong, maxPairSuit.get))
     } else {
-      if(decisionDeadline > 0)
+      if (decisionDeadline > 0)
         decisionDeadline -= 1
       else{
         // can't decide target when deadline reached
@@ -88,10 +92,14 @@ class FirstFelix(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.
     if(target.isEmpty) {
       // decision not yet made
       val tileTypeStat: Map[TileType, Int] = hand.dynamicTiles.groupBy(_.`type`).mapValues(_.size)
-      val minSuit: TileType = tileTypeStat.keySet.filter(_ != HONOR).minBy(tileType => tileTypeStat(tileType))
-      val discardTile = hand.dynamicTiles.find(_.`type` == minSuit).getOrElse(
-        hand.dynamicTiles.find(_.`type` == HONOR).get
-      )
+      val nonHonorType = tileTypeStat.keySet.filter(_ != HONOR)
+      val discardTile = if (nonHonorType.nonEmpty){
+        val minSuit: TileType = nonHonorType.minBy(tileType => tileTypeStat(tileType))
+        hand.dynamicTiles.find(_.`type` == minSuit).getOrElse(
+          hand.dynamicTiles.find(_.`type` == HONOR).get
+        )
+      } else hand.dynamicTiles.find(_.`type` == HONOR).get
+
       makeTargetDecision(tileTypeStat)
       discardTile
     } else {
