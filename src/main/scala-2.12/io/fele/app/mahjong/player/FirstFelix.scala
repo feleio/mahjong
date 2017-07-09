@@ -22,14 +22,10 @@ class FirstFelix(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.
   var decisionDeadline: Int = 5
 
   override def decideSelfWin(tile: Tile, score: Int, curState: CurState): Boolean = {
-    println(score)
-    println(hand)
     true
   }
 
   override def decideWin(tile: Tile, score: Int, curState: CurState): Boolean ={
-    println(score)
-    println(hand)
     true
   }
 
@@ -113,6 +109,10 @@ class FirstFelix(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.
   }
 
   override def name: String = "FirstFelix"
+
+  def printDebug: Unit = {
+    println(s"first felix target: $target")
+  }
 
   private def isContinues(tile: Tile, tiles: List[Tile]) =
     tile.`type` != TileType.HONOR && (

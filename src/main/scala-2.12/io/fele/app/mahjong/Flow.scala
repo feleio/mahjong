@@ -157,6 +157,7 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
       gameLogger.discard(state.curPlayerId, discardedTile.get)
       discardedTile = round(discardedTile.get)
     }
+    // state.players.head.asInstanceOf[FirstFelix].printDebug
     gameLogger.end(state.winnersInfo)
     GameResult(state.winnersInfo)
   }
@@ -194,7 +195,7 @@ object Main extends App{
     val state = GameState(
       //new FirstFelix(0, drawer.popHand()) :: (1 to 3).map(new Chicken(_, drawer.popHand())).toList,
       //(0 to 3).map(new FirstFelix(_, drawer.popHand())).toList,
-      new FirstFelix(0, drawer.popHand()) :: (1 to 3).map(new Chicken(_, drawer.popHand())).toList,
+      new FirstFelix(0, drawer.popHand()) :: (1 to 3).map(new ThreePointChicken(_, drawer.popHand())).toList,
       //(0 to 3).map(new ThreePointChicken(_, drawer.popHand())).toList,
       None,
       Nil,
