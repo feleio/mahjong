@@ -194,7 +194,7 @@ object Main extends App{
     val state = GameState(
       //new FirstFelix(0, drawer.popHand()) :: (1 to 3).map(new Chicken(_, drawer.popHand())).toList,
       //(0 to 3).map(new FirstFelix(_, drawer.popHand())).toList,
-      new ThreePointChicken(0, drawer.popHand()) :: (1 to 3).map(new Chicken(_, drawer.popHand())).toList,
+      new FirstFelix(0, drawer.popHand()) :: (1 to 3).map(new Chicken(_, drawer.popHand())).toList,
       //(0 to 3).map(new ThreePointChicken(_, drawer.popHand())).toList,
       None,
       Nil,
@@ -213,7 +213,6 @@ object Main extends App{
     case Some(info) => info.winners.size
     case None => 0
   }).mapValues(_.size)
-  logger.info(results.toString())
   logger.info(winnerCount.toList.sortBy(_._1).toString())
 
   val playerWinCount = results.flatMap(x => x.winnersInfo match {
@@ -221,6 +220,11 @@ object Main extends App{
     case None => List.empty[Int]
   }).groupBy[Int](identity).mapValues(_.size)
 
-  (0 to 3).foreach(id => logger.info(s"Player $id wins: ${Try{playerWinCount(id)}.getOrElse(0)}"))
+  val playerWinMoney = results.flatMap(x => x.winnersInfo match {
+    case Some(info) => info.winners.map(winner => (winner.id, config.scoreMap(winner.score.toString))).toList
+    case None => List.empty[(Int, Int)]
+  }).groupBy(_._1).mapValues(_.map(_._2).sum)
+
+  (0 to 3).foreach(id => logger.info(s"Player $id wins: ${Try{playerWinCount(id)}.getOrElse(0)} money: ${Try{playerWinMoney(id)}.getOrElse(0)}"))
 }
 

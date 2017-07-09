@@ -74,7 +74,7 @@ class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup])(implicit
           dynamicTiles + tile,
           fixedTileGroups,
           Tile(TileValue(eyeTileId)),
-          10
+          config.maxScore
         ).cal
         CanWinResult(scoreResult.score >= config.minScore, Math.max(result.score, scoreResult.score))
       } else result
