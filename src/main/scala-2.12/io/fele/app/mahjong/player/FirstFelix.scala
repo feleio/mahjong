@@ -17,9 +17,10 @@ import TargetType._
 
 case class TargetDecision(`type`: TargetType, tiletype: TileType)
 
-class FirstFelix(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup])(implicit c: Config) extends Player(id, tiles, tileGroups)(c) {
+class FirstFelix(id: Int, tiles: List[Tile], sameSuitNum: Int, tileGroups: List[TileGroup] = List.empty[TileGroup])(implicit c: Config) extends Player(id, tiles, tileGroups)(c) {
   var target: Option[TargetDecision] = None
   var decisionDeadline: Int = 5
+  val sameSuitDecisionNum = sameSuitNum
 
   override def decideSelfWin(tile: Tile, score: Int, curState: CurState): Boolean = {
     true
@@ -50,12 +51,24 @@ class FirstFelix(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.
     }
   }
 
-  private def makeTargetDecision(tileTypeStat: Map[TileType, Int]): Unit = {
+  private def previousPlayerMainSuit(discards: List[DiscardInfo]): Set[TileType] = {
+    val previousPlayerId = (id + 3) % 4
+    val discardedTypes = discards.filter(x => x.playerId == previousPlayerId && x.tile.`type` != HONOR).map(_.tile.`type`)
+    val discardedTypesCounts = discardedTypes.groupBy(identity).mapValues(_.size)
+    discardedTypesCounts.keySet.size match {
+      case 3 => Set(discardedTypesCounts.minBy(_._2)._1)
+      case t if t < 3 => Set(DOT, BAMBOO, CHARACTER) diff discardedTypesCounts.keySet
+      case _ => Set.empty
+    }
+  }
+
+  private def makeTargetDecision(tileTypeStat: Map[TileType, Int], discards: List[DiscardInfo]): Unit = {
     val tileTypeStat: Map[TileType, Int] = hand.dynamicTiles.groupBy(_.`type`).mapValues(_.size)
 
-    val manySuit: Option[TileType] = tileTypeStat.keySet.filter(_ != HONOR).find(tileType => tileTypeStat(tileType) > 7)
+    val manySuit: Option[TileType] = tileTypeStat.keySet.filter(_ != HONOR).find(tileType => tileTypeStat(tileType) > sameSuitDecisionNum)
     val nonHonorType = tileTypeStat.keySet.filter(_ != HONOR)
-    val maxSuit: TileType = nonHonorType match {
+
+    val maxSuit: TileType = nonHonorType.diff(previousPlayerMainSuit(discards)) match {
       case types if types.nonEmpty => types.maxBy(tileType => tileTypeStat(tileType))
       case _ => DOT
     }
@@ -100,7 +113,7 @@ class FirstFelix(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.
         )
       } else hand.dynamicTiles.find(_.`type` == HONOR).get
 
-      makeTargetDecision(tileTypeStat)
+      makeTargetDecision(tileTypeStat, curState.discards)
       discardTile
     } else {
       // decision already made

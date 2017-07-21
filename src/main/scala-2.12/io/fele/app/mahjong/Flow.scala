@@ -195,7 +195,7 @@ object Main extends App {
     val state = GameState(
       //new FirstFelix(0, drawer.popHand()) :: (1 to 3).map(new Chicken(_, drawer.popHand())).toList,
       //(0 to 3).map(new FirstFelix(_, drawer.popHand())).toList,
-      new FirstFelix(0, drawer.popHand()) :: (1 to 3).map(new ThreePointChicken(_, drawer.popHand())).toList,
+      new FirstFelix(0, drawer.popHand(), 5) :: (1 to 3).map(new Chicken(_, drawer.popHand())).toList,
       //(0 to 3).map(new ThreePointChicken(_, drawer.popHand())).toList,
       None,
       Nil,
