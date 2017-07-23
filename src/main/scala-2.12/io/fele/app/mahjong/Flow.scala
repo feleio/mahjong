@@ -58,6 +58,8 @@ case class GameState(players: List[Player],
   def otherPlayers(): List[(Int, Player)] = {
     (1 to 3).map(x => (x + curPlayerId) % 4).map(y => (y, players(y))).toList
   }
+
+
 }
 
 trait Flow {
@@ -136,7 +138,7 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
       None
     case KongableTile(playerId) =>
       state.setCurPlayer(playerId)
-      state.curPlayer.kong(discard.tile, state.drawer) match {
+      state.curPlayer.kong(discard.tile, discard.playerId, state.drawer) match {
         case DrawResult(DISCARD, discarded: Option[Tile], _) => discarded
         case DrawResult(WIN, Some(winningTile), Some(score)) => {
           state.winnersInfo = Some(WinnersInfo(Set(WinnerInfo(playerId, score)), None, winningTile, isSelfWin = true))
@@ -146,10 +148,10 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
       }
     case PongableTile(playerId) =>
       state.setCurPlayer(playerId)
-      Some(state.curPlayer.pong(discard.tile))
+      Some(state.curPlayer.pong(discard.tile, discard.playerId))
     case ChowableTile(playerId, chowPosition) =>
       state.setCurPlayer(playerId)
-      Some(state.curPlayer.chow(discard.tile, chowPosition))
+      Some(state.curPlayer.chow(discard.tile, discard.playerId, chowPosition))
     case _ =>
       state.addDiscarded(discard.tile)
       state.setCurPlayer(state.nextPlayerId)
@@ -176,11 +178,11 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
     }
 
     while (discardedTile.isDefined) {
-      gameLogger.discard(state.curPlayerId, discardedTile.get)
+      gameLogger.discard(DiscardEvent(state.curPlayerId, discardedTile.get))
       discardedTile = round(DiscardInfo(state.curPlayerId, discardedTile.get))
     }
     // state.players.head.asInstanceOf[FirstFelix].printDebug
-    gameLogger.end(state.winnersInfo)
+    gameLogger.end(EndEvent(state.winnersInfo))
     GameResult(state.winnersInfo)
   }
 
@@ -189,10 +191,10 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
 
     var discardedTile = discarded
     while (discardedTile.isDefined) {
-      gameLogger.discard(state.curPlayerId, discardedTile.get)
+      gameLogger.discard(DiscardEvent(state.curPlayerId, discardedTile.get))
       discardedTile = round(DiscardInfo(state.curPlayerId, discardedTile.get))
     }
-    gameLogger.end(state.winnersInfo)
+    gameLogger.end(EndEvent(state.winnersInfo))
     GameResult(state.winnersInfo)
   }
 }
@@ -200,7 +202,7 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
 object Main extends App {
   val logger = Logger("main")
   implicit val config: Config = new Config()
-  val total = 10000
+  val total = 1
   var count = 0
 
   val randomSeed = 10001
@@ -224,8 +226,8 @@ object Main extends App {
       initPlayer,
       drawer)
 
-    // implicit val gameLogger: GameLogger = new DebugGameLogger(state)
-    implicit val gameLogger: GameLogger = new DummyGameLogger()
+    implicit val gameLogger: GameLogger = new DebugGameLogger(state)
+    // implicit val gameLogger: GameLogger = new DummyGameLogger()
     val flow: Flow = new FlowImpl(state, Some(roundNum))
 
     flow.start()
