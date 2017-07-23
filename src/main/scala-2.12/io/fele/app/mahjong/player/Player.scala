@@ -6,30 +6,32 @@ import io.fele.app.mahjong._
 /**
   * Created by felix.ling on 12/12/2016.
   */
-object DrawResult extends Enumeration {
-  type DrawResult = Value
+object DrawResultType extends Enumeration {
+  type DrawResultType = Value
   val DISCARD, NO_TILE, WIN = Value
 }
 
-import io.fele.app.mahjong.player.DrawResult._
+import io.fele.app.mahjong.player.DrawResultType._
 
-abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup]) {
+case class DrawResult(result: DrawResultType, tile: Option[Tile] = None, winningScore: Option[Int] = None)
+
+abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup])(implicit val config: Config) {
   // TODO: change to private
   protected val hand = new Hand(tiles, tileGroups)
 
   var discardDecision: Option[Tile] = None
 
-  def privateInfo = PrivateState(hand.tiles, hand.fixedTileGroups)
+  def privateInfo = PrivateState(hand.dynamicTiles, hand.fixedTileGroups)
   def publicInfo = PublicState(hand.fixedTileGroups)
 
-  def canWin(tile: Tile): Boolean = hand.canWin(tile)
+  def canWin(tile: Tile): CanWinResult = hand.canWin(tile)
   def canKong(tile: Tile): Boolean = hand.canKong(tile)
   def canPong(tile: Tile): Boolean = hand.canPong(tile)
   def canChow(tile: Tile): Set[ChowPosition] = hand.canChow(tile)
 
   private object SelfKongDecision {
     def unapply(hand: Hand)(implicit stateGenerator: CurStateGenerator): Option[Tile] = {
-      hand.selfKongableTiles() match {
+      hand.canSelfKong() match {
         case kongSet if kongSet.nonEmpty => verify(kongSet)(decideSelfKong(kongSet, stateGenerator.curState(id)))
         case _ => None
       }
@@ -42,14 +44,14 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   }
 
   def kong(tile: Tile, drawer: TileDrawer)
-          (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
+          (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): DrawResult = {
     hand.kong(tile)
     gameLogger.kong(id, tile)
     draw(drawer)
   }
 
   def selfKong(tile: Tile, drawer: TileDrawer)
-          (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
+          (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): DrawResult = {
     hand.selfKong(tile)
     gameLogger.kong(id, tile)
     draw(drawer)
@@ -74,12 +76,13 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   }
 
   def draw(drawer: TileDrawer)
-          (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): (DrawResult, Option[Tile]) = {
+          (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): DrawResult = {
     drawer.pop() match {
       case Some(drawnTile) =>
         // check self win
-        if (hand.canWin(drawnTile) && decideSelfWin(drawnTile, stateGenerator.curState(id)))
-          (WIN, Some(drawnTile))
+        val canWinResult = hand.canWin(drawnTile)
+        if (canWinResult.canWin && decideSelfWin(drawnTile, canWinResult.score, stateGenerator.curState(id)))
+          DrawResult(WIN, Some(drawnTile), Some(canWinResult.score))
         else {
           // check self kong
           hand.add(drawnTile)
@@ -89,10 +92,10 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
             case _ =>
               val discarded = discard()
               hand.discard(discarded)
-              (DISCARD, Some(discarded))
+              DrawResult(DISCARD, Some(discarded), None)
           }
         }
-      case None => (NO_TILE, None)
+      case None => DrawResult(NO_TILE, None, None)
     }
   }
 
@@ -101,8 +104,8 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
       case Some(decision) => discardDecision = None; decision
       case None => decideDiscard(stateGenerator.curState(id))
     }
-    if (!hand.tiles.contains(discarded))
-      throw new Exception(s"Player $id: discarded tile $discarded does not exist in ${hand.tiles}")
+    if (!hand.dynamicTiles.contains(discarded))
+      throw new Exception(s"Player $id: discarded tile $discarded does not exist in ${hand.dynamicTiles}")
     discarded
   }
 
@@ -111,8 +114,8 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   override def toString = hand.toString
 
   // abstract decision method
-  def decideSelfWin(tile: Tile, curState: CurState): Boolean
-  def decideWin(tile: Tile, curState: CurState): Boolean
+  def decideSelfWin(tile: Tile, score:Int, curState: CurState): Boolean
+  def decideWin(tile: Tile, score:Int, curState: CurState): Boolean
   def decideSelfKong(selfKongTiles: Set[Tile], curState: CurState): Option[Tile]
   def decideKong(tile: Tile, curState: CurState): Boolean
   def decidePong(tile: Tile, curState: CurState): Boolean

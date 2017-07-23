@@ -8,7 +8,7 @@ case class PrivateState(tiles: List[Tile], tileGroups: List[TileGroup])
 case class PublicState(tileGroups: List[TileGroup])
 case class CurState(myInfo: PrivateState,
                     otherInfos: List[PublicState],
-                    discards: List[(Int, Tile)],
+                    discards: List[DiscardInfo],
                     curPlayerId: Int,
                     remainTileNum: Int)
 

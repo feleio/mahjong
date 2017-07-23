@@ -15,6 +15,7 @@ import io.fele.app.mahjong.player.{Dummy, Player}
 class FlowTest extends FreeSpec with Matchers with MockitoSugar {
   private val DEFAULT_DISCARDED: Tile = C1
   implicit val mockLogger = mock[GameLogger]
+  implicit val config = new Config(Some("application-test.conf"))
 
   private def fixture = new {
     val drawer: TileDrawer = mock[TileDrawer]
@@ -23,8 +24,8 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
   private def spyPlayer(dummpyPlayer: Player): Player = {
     val spyPlayer = spy(dummpyPlayer)
 
-    doReturn(false).when(spyPlayer).decideWin(any[Tile], any[CurState])
-    doReturn(false).when(spyPlayer).decideSelfWin(any[Tile], any[CurState])
+    doReturn(false).when(spyPlayer).decideWin(any[Tile], any[Int], any[CurState])
+    doReturn(false).when(spyPlayer).decideSelfWin(any[Tile], any[Int], any[CurState])
     doReturn(false).when(spyPlayer).decideKong(any[Tile], any[CurState])
     doReturn(None).when(spyPlayer).decideSelfKong(any[Set[Tile]], any[CurState])
     doReturn(false).when(spyPlayer).decidePong(any[Tile], any[CurState])
@@ -48,13 +49,13 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](B3, B3, C1, C2, C3, C7, C8, C9, HD_R, HD_R),
         List(ChowGroup(Set[Tile](D7, D8, D9)))))
 
-      doReturn(true).when(subjectPlayers).decideWin(eqTo(B3), any[CurState])
+      doReturn(true).when(subjectPlayers).decideWin(eqTo(B3), any[Int], any[CurState])
       when(f.drawer.pop()).thenReturn(Some(Tile(B6)))
 
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         None,
-        List.empty[(Int,Tile)],
+        List.empty[DiscardInfo],
         1,
         f.drawer)
 
@@ -63,12 +64,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val flow = new FlowImpl(gameState)
 
       // When
-      val discarded: Option[Tile] = flow.round(B3)
+      val discarded: Option[Tile] = flow.round(DiscardInfo(3, B3))
 
       // Then
       discarded should equal(None)
       gameState.winnersInfo.isDefined should equal(true)
-      gameState.winnersInfo.get.winners should equal(Set(subjectPlayers.id))
+      gameState.winnersInfo.get.winners should equal(Set(WinnerInfo(subjectPlayers.id, 0)))
       gameState.winnersInfo.get.winningTile should equal(Tile(B3))
       gameState.winnersInfo.get.isSelfWin should equal(false)
       verify(subjectPlayers, never()).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
@@ -100,7 +101,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         None,
-        List.empty[(Int,Tile)],
+        List.empty[DiscardInfo],
         1,
         f.drawer)
 
@@ -109,12 +110,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val flow = new FlowImpl(gameState)
 
       // When
-      val discarded: Option[Tile] = flow.round(C9)
+      val discarded: Option[Tile] = flow.round(DiscardInfo(3, C9))
 
       // Then
       discarded should equal(Some[Tile](C2))
       gameState.winnersInfo.isDefined should equal(false)
-      gameState.getCurPlayerId should equal(subjectPlayers.id)
+      gameState.curPlayerId should equal(subjectPlayers.id)
       assert(subjectPlayers.privateInfo.tileGroups.contains(KongGroup(C9)))
       assert(!subjectPlayers.privateInfo.tiles.contains(Tile(C9)))
       verify(subjectPlayers, times(1)).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
@@ -146,7 +147,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         None,
-        List.empty[(Int,Tile)],
+        List.empty[DiscardInfo],
         1,
         f.drawer)
 
@@ -155,12 +156,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val flow = new FlowImpl(gameState)
 
       // When
-      val discarded: Option[Tile] = flow.round(C9)
+      val discarded: Option[Tile] = flow.round(DiscardInfo(3, C9))
 
       // Then
       discarded should equal(Some[Tile](C2))
       gameState.winnersInfo.isDefined should equal(false)
-      gameState.getCurPlayerId should equal(subjectPlayers.id)
+      gameState.curPlayerId should equal(subjectPlayers.id)
       assert(subjectPlayers.privateInfo.tileGroups.contains(KongGroup(C9)))
       assert(subjectPlayers.privateInfo.tileGroups.contains(KongGroup(C7)))
       assert(!subjectPlayers.privateInfo.tiles.contains(Tile(C9)))
@@ -187,7 +188,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](B3, B3, C1, C2, C3, C9, C9, C9, HD_R, HD_R),
         List(PongGroup(C7))))
 
-      doReturn(true).when(subjectPlayers).decideSelfWin(eqTo(Tile(HD_R)), any[CurState])
+      doReturn(true).when(subjectPlayers).decideSelfWin(eqTo(Tile(HD_R)), any[Int], any[CurState])
       doReturn(true).when(subjectPlayers).decideKong(eqTo(C9), any[CurState])
       doReturn(Some(Tile(C7))).when(subjectPlayers).decideSelfKong(eqTo(Set(C7)), any[CurState])
       when(f.drawer.pop()).thenReturn(Some[Tile](C7)).thenReturn(Some[Tile](HD_R))
@@ -196,7 +197,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         None,
-        List.empty[(Int,Tile)],
+        List.empty[DiscardInfo],
         1,
         f.drawer)
 
@@ -205,15 +206,15 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val flow = new FlowImpl(gameState)
 
       // When
-      val discarded: Option[Tile] = flow.round(C9)
+      val discarded: Option[Tile] = flow.round(DiscardInfo(3, C9))
 
       // Then
       discarded should equal(None)
       gameState.winnersInfo.isDefined should equal(true)
-      gameState.winnersInfo.get.winners should equal(Set(subjectPlayers.id))
+      gameState.winnersInfo.get.winners should equal(Set(WinnerInfo(subjectPlayers.id, 0)))
       gameState.winnersInfo.get.winningTile should equal(Tile(HD_R))
       gameState.winnersInfo.get.isSelfWin should equal(true)
-      gameState.getCurPlayerId should equal(subjectPlayers.id)
+      gameState.curPlayerId should equal(subjectPlayers.id)
       assert(subjectPlayers.privateInfo.tileGroups.contains(KongGroup(C9)))
       assert(subjectPlayers.privateInfo.tileGroups.contains(KongGroup(C7)))
       assert(!subjectPlayers.privateInfo.tiles.contains(Tile(C9)))
@@ -249,7 +250,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         None,
-        List.empty[(Int,Tile)],
+        List.empty[DiscardInfo],
         1,
         f.drawer)
 
@@ -258,12 +259,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val flow = new FlowImpl(gameState)
 
       // When
-      val discarded: Option[Tile] = flow.round(C9)
+      val discarded: Option[Tile] = flow.round(DiscardInfo(3, C9))
 
       // Then
       discarded should equal(None)
       gameState.winnersInfo.isDefined should equal(false)
-      gameState.getCurPlayerId should equal(subjectPlayers.id)
+      gameState.curPlayerId should equal(subjectPlayers.id)
       assert(subjectPlayers.privateInfo.tileGroups.contains(KongGroup(C9)))
       assert(subjectPlayers.privateInfo.tileGroups.contains(KongGroup(C7)))
       assert(!subjectPlayers.privateInfo.tiles.contains(Tile(C9)))
@@ -296,7 +297,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         None,
-        List.empty[(Int,Tile)],
+        List.empty[DiscardInfo],
         1,
         f.drawer)
 
@@ -305,12 +306,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val flow = new FlowImpl(gameState)
 
       // When
-      val discarded: Option[Tile] = flow.round(C9)
+      val discarded: Option[Tile] = flow.round(DiscardInfo(3, C9))
 
       // Then
       discarded should equal(Some[Tile](C2))
       gameState.winnersInfo.isDefined should equal(false)
-      gameState.getCurPlayerId should equal(subjectPlayers.id)
+      gameState.curPlayerId should equal(subjectPlayers.id)
       assert(subjectPlayers.privateInfo.tileGroups.contains(PongGroup(C9)))
       assert(!subjectPlayers.privateInfo.tiles.contains(Tile(C9)))
       verify(subjectPlayers, never()).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
@@ -339,7 +340,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         None,
-        List.empty[(Int,Tile)],
+        List.empty[DiscardInfo],
         2,
         f.drawer)
 
@@ -348,12 +349,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val flow = new FlowImpl(gameState)
 
       // When
-      val discarded: Option[Tile] = flow.round(C3)
+      val discarded: Option[Tile] = flow.round(DiscardInfo(1, C3))
 
       // Then
       discarded should equal(Some[Tile](B3))
       gameState.winnersInfo.isDefined should equal(false)
-      gameState.getCurPlayerId should equal(subjectPlayers.id)
+      gameState.curPlayerId should equal(subjectPlayers.id)
       assert(subjectPlayers.privateInfo.tileGroups.contains(ChowGroup(Set[Tile](C1, C2, C3))))
       assert(!subjectPlayers.privateInfo.tiles.contains(Tile(C1)))
       assert(!subjectPlayers.privateInfo.tiles.contains(Tile(C2)))
@@ -384,7 +385,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         None,
-        List.empty[(Int,Tile)],
+        List.empty[DiscardInfo],
         2,
         f.drawer)
 
@@ -393,12 +394,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val flow = new FlowImpl(gameState)
 
       // When
-      val discarded: Option[Tile] = flow.round(B6)
+      val discarded: Option[Tile] = flow.round(DiscardInfo(1, B6))
 
       // Then
       discarded should equal(Some[Tile](B3))
       gameState.winnersInfo.isDefined should equal(false)
-      gameState.getCurPlayerId should equal(subjectPlayers.id)
+      gameState.curPlayerId should equal(subjectPlayers.id)
       verify(subjectPlayers, times(1)).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, times(1)).discard()(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, never()).kong(any[Tile], any[TileDrawer])(any[CurStateGenerator], any[GameLogger])
@@ -421,13 +422,13 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](B3, B3, C1, C2, C3, C7, C8, C9, HD_R, HD_R),
         List(ChowGroup(Set[Tile](D7, D8, D9)))))
 
-      doReturn(true).when(subjectPlayers).decideSelfWin(eqTo(B3), any[CurState])
+      doReturn(true).when(subjectPlayers).decideSelfWin(eqTo(B3), any[Int], any[CurState])
       when(f.drawer.pop()).thenReturn(Some(Tile(B3)))
 
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         None,
-        List.empty[(Int,Tile)],
+        List.empty[DiscardInfo],
         2,
         f.drawer)
 
@@ -436,15 +437,15 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val flow = new FlowImpl(gameState)
 
       // When
-      val discarded: Option[Tile] = flow.round(B6)
+      val discarded: Option[Tile] = flow.round(DiscardInfo(1, B6))
 
       // Then
       discarded should equal(None)
       gameState.winnersInfo.isDefined should equal(true)
-      gameState.winnersInfo.get.winners should equal(Set(subjectPlayers.id))
+      gameState.winnersInfo.get.winners should equal(Set(WinnerInfo(subjectPlayers.id, 0)))
       gameState.winnersInfo.get.winningTile should equal(Tile(B3))
       assert(gameState.winnersInfo.get.isSelfWin)
-      gameState.getCurPlayerId should equal(subjectPlayers.id)
+      gameState.curPlayerId should equal(subjectPlayers.id)
       verify(subjectPlayers, times(1)).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, never()).discard()(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, never()).kong(any[Tile], any[TileDrawer])(any[CurStateGenerator], any[GameLogger])
@@ -467,13 +468,13 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
         List[Tile](B3, B3, C1, C2, C3, C7, C8, C9, HD_R, HD_R),
         List(ChowGroup(Set[Tile](D7, D8, D9)))))
 
-      doReturn(true).when(subjectPlayers).decideSelfWin(eqTo(B3), any[CurState])
+      doReturn(true).when(subjectPlayers).decideSelfWin(eqTo(B3), any[Int], any[CurState])
       when(f.drawer.pop()).thenReturn(None)
 
       val gameState = GameState(
         otherPlayers ++ List(subjectPlayers),
         None,
-        List.empty[(Int,Tile)],
+        List.empty[DiscardInfo],
         2,
         f.drawer)
 
@@ -482,12 +483,12 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       val flow = new FlowImpl(gameState)
 
       // When
-      val discarded: Option[Tile] = flow.round(B6)
+      val discarded: Option[Tile] = flow.round(DiscardInfo(1, B6))
 
       // Then
       discarded should equal(None)
       gameState.winnersInfo.isDefined should equal(false)
-      gameState.getCurPlayerId should equal(subjectPlayers.id)
+      gameState.curPlayerId should equal(subjectPlayers.id)
       verify(subjectPlayers, times(1)).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, never()).discard()(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, never()).kong(any[Tile], any[TileDrawer])(any[CurStateGenerator], any[GameLogger])

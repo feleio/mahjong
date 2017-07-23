@@ -9,25 +9,25 @@ import scala.util.Try
 /**
   * Created by felix.ling on 28/01/2017.
   */
-class Manual(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup]) extends Player(id, tiles, tileGroups) {
+class Manual(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup])(implicit c: Config) extends Player(id, tiles, tileGroups)(c) {
   val logger = Logger(classOf[Manual])
 
   // abstract decision method
-  override def decideSelfWin(tile: Tile, curState: CurState): Boolean = {
-    logger.info(s"you draw $tile do you want to win? [y/n]")
+  override def decideSelfWin(tile: Tile, score: Int, curState: CurState): Boolean = {
+    logger.info(s"you draw $tile do you want to win with score $score? [y/n]")
     scala.io.StdIn.readLine() match {
       case y => true
       case n => false
-      case _ => decideSelfWin(tile, curState)
+      case _ => decideSelfWin(tile, score, curState)
     }
   }
 
-  override def decideWin(tile: Tile, curState: CurState): Boolean = {
-    logger.info(s"player ${curState.curPlayerId} discarded $tile, do you want to win? [y/n]")
+  override def decideWin(tile: Tile, score: Int, curState: CurState): Boolean = {
+    logger.info(s"player ${curState.curPlayerId} discarded $tile, do you want to win with score $score? [y/n]")
     scala.io.StdIn.readLine() match {
       case y => true
       case n => false
-      case _ => decideWin(tile, curState)
+      case _ => decideWin(tile, score,  curState)
     }
   }
 
