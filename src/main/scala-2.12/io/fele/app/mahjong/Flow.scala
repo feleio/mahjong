@@ -1,5 +1,6 @@
 package io.fele.app.mahjong
 
+import java.io.{File, FileOutputStream, PrintWriter}
 import java.util.Random
 
 import com.typesafe.scalalogging.Logger
@@ -202,16 +203,22 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
 object Main extends App {
   val logger = Logger("main")
   implicit val config: Config = new Config()
-  val total = 1
+  val total = 20
   var count = 0
 
   val randomSeed = 10001
   val random = new Random(randomSeed)
 
-  val results = (0 until total).par.map(roundNum => (roundNum, random.nextInt(4)))
+  private val f = new File("result.json")
+  private val printWriter: PrintWriter = new PrintWriter(f)
+  printWriter.append("[")
+
+  //val results = (0 until total).par.map(roundNum => (roundNum, random.nextInt(4)))
+  val results = (0 until total).map(roundNum => (roundNum, random.nextInt(4)))
     .map{case (roundNum, initPlayer) => {
+    if(roundNum != 0) printWriter.append(",")
     count += 1
-    if (count % 2000 == 0)
+    if (count % 100 == 0)
       logger.info(s"$count/$total")
 
     val drawer: TileDrawer = new RandomTileDrawer(Some(roundNum))
@@ -226,8 +233,10 @@ object Main extends App {
       initPlayer,
       drawer)
 
-    implicit val gameLogger: GameLogger = new DebugGameLogger(state)
+    //implicit val gameLogger: GameLogger = new DebugGameLogger(state)
     // implicit val gameLogger: GameLogger = new DummyGameLogger()
+    val jsonDataGenerator: JsonDataGenerator = new JsonDataGenerator(state, printWriter)
+    implicit val gameLogger: GameLogger = jsonDataGenerator
     val flow: Flow = new FlowImpl(state, Some(roundNum))
 
     flow.start()
@@ -253,5 +262,7 @@ object Main extends App {
   }
 
   (0 to 3).foreach(id => logger.info(s"Player $id wins: ${Try{playerWinCount(id)}.getOrElse(0)} money: ${playerBalances(id).amount}"))
+  printWriter.append("]")
+  printWriter.close()
 }
 

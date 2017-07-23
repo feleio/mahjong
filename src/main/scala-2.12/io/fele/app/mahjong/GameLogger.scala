@@ -5,6 +5,11 @@ import io.fele.app.mahjong.ChowPosition.ChowPosition
 
 import scala.io.StdIn.readLine
 
+import org.json4s._
+import org.json4s.native.JsonMethods._
+import org.json4s.native.Serialization
+import org.json4s.native.Serialization.{read, write}
+
 /**
   * Created by felix.ling on 01/01/2017.
   */
@@ -30,15 +35,7 @@ case class ChowEvent(playerId: Int, sourcePlayerId: Int, tile: Tile, position: C
 case class EndEvent(winnersInfo: Option[WinnersInfo]) extends Event
 case class DrawEvent(playerId: Int, tile: Tile) extends Event
 
-case class GameSnapShot(
-  event: Event,
-  gameState: GameState
-)
-
-case class Game(
-  history: List[GameSnapShot],
-  gameResult: Option[GameResult]
-)
+case class GameSnapShot(event: Event, gameState: GameState)
 
 class DummyGameLogger extends GameLogger {
   override def start(): Unit = ()
@@ -52,7 +49,7 @@ class DummyGameLogger extends GameLogger {
 }
 
 class DebugGameLogger(val gameState: GameState, val visibleToPlayerID: Option[Int] = None)(implicit val config: Config) extends GameLogger {
-  val logger = Logger("EventLogger")
+  val logger = Logger("DebugGameLogger")
 
   private def logCurStates(msg: String) = {
     var playerInfo = ""
@@ -70,7 +67,7 @@ class DebugGameLogger(val gameState: GameState, val visibleToPlayerID: Option[In
 
     logger.info("\n" + playerInfo +
       s"#### discards: ${gameState.discards.mkString(", ")}\n" +
-      s"#### remaining : ${gameState.drawer.remainingTileNum}" )
+      s"#### remaining : ${gameState.drawer.remainingTiles.size}" )
     //logger.info(s"drawer tiles: ${gameState.drawer.drawerState.shuffledTiles}")
     //logger.info(s"drawer curPos: ${gameState.drawer.drawerState.curPos}")
   }
@@ -108,22 +105,4 @@ class DebugGameLogger(val gameState: GameState, val visibleToPlayerID: Option[In
       case _ => drawEvent.tile
     }
   }")
-}
-
-class DataGenerator(val gameState: GameState) extends GameLogger {
-  override def start(): Unit = ???
-
-  override def resume(): Unit = ???
-
-  override def discard(discardEvent: DiscardEvent): Unit = ???
-
-  override def kong(kongEvent: KongEvent): Unit = ???
-
-  override def pong(pongEvent: PongEvent): Unit = ???
-
-  override def chow(chowEvent: ChowEvent): Unit = ???
-
-  override def end(endEvent: EndEvent): Unit = ???
-
-  override def draw(drawEvent: DrawEvent): Unit = ???
 }

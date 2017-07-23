@@ -18,6 +18,6 @@ class CurStateGenerator(val gameState: GameState) {
     (1 to 3).map(id => gameState.players((id + playerId) % 4).publicInfo).toList,
     gameState.discards,
     gameState.curPlayerId,
-    gameState.drawer.remainingTileNum
+    gameState.drawer.remainingTiles.size
   )
 }

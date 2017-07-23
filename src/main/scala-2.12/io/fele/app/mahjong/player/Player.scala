@@ -16,8 +16,7 @@ import io.fele.app.mahjong.player.DrawResultType._
 case class DrawResult(result: DrawResultType, tile: Option[Tile] = None, winningScore: Option[Int] = None)
 
 abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup])(implicit val config: Config) {
-  // TODO: change to private
-  protected val hand = new Hand(tiles, tileGroups)
+  val hand = new Hand(tiles, tileGroups)
 
   var discardDecision: Option[Tile] = None
 
