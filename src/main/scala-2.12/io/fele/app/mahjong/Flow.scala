@@ -15,7 +15,29 @@ import scala.util.Try
 
 case class WinnerInfo(id: Int, score: Int)
 
-case class WinnersInfo(winners: Set[WinnerInfo], winningTile: Tile, isSelfWin: Boolean)
+case class WinnerBalance(id: Int, amount: Int) {
+  def +(lhs: WinnerBalance): WinnerBalance = WinnerBalance(id, this.amount + lhs.amount)
+}
+
+case class WinnersInfo(winners: Set[WinnerInfo], loserId: Option[Int], winningTile: Tile, isSelfWin: Boolean){
+  def winnersBalance(implicit config: Config) : List[WinnerBalance] = if (isSelfWin){
+    (0 to 3).map{ i =>
+      val amount = config.scoreMap(winners.head.score.toString)
+      WinnerBalance(i, if(winners.head.id == i) amount * 3 / 2 else -amount / 2 )
+    }.toList
+  } else {
+    (0 to 3).map{ i =>
+      val amount: Int = i match {
+        case winnerId if winners.exists(_.id == winnerId) =>
+          config.scoreMap(winners.find(_.id == winnerId).get.score.toString)
+        case winnerId if winnerId == loserId.get => winners.map(w =>
+          -config.scoreMap(w.score.toString)).sum
+        case _ => 0
+      }
+      WinnerBalance(i, amount)
+    }.toList
+  }
+}
 
 case class GameResult(winnersInfo: Option[WinnersInfo])
 
@@ -108,33 +130,33 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
     }
   }
 
-  def round(discardedTile: Tile): Option[Tile] = discardedTile match {
+  def round(discard: DiscardInfo): Option[Tile] = discard.tile match {
     case WiningTile(playerInfos) =>
-      state.winnersInfo = Some(WinnersInfo(playerInfos, discardedTile, false))
+      state.winnersInfo = Some(WinnersInfo(playerInfos, Some(discard.playerId), discard.tile, isSelfWin = false))
       None
     case KongableTile(playerId) =>
       state.setCurPlayer(playerId)
-      state.curPlayer.kong(discardedTile, state.drawer) match {
+      state.curPlayer.kong(discard.tile, state.drawer) match {
         case DrawResult(DISCARD, discarded: Option[Tile], _) => discarded
         case DrawResult(WIN, Some(winningTile), Some(score)) => {
-          state.winnersInfo = Some(WinnersInfo(Set(WinnerInfo(playerId, score)), winningTile, true))
+          state.winnersInfo = Some(WinnersInfo(Set(WinnerInfo(playerId, score)), None, winningTile, isSelfWin = true))
           None
         }
         case DrawResult(NO_TILE, _, _) => None
       }
     case PongableTile(playerId) =>
       state.setCurPlayer(playerId)
-      Some(state.curPlayer.pong(discardedTile))
+      Some(state.curPlayer.pong(discard.tile))
     case ChowableTile(playerId, chowPosition) =>
       state.setCurPlayer(playerId)
-      Some(state.curPlayer.chow(discardedTile, chowPosition))
+      Some(state.curPlayer.chow(discard.tile, chowPosition))
     case _ =>
-      state.addDiscarded(discardedTile)
+      state.addDiscarded(discard.tile)
       state.setCurPlayer(state.nextPlayerId)
       state.curPlayer.draw(state.drawer) match {
         case DrawResult(DISCARD, discarded: Option[Tile], _) => discarded
         case DrawResult(WIN, Some(winningTile), Some(score)) => {
-          state.winnersInfo = Some(WinnersInfo(Set(WinnerInfo(state.curPlayerId, score)), winningTile, true))
+          state.winnersInfo = Some(WinnersInfo(Set(WinnerInfo(state.curPlayerId, score)), None, winningTile, isSelfWin = true))
           None
         }
         case DrawResult(NO_TILE, _, _) => None
@@ -148,14 +170,14 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
     var discardedTile = state.curPlayer.draw(state.drawer) match {
       case DrawResult(DISCARD, discarded: Option[Tile], _) => discarded
       case DrawResult(WIN, Some(winningTile), Some(score)) => {
-        state.winnersInfo = Some(WinnersInfo(Set(WinnerInfo(state.curPlayerId, score)), winningTile, true))
+        state.winnersInfo = Some(WinnersInfo(Set(WinnerInfo(state.curPlayerId, score)), None, winningTile, isSelfWin = true))
         None
       }
     }
 
     while (discardedTile.isDefined) {
       gameLogger.discard(state.curPlayerId, discardedTile.get)
-      discardedTile = round(discardedTile.get)
+      discardedTile = round(DiscardInfo(state.curPlayerId, discardedTile.get))
     }
     // state.players.head.asInstanceOf[FirstFelix].printDebug
     gameLogger.end(state.winnersInfo)
@@ -168,7 +190,7 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
     var discardedTile = discarded
     while (discardedTile.isDefined) {
       gameLogger.discard(state.curPlayerId, discardedTile.get)
-      discardedTile = round(discardedTile.get)
+      discardedTile = round(DiscardInfo(state.curPlayerId, discardedTile.get))
     }
     gameLogger.end(state.winnersInfo)
     GameResult(state.winnersInfo)
@@ -221,11 +243,13 @@ object Main extends App {
     case None => List.empty[Int]
   }).groupBy[Int](identity).mapValues(_.size)
 
-  val playerWinMoney = results.flatMap(x => x.winnersInfo match {
-    case Some(info) => info.winners.map(winner => (winner.id, config.scoreMap(winner.score.toString))).toList
-    case None => List.empty[(Int, Int)]
-  }).groupBy(_._1).mapValues(_.map(_._2).sum)
+  val playerBalances = results.foldLeft((0 to 4).map(i => WinnerBalance(i, 0))){
+    case (s, t) => t.winnersInfo match{
+      case Some(info) => (s zip info.winnersBalance).map{case (lhs, rhs) => lhs + rhs}
+      case _ => s
+    }
+  }
 
-  (0 to 3).foreach(id => logger.info(s"Player $id wins: ${Try{playerWinCount(id)}.getOrElse(0)} money: ${Try{playerWinMoney(id)}.getOrElse(0)}"))
+  (0 to 3).foreach(id => logger.info(s"Player $id wins: ${Try{playerWinCount(id)}.getOrElse(0)} money: ${playerBalances(id).amount}"))
 }
 

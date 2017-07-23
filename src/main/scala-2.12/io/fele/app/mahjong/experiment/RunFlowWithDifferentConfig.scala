@@ -3,6 +3,7 @@ package io.fele.app.mahjong.experiment
 import java.util.Random
 
 import com.typesafe.scalalogging.Logger
+import io.fele.app.mahjong.Main.{logger, playerWinCount, results}
 import io.fele.app.mahjong._
 import io.fele.app.mahjong.player.{FirstFelix, ThreePointChicken}
 
@@ -59,12 +60,14 @@ object RunFlowWithDifferentConfig extends App {
       case None => List.empty[Int]
     }).groupBy[Int](identity).mapValues(_.size)
 
-    val playerWinMoney = results.flatMap(x => x.winnersInfo match {
-      case Some(info) => info.winners.map(winner => (winner.id, config.scoreMap(winner.score.toString))).toList
-      case None => List.empty[(Int, Int)]
-    }).groupBy(_._1).mapValues(_.map(_._2).sum)
+    val playerBalances = results.foldLeft((0 to 4).map(i => WinnerBalance(i, 0))){
+      case (s, t) => t.winnersInfo match{
+        case Some(info) => (s zip info.winnersBalance).map{case (lhs, rhs) => lhs + rhs}
+        case _ => s
+      }
+    }
 
-    (0 to 3).foreach(id => logger.info(s"Player $id wins: ${Try{playerWinCount(id)}.getOrElse(0)} money: ${Try{playerWinMoney(id)}.getOrElse(0)}"))
+    (0 to 3).foreach(id => logger.info(s"Player $id wins: ${Try{playerWinCount(id)}.getOrElse(0)} money: ${playerBalances(id).amount}"))
   })
 
 }
