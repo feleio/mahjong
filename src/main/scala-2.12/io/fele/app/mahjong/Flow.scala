@@ -31,8 +31,8 @@ case class WinnersInfo(winners: Set[WinnerInfo], loserId: Option[Int], winningTi
       val amount: Int = i match {
         case winnerId if winners.exists(_.id == winnerId) =>
           config.scoreMap(winners.find(_.id == winnerId).get.score.toString)
-        case winnerId if winnerId == loserId.get => winners.map(w =>
-          -config.scoreMap(w.score.toString)).sum
+        case winnerId if winnerId == loserId.get =>
+          winners.toList.map(w => -config.scoreMap(w.score.toString)).sum
         case _ => 0
       }
       WinnerBalance(i, amount)
@@ -203,7 +203,7 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
 object Main extends App {
   val logger = Logger("main")
   implicit val config: Config = new Config()
-  val total = 20
+  val total = 10000
   var count = 0
 
   val randomSeed = 10001
@@ -234,7 +234,7 @@ object Main extends App {
       drawer)
 
     //implicit val gameLogger: GameLogger = new DebugGameLogger(state)
-    // implicit val gameLogger: GameLogger = new DummyGameLogger()
+    //implicit val gameLogger: GameLogger = new DummyGameLogger()
     val jsonDataGenerator: JsonDataGenerator = new JsonDataGenerator(state, printWriter)
     implicit val gameLogger: GameLogger = jsonDataGenerator
     val flow: Flow = new FlowImpl(state, Some(roundNum))

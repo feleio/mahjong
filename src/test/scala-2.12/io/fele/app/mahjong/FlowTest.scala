@@ -18,6 +18,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
 
   private def fixture = new {
     val drawer: TileDrawer = mock[TileDrawer]
+    doReturn(Seq.empty[Tile]).when(drawer).remainingTiles
   }
 
   private def spyPlayer(dummpyPlayer: Player): Player = {

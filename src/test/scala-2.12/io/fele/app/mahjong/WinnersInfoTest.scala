@@ -18,8 +18,13 @@ class WinnersInfoTest extends FreeSpec with Matchers {
     }
 
     "loser player give money to the 2 winners when not self win" in {
-      val info = WinnersInfo(Set(WinnerInfo(1, 7), WinnerInfo(3,5)), Some(2), D9, isSelfWin = false)
+      val info = WinnersInfo(Set(WinnerInfo(1, 7), WinnerInfo(3, 5)), Some(2), D9, isSelfWin = false)
       info.winnersBalance should equal(List((0, 0), (1, 48), (2, -72), (3, 24)).map(x => WinnerBalance(x._1,x._2)))
+    }
+
+    "loser player give money to the 2 winners with same score when not self win!" in {
+      val info = WinnersInfo(Set(WinnerInfo(2, 3), WinnerInfo(3, 3)), Some(1), D9, isSelfWin = false)
+      info.winnersBalance should equal(List((0, 0), (1, -16), (2, 8), (3, 8)).map(x => WinnerBalance(x._1,x._2)))
     }
   }
 }
