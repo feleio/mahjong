@@ -5,33 +5,51 @@ import io.fele.app.mahjong.ChowPosition.ChowPosition
 
 import scala.io.StdIn.readLine
 
+import org.json4s._
+import org.json4s.native.JsonMethods._
+import org.json4s.native.Serialization
+import org.json4s.native.Serialization.{read, write}
+
 /**
   * Created by felix.ling on 01/01/2017.
   */
 trait GameLogger {
   def start()
   def resume()
-  def discard(playerId: Int, tile: Tile)
-  def kong(playerId: Int, tile: Tile)
-  def pong(playerId: Int, tile: Tile)
-  def chow(playerId: Int, tile: Tile, position: ChowPosition)
-  def end(winnersInfo: Option[WinnersInfo])
-  def draw(playerId: Int, tile: Tile)
+  def discard(discardEvent: DiscardEvent)
+  def kong(kongEvent: KongEvent)
+  def pong(pongEvent: PongEvent)
+  def chow(chowEvent: ChowEvent)
+  def end(endEvent: EndEvent)
+  def draw(drawEvent: DrawEvent)
 }
+
+trait Event
+
+case class StartEvent() extends Event
+case class ResumeEvent() extends Event
+case class DiscardEvent(playerId: Int, tile: Tile) extends Event
+case class KongEvent(playerId: Int, sourcePlayerId: Int, tile: Tile) extends Event
+case class PongEvent(playerId: Int, sourcePlayerId: Int, tile: Tile) extends Event
+case class ChowEvent(playerId: Int, sourcePlayerId: Int, tile: Tile, position: ChowPosition) extends Event
+case class EndEvent(winnersInfo: Option[WinnersInfo]) extends Event
+case class DrawEvent(playerId: Int, tile: Tile) extends Event
+
+case class GameSnapShot(event: Event, gameState: GameState)
 
 class DummyGameLogger extends GameLogger {
   override def start(): Unit = ()
   override def resume(): Unit = ()
-  override def discard(playerId: Int, tile: Tile): Unit = ()
-  override def kong(playerId: Int, tile: Tile): Unit = ()
-  override def pong(playerId: Int, tile: Tile): Unit = ()
-  override def chow(playerId: Int, tile: Tile, position: ChowPosition): Unit = ()
-  override def end(winnersInfo: Option[WinnersInfo]): Unit = ()
-  override def draw(playerId: Int, tile: Tile): Unit = ()
+  override def discard(discardEvent: DiscardEvent): Unit = ()
+  override def kong(kongEvent: KongEvent): Unit = ()
+  override def pong(pongEvent: PongEvent): Unit = ()
+  override def chow(chowEvent: ChowEvent): Unit = ()
+  override def end(endEvent: EndEvent): Unit = ()
+  override def draw(drawEvent: DrawEvent): Unit = ()
 }
 
 class DebugGameLogger(val gameState: GameState, val visibleToPlayerID: Option[Int] = None)(implicit val config: Config) extends GameLogger {
-  val logger = Logger("EventLogger")
+  val logger = Logger("DebugGameLogger")
 
   private def logCurStates(msg: String) = {
     var playerInfo = ""
@@ -49,7 +67,7 @@ class DebugGameLogger(val gameState: GameState, val visibleToPlayerID: Option[In
 
     logger.info("\n" + playerInfo +
       s"#### discards: ${gameState.discards.mkString(", ")}\n" +
-      s"#### remaining : ${gameState.drawer.remainingTileNum}" )
+      s"#### remaining : ${gameState.drawer.remainingTiles.size}" )
     //logger.info(s"drawer tiles: ${gameState.drawer.drawerState.shuffledTiles}")
     //logger.info(s"drawer curPos: ${gameState.drawer.drawerState.curPos}")
   }
@@ -62,11 +80,11 @@ class DebugGameLogger(val gameState: GameState, val visibleToPlayerID: Option[In
 
   def start() = logAndPause(None, "Game Start.")
   def resume() = logAndPause(None, "Game Resume.")
-  def discard(playerId: Int, tile: Tile) = logAndPause(Some(playerId), s"> discarded ${tile.toString}")
-  def kong(playerId: Int, tile: Tile) = logAndPause(Some(playerId), s"< kong with ${tile.toString}")
-  def pong(playerId: Int, tile: Tile) = logAndPause(Some(playerId), s"< pong with ${tile.toString}")
-  def chow(playerId: Int, tile: Tile, position: ChowPosition) = logAndPause(Some(playerId), s"< chow with ${tile.toString} in position $position")
-  def end(winnersInfo: Option[WinnersInfo]) = winnersInfo match {
+  def discard(discardEvent: DiscardEvent) = logAndPause(Some(discardEvent.playerId), s"> discarded ${discardEvent.tile.toString}")
+  def kong(kongEvent: KongEvent) = logAndPause(Some(kongEvent.playerId), s"< kong with ${kongEvent.tile.toString}")
+  def pong(pongEvent: PongEvent) = logAndPause(Some(pongEvent.playerId), s"< pong with ${pongEvent.tile.toString}")
+  def chow(chowEvent: ChowEvent) = logAndPause(Some(chowEvent.playerId), s"< chow with ${chowEvent.tile.toString} in position ${chowEvent.position}")
+  def end(endEvent: EndEvent) = endEvent.winnersInfo match {
     case None => logAndPause(None, s"no player wins")
     case Some(info) => logAndPause(None, s"player ${info.winners.mkString(", ")} < " +
       s"${if(info.isSelfWin) "draws and self wins " else "wins"}" +
@@ -81,10 +99,10 @@ class DebugGameLogger(val gameState: GameState, val visibleToPlayerID: Option[In
       }).mkString
     )
   }
-  def draw(playerId: Int, tile: Tile) = logAndPause(Some(playerId), s"< draws ${
+  def draw(drawEvent: DrawEvent) = logAndPause(Some(drawEvent.playerId), s"< draws ${
     visibleToPlayerID match {
-      case Some(id) if id != playerId => "a tile"
-      case _ => tile
+      case Some(id) if id != drawEvent.playerId => "a tile"
+      case _ => drawEvent.tile
     }
   }")
 }

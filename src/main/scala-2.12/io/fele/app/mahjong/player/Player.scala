@@ -16,8 +16,7 @@ import io.fele.app.mahjong.player.DrawResultType._
 case class DrawResult(result: DrawResultType, tile: Option[Tile] = None, winningScore: Option[Int] = None)
 
 abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empty[TileGroup])(implicit val config: Config) {
-  // TODO: change to private
-  protected val hand = new Hand(tiles, tileGroups)
+  val hand = new Hand(tiles, tileGroups)
 
   var discardDecision: Option[Tile] = None
 
@@ -43,33 +42,33 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
     }
   }
 
-  def kong(tile: Tile, drawer: TileDrawer)
+  def kong(tile: Tile, discardPlayerId: Int, drawer: TileDrawer)
           (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): DrawResult = {
     hand.kong(tile)
-    gameLogger.kong(id, tile)
+    gameLogger.kong(KongEvent(id, discardPlayerId, tile))
     draw(drawer)
   }
 
   def selfKong(tile: Tile, drawer: TileDrawer)
           (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): DrawResult = {
     hand.selfKong(tile)
-    gameLogger.kong(id, tile)
+    gameLogger.kong(KongEvent(id, id, tile))
     draw(drawer)
   }
 
-  def pong(tile: Tile)
+  def pong(tile: Tile, discardPlayerId: Int)
           (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): Tile = {
     hand.pong(tile)
-    gameLogger.pong(id, tile)
+    gameLogger.pong(PongEvent(id, discardPlayerId, tile))
     val discarded = discard()
     hand.discard(discarded)
     discarded
   }
 
-  def chow(tile: Tile, position: ChowPosition)
+  def chow(tile: Tile, discardPlayerId: Int, position: ChowPosition)
           (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): Tile = {
     hand.chow(tile, position)
-    gameLogger.chow(id, tile, position)
+    gameLogger.chow(ChowEvent(id, discardPlayerId, tile, position))
     val discarded = discard()
     hand.discard(discarded)
     discarded
@@ -86,9 +85,10 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
         else {
           // check self kong
           hand.add(drawnTile)
-          gameLogger.draw(id, drawnTile)
+          gameLogger.draw(DrawEvent(id, drawnTile))
           hand match {
-            case SelfKongDecision(kongDecision) => selfKong(kongDecision, drawer)
+            case SelfKongDecision(kongDecision) =>
+              selfKong(kongDecision, drawer)
             case _ =>
               val discarded = discard()
               hand.discard(discarded)

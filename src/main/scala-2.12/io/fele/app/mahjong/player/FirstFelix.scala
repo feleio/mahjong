@@ -46,7 +46,7 @@ class FirstFelix(id: Int, tiles: List[Tile], sameSuitNum: Int, tileGroups: List[
 
   override def decideChow(tile: Tile, positions: Set[ChowPosition], curState: CurState): Option[ChowPosition] = {
     target match {
-      case Some(t) if t.`type` == tile.`type` => positions.headOption
+      case Some(t) if t.tiletype == tile.`type` => positions.headOption
       case _ => None
     }
   }

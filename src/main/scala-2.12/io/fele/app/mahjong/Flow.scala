@@ -1,5 +1,6 @@
 package io.fele.app.mahjong
 
+import java.io.{File, FileOutputStream, PrintWriter}
 import java.util.Random
 
 import com.typesafe.scalalogging.Logger
@@ -30,8 +31,8 @@ case class WinnersInfo(winners: Set[WinnerInfo], loserId: Option[Int], winningTi
       val amount: Int = i match {
         case winnerId if winners.exists(_.id == winnerId) =>
           config.scoreMap(winners.find(_.id == winnerId).get.score.toString)
-        case winnerId if winnerId == loserId.get => winners.map(w =>
-          -config.scoreMap(w.score.toString)).sum
+        case winnerId if winnerId == loserId.get =>
+          winners.toList.map(w => -config.scoreMap(w.score.toString)).sum
         case _ => 0
       }
       WinnerBalance(i, amount)
@@ -58,6 +59,8 @@ case class GameState(players: List[Player],
   def otherPlayers(): List[(Int, Player)] = {
     (1 to 3).map(x => (x + curPlayerId) % 4).map(y => (y, players(y))).toList
   }
+
+
 }
 
 trait Flow {
@@ -136,7 +139,7 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
       None
     case KongableTile(playerId) =>
       state.setCurPlayer(playerId)
-      state.curPlayer.kong(discard.tile, state.drawer) match {
+      state.curPlayer.kong(discard.tile, discard.playerId, state.drawer) match {
         case DrawResult(DISCARD, discarded: Option[Tile], _) => discarded
         case DrawResult(WIN, Some(winningTile), Some(score)) => {
           state.winnersInfo = Some(WinnersInfo(Set(WinnerInfo(playerId, score)), None, winningTile, isSelfWin = true))
@@ -146,10 +149,10 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
       }
     case PongableTile(playerId) =>
       state.setCurPlayer(playerId)
-      Some(state.curPlayer.pong(discard.tile))
+      Some(state.curPlayer.pong(discard.tile, discard.playerId))
     case ChowableTile(playerId, chowPosition) =>
       state.setCurPlayer(playerId)
-      Some(state.curPlayer.chow(discard.tile, chowPosition))
+      Some(state.curPlayer.chow(discard.tile, discard.playerId, chowPosition))
     case _ =>
       state.addDiscarded(discard.tile)
       state.setCurPlayer(state.nextPlayerId)
@@ -176,11 +179,11 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
     }
 
     while (discardedTile.isDefined) {
-      gameLogger.discard(state.curPlayerId, discardedTile.get)
+      gameLogger.discard(DiscardEvent(state.curPlayerId, discardedTile.get))
       discardedTile = round(DiscardInfo(state.curPlayerId, discardedTile.get))
     }
     // state.players.head.asInstanceOf[FirstFelix].printDebug
-    gameLogger.end(state.winnersInfo)
+    gameLogger.end(EndEvent(state.winnersInfo))
     GameResult(state.winnersInfo)
   }
 
@@ -189,10 +192,10 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
 
     var discardedTile = discarded
     while (discardedTile.isDefined) {
-      gameLogger.discard(state.curPlayerId, discardedTile.get)
+      gameLogger.discard(DiscardEvent(state.curPlayerId, discardedTile.get))
       discardedTile = round(DiscardInfo(state.curPlayerId, discardedTile.get))
     }
-    gameLogger.end(state.winnersInfo)
+    gameLogger.end(EndEvent(state.winnersInfo))
     GameResult(state.winnersInfo)
   }
 }
@@ -206,10 +209,16 @@ object Main extends App {
   val randomSeed = 10001
   val random = new Random(randomSeed)
 
-  val results = (0 until total).par.map(roundNum => (roundNum, random.nextInt(4)))
+  private val f = new File("result.json")
+  private val printWriter: PrintWriter = new PrintWriter(f)
+  printWriter.append("[")
+
+  //val results = (0 until total).par.map(roundNum => (roundNum, random.nextInt(4)))
+  val results = (0 until total).map(roundNum => (roundNum, random.nextInt(4)))
     .map{case (roundNum, initPlayer) => {
+    if(roundNum != 0) printWriter.append(",")
     count += 1
-    if (count % 2000 == 0)
+    if (count % 100 == 0)
       logger.info(s"$count/$total")
 
     val drawer: TileDrawer = new RandomTileDrawer(Some(roundNum))
@@ -224,8 +233,10 @@ object Main extends App {
       initPlayer,
       drawer)
 
-    // implicit val gameLogger: GameLogger = new DebugGameLogger(state)
-    implicit val gameLogger: GameLogger = new DummyGameLogger()
+    //implicit val gameLogger: GameLogger = new DebugGameLogger(state)
+    //implicit val gameLogger: GameLogger = new DummyGameLogger()
+    val jsonDataGenerator: JsonDataGenerator = new JsonDataGenerator(state, printWriter)
+    implicit val gameLogger: GameLogger = jsonDataGenerator
     val flow: Flow = new FlowImpl(state, Some(roundNum))
 
     flow.start()
@@ -251,5 +262,7 @@ object Main extends App {
   }
 
   (0 to 3).foreach(id => logger.info(s"Player $id wins: ${Try{playerWinCount(id)}.getOrElse(0)} money: ${playerBalances(id).amount}"))
+  printWriter.append("]")
+  printWriter.close()
 }
 

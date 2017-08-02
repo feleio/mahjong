@@ -113,7 +113,7 @@ case class DrawerState(shuffledTiles: Seq[Tile], curPos: Int)
 trait TileDrawer {
   def pop(): Option[Tile]
   def popHand(): List[Tile]
-  def remainingTileNum: Int
+  def remainingTiles: Seq[Tile]
   def drawerState: DrawerState
 }
 
@@ -140,7 +140,7 @@ class RandomTileDrawer(
     drawnHandTile
   }
 
-  override def remainingTileNum: Int = shuffledTiles.size - curPos
+  override def remainingTiles: Seq[Tile] = shuffledTiles.slice(curPos, shuffledTiles.size)
   override def drawerState: DrawerState = DrawerState(shuffledTiles, curPos)
 }
 

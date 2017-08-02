@@ -4,8 +4,7 @@ import io.fele.app.mahjong.ChowPosition.ChowPosition
 import org.scalatest.{FreeSpec, Matchers}
 import org.scalatest.mockito.MockitoSugar
 import org.mockito.Mockito._
-import org.mockito.Matchers.any
-import org.mockito.Matchers.{eq => eqTo}
+import org.mockito.Matchers.{any, eq => eqTo}
 import io.fele.app.mahjong.TileValue._
 import io.fele.app.mahjong.player.{Dummy, Player}
 
@@ -19,6 +18,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
 
   private def fixture = new {
     val drawer: TileDrawer = mock[TileDrawer]
+    doReturn(Seq.empty[Tile]).when(drawer).remainingTiles
   }
 
   private def spyPlayer(dummpyPlayer: Player): Player = {
@@ -74,9 +74,9 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       gameState.winnersInfo.get.isSelfWin should equal(false)
       verify(subjectPlayers, never()).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, never()).discard()(any[CurStateGenerator], any[GameLogger])
-      verify(subjectPlayers, never()).kong(any[Tile], any[TileDrawer])(any[CurStateGenerator], any[GameLogger])
-      verify(subjectPlayers, never()).pong(any[Tile])(any[CurStateGenerator], any[GameLogger])
-      verify(subjectPlayers, never()).chow(any[Tile], any[ChowPosition])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).kong(any[Tile], any[Int], any[TileDrawer])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).pong(any[Tile], any[Int])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).chow(any[Tile], any[Int], any[ChowPosition])(any[CurStateGenerator], any[GameLogger])
     }
 
     "kong" in {
@@ -120,7 +120,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       assert(!subjectPlayers.privateInfo.tiles.contains(Tile(C9)))
       verify(subjectPlayers, times(1)).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, times(1)).discard()(any[CurStateGenerator], any[GameLogger])
-      verify(subjectPlayers, times(1)).kong(eqTo(C9), eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).kong(eqTo(C9), any[Int], eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
     }
 
     "kong twice" in {
@@ -168,7 +168,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       assert(!subjectPlayers.privateInfo.tiles.contains(Tile(C7)))
       verify(subjectPlayers, times(2)).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, times(1)).discard()(any[CurStateGenerator], any[GameLogger])
-      verify(subjectPlayers, times(1)).kong(eqTo(C9), eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).kong(eqTo(C9), any[Int], eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, times(1)).selfKong(eqTo(C7), eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
     }
 
@@ -221,7 +221,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       assert(!subjectPlayers.privateInfo.tiles.contains(Tile(C7)))
       verify(subjectPlayers, times(2)).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, never()).discard()(any[CurStateGenerator], any[GameLogger])
-      verify(subjectPlayers, times(1)).kong(eqTo(C9), eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).kong(eqTo(C9), any[Int], eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, times(1)).selfKong(eqTo(C7), eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
 
     }
@@ -271,7 +271,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       assert(!subjectPlayers.privateInfo.tiles.contains(Tile(C7)))
       verify(subjectPlayers, times(2)).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, never()).discard()(any[CurStateGenerator], any[GameLogger])
-      verify(subjectPlayers, times(1)).kong(eqTo(C9), eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).kong(eqTo(C9), any[Int], eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, times(1)).selfKong(eqTo(C7), eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
 
     }
@@ -316,7 +316,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       assert(!subjectPlayers.privateInfo.tiles.contains(Tile(C9)))
       verify(subjectPlayers, never()).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, times(1)).discard()(any[CurStateGenerator], any[GameLogger])
-      verify(subjectPlayers, times(1)).pong(eqTo(C9))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).pong(eqTo(C9), any[Int])(any[CurStateGenerator], any[GameLogger])
     }
 
     "Chow" in {
@@ -361,7 +361,7 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       assert(!subjectPlayers.privateInfo.tiles.contains(Tile(C3)))
       verify(subjectPlayers, never()).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, times(1)).discard()(any[CurStateGenerator], any[GameLogger])
-      verify(subjectPlayers, times(1)).chow(eqTo(C3), eqTo(ChowPosition.RIGHT))(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, times(1)).chow(eqTo(C3), any[Int], eqTo(ChowPosition.RIGHT))(any[CurStateGenerator], any[GameLogger])
     }
 
     "draw and discard" in {
@@ -402,9 +402,9 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       gameState.curPlayerId should equal(subjectPlayers.id)
       verify(subjectPlayers, times(1)).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, times(1)).discard()(any[CurStateGenerator], any[GameLogger])
-      verify(subjectPlayers, never()).kong(any[Tile], any[TileDrawer])(any[CurStateGenerator], any[GameLogger])
-      verify(subjectPlayers, never()).pong(any[Tile])(any[CurStateGenerator], any[GameLogger])
-      verify(subjectPlayers, never()).chow(any[Tile], any[ChowPosition])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).kong(any[Tile], any[Int], any[TileDrawer])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).pong(any[Tile], any[Int])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).chow(any[Tile], any[Int], any[ChowPosition])(any[CurStateGenerator], any[GameLogger])
     }
 
     "draw and win" in {
@@ -448,9 +448,9 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       gameState.curPlayerId should equal(subjectPlayers.id)
       verify(subjectPlayers, times(1)).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, never()).discard()(any[CurStateGenerator], any[GameLogger])
-      verify(subjectPlayers, never()).kong(any[Tile], any[TileDrawer])(any[CurStateGenerator], any[GameLogger])
-      verify(subjectPlayers, never()).pong(any[Tile])(any[CurStateGenerator], any[GameLogger])
-      verify(subjectPlayers, never()).chow(any[Tile], any[ChowPosition])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).kong(any[Tile], any[Int], any[TileDrawer])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).pong(any[Tile], any[Int])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).chow(any[Tile], any[Int], any[ChowPosition])(any[CurStateGenerator], any[GameLogger])
     }
 
     "all tiles has been drawn" in {
@@ -491,9 +491,9 @@ class FlowTest extends FreeSpec with Matchers with MockitoSugar {
       gameState.curPlayerId should equal(subjectPlayers.id)
       verify(subjectPlayers, times(1)).draw(eqTo(f.drawer))(any[CurStateGenerator], any[GameLogger])
       verify(subjectPlayers, never()).discard()(any[CurStateGenerator], any[GameLogger])
-      verify(subjectPlayers, never()).kong(any[Tile], any[TileDrawer])(any[CurStateGenerator], any[GameLogger])
-      verify(subjectPlayers, never()).pong(any[Tile])(any[CurStateGenerator], any[GameLogger])
-      verify(subjectPlayers, never()).chow(any[Tile], any[ChowPosition])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).kong(any[Tile], any[Int], any[TileDrawer])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).pong(any[Tile], any[Int])(any[CurStateGenerator], any[GameLogger])
+      verify(subjectPlayers, never()).chow(any[Tile], any[Int], any[ChowPosition])(any[CurStateGenerator], any[GameLogger])
     }
   }
   // TODO: add test case for wrong decisiton
