@@ -9,18 +9,18 @@ import io.fele.app.mahjong._
 import io.fele.app.mahjong.player._
 import org.json4s.native.Serialization.write
 
-object GenerateTrainingData extends App {
+object GenerateTrainingDataForIsWin extends App {
   implicit val formats = JsonSerializer.serializers
   implicit val config: Config = new Config()
   val logger = Logger("GenerateTrainingData")
 
-  val total = 1000
+  val total = 1000000
   var count = 0
 
   val randomSeed = 10001
   val random = new Random(randomSeed)
 
-  private val labelTrainingData = new File("train_v5.json")
+  private val labelTrainingData = new File("train_v6_nowins.json")
   private val printWriter: PrintWriter = new PrintWriter(labelTrainingData)
 
 
@@ -52,18 +52,24 @@ object GenerateTrainingData extends App {
 
       val result = flow.start()
 
-      result.winnersInfo match{
-        case Some(info) =>
-          info.winners.toList.map{
-            winner => state.players(winner.id).hand.dynamicTiles + info.winningTile
+      result.winnersInfo match {
+        case Some(info) => {
+          val loserIds = (0 to 3).filterNot(x => info.winners.map(_.id).contains(x))
+          loserIds.collect{
+            case id if !state.players(id).hand.canWin(info.winningTile).canWin =>
+              state.players(id).hand.dynamicTiles + info.winningTile
           }
-        case None => List.empty[List[Tile]]
+        }
+        case None => (0 to 3).toList.collect{
+          case id if !state.players(id).hand.canWin(state.discards.head.tile).canWin =>
+            state.players(id).hand.dynamicTiles + state.discards.head.tile
+        }
       }
-    }}.toList
+    }}.toList.distinct
 
   private case class TrainingData(wins: List[List[Tile]], nowins: List[List[Tile]])
 
-  logger.info(s"wins size: ${results.size}")
+  logger.info(s"nowins size: ${results.size}")
 
   printWriter.write(write[List[List[Tile]]](results))
   printWriter.close()
