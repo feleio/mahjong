@@ -14,22 +14,22 @@ object GenerateTrainingDataForIsWin extends App {
   implicit val config: Config = new Config()
   val logger = Logger("GenerateTrainingData")
 
-  val total = 1000000
+  val total = 10000000
   var count = 0
 
   val randomSeed = 10001
   val random = new Random(randomSeed)
 
-  private val labelTrainingData = new File("train_v6_nowins.json")
+  private val labelTrainingData = new File("train_v7_isWin.json")
   private val printWriter: PrintWriter = new PrintWriter(labelTrainingData)
 
 
   //val results = (0 until total).par.map(roundNum => (roundNum, random.nextInt(4)))
   //
-  val results: List[List[Tile]] = (0 until total)
+  val results: List[(List[List[Tile]], List[List[Tile]])] = (0 until total)
     .par
     .map(roundNum => (roundNum, random.nextInt(4)))
-    .flatMap{case (roundNum, initPlayer) => {
+    .map{case (roundNum, initPlayer) => {
       count += 1
       if (count % 10000 == 0)
         logger.info(s"$count/$total")
@@ -39,7 +39,7 @@ object GenerateTrainingDataForIsWin extends App {
       val state = GameState(
         //new FirstFelix(0, drawer.popHand()) :: (1 to 3).map(new Chicken(_, drawer.popHand())).toList,
         //(0 to 3).map(new FirstFelix(_, drawer.popHand())).toList,
-        new FirstFelix(0, drawer.popHand(), 5) :: (1 to 3).map(new Chicken(_, drawer.popHand())).toList,
+        (0 to 3).map(new ThreePointChicken(_, drawer.popHand())).toList,
         //(0 to 3).map(new ThreePointChicken(_, drawer.popHand())).toList,
         None,
         Nil,
@@ -53,25 +53,35 @@ object GenerateTrainingDataForIsWin extends App {
       val result = flow.start()
 
       result.winnersInfo match {
-        case Some(info) => {
-          val loserIds = (0 to 3).filterNot(x => info.winners.map(_.id).contains(x))
-          loserIds.collect{
+        case Some(info) =>
+          val wins: List[List[Tile]] = info.winners.map(_.id).toList.map(winnerId => state.players(winnerId).hand.dynamicTiles + info.winningTile )
+          val loserIds: List[Int] = (0 to 3).filterNot(x => info.winners.map(_.id).contains(x)).toList
+          val nowins: List[List[Tile]] = loserIds.collect{
             case id if !state.players(id).hand.canWin(info.winningTile).canWin =>
               state.players(id).hand.dynamicTiles + info.winningTile
           }
-        }
-        case None => (0 to 3).toList.collect{
-          case id if !state.players(id).hand.canWin(state.discards.head.tile).canWin =>
-            state.players(id).hand.dynamicTiles + state.discards.head.tile
-        }
+          (wins, nowins)
+        case None =>
+          val nowins: List[List[Tile]] = (0 to 3).toList.collect{
+            case id if !state.players(id).hand.canWin(state.discards.head.tile).canWin =>
+              state.players(id).hand.dynamicTiles + state.discards.head.tile
+          }
+          (List.empty[List[Tile]], nowins)
       }
-    }}.toList.distinct
+    }}.toList
+
+  val trainingData = results.foldLeft((List.empty[List[Tile]], List.empty[List[Tile]])){
+    case (s,t) => (s._1 ++ t._1 ,s._2 ++ t._2 )
+  }
 
   private case class TrainingData(wins: List[List[Tile]], nowins: List[List[Tile]])
 
-  logger.info(s"nowins size: ${results.size}")
+  val winDistinct = trainingData._1.distinct
+  val noWinDistinct = trainingData._2.distinct
 
-  printWriter.write(write[List[List[Tile]]](results))
+  logger.info(s"wins size: ${winDistinct.size} nowins size: ${noWinDistinct.size} ")
+
+  printWriter.write(write(TrainingData(winDistinct, noWinDistinct)))
   printWriter.close()
 }
 
