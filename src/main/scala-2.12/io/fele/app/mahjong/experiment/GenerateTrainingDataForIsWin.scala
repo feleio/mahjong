@@ -12,24 +12,46 @@ import org.json4s.native.Serialization.write
 object GenerateTrainingDataForIsWin extends App {
   implicit val formats = JsonSerializer.serializers
   implicit val config: Config = new Config()
-  val logger = Logger("GenerateTrainingData")
+  val logger = Logger("GenerateTrainingDataForIsWin")
 
-  val total = 10000000
+  val total = 1000
   var count = 0
 
-  val randomSeed = 10001
+  val randomSeed = 5000000
   val random = new Random(randomSeed)
 
-  private val labelTrainingData = new File("train_v7_isWin.json")
+  private val labelTrainingData = new File("train_v7_isWin_nowins.json")
   private val printWriter: PrintWriter = new PrintWriter(labelTrainingData)
 
+  private def winsHands(gameResult: GameResult, state: GameState): List[List[Tile]] = {
+    gameResult.winnersInfo match {
+      case Some(info) =>
+        info.winners.map(_.id).toList.map(winnerId => state.players(winnerId).hand.dynamicTiles + info.winningTile )
+      case None => List.empty[List[Tile]]
+    }
+  }
+
+  private def loseHands(gameResult: GameResult, state: GameState): List[List[Tile]] = {
+    gameResult.winnersInfo match {
+      case Some(info) =>
+        val loserIds: List[Int] = (0 to 3).filterNot(x => info.winners.map(_.id).contains(x)).toList
+        loserIds.collect{
+          case id if !state.players(id).hand.canWin(info.winningTile).canWin =>
+            state.players(id).hand.dynamicTiles + info.winningTile
+        }
+      case None =>  (0 to 3).toList.collect{
+        case id if !state.players(id).hand.canWin(state.discards.head.tile).canWin =>
+          state.players(id).hand.dynamicTiles + state.discards.head.tile
+      }
+    }
+  }
 
   //val results = (0 until total).par.map(roundNum => (roundNum, random.nextInt(4)))
   //
-  val results: List[(List[List[Tile]], List[List[Tile]])] = (0 until total)
+  val results: List[List[Tile]] = (0 until total)
     .par
     .map(roundNum => (roundNum, random.nextInt(4)))
-    .map{case (roundNum, initPlayer) => {
+    .flatMap{case (roundNum, initPlayer) => {
       count += 1
       if (count % 10000 == 0)
         logger.info(s"$count/$total")
@@ -52,33 +74,14 @@ object GenerateTrainingDataForIsWin extends App {
 
       val result = flow.start()
 
-      result.winnersInfo match {
-        case Some(info) =>
-          val wins: List[List[Tile]] = info.winners.map(_.id).toList.map(winnerId => state.players(winnerId).hand.dynamicTiles + info.winningTile )
-          val loserIds: List[Int] = (0 to 3).filterNot(x => info.winners.map(_.id).contains(x)).toList
-          val nowins: List[List[Tile]] = loserIds.collect{
-            case id if !state.players(id).hand.canWin(info.winningTile).canWin =>
-              state.players(id).hand.dynamicTiles + info.winningTile
-          }
-          (wins, nowins)
-        case None =>
-          val nowins: List[List[Tile]] = (0 to 3).toList.collect{
-            case id if !state.players(id).hand.canWin(state.discards.head.tile).canWin =>
-              state.players(id).hand.dynamicTiles + state.discards.head.tile
-          }
-          (List.empty[List[Tile]], nowins)
-      }
+      loseHands(result, state)
     }}.toList
 
-  val trainingData = results.foldLeft((List.empty[List[Tile]], List.empty[List[Tile]])){
-    case (s,t) => (s._1 ++ t._1 ,s._2 ++ t._2 )
-  }
+  val resultDistinct = results.distinct
 
-  private case class TrainingData(wins: List[List[Tile]], nowins: List[List[Tile]])
+  logger.info(s"size: ${resultDistinct.size}")
 
-  logger.info(s"wins size: ${trainingData._1.size} nowins size: ${trainingData._2.size} ")
-
-  printWriter.write(write(TrainingData(trainingData._1, trainingData._2)))
+  printWriter.write(write(resultDistinct))
   printWriter.close()
 }
 
