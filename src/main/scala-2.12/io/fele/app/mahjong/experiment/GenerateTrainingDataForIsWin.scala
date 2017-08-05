@@ -76,12 +76,9 @@ object GenerateTrainingDataForIsWin extends App {
 
   private case class TrainingData(wins: List[List[Tile]], nowins: List[List[Tile]])
 
-  val winDistinct = trainingData._1.distinct
-  val noWinDistinct = trainingData._2.distinct
+  logger.info(s"wins size: ${trainingData._1.size} nowins size: ${trainingData._2.size} ")
 
-  logger.info(s"wins size: ${winDistinct.size} nowins size: ${noWinDistinct.size} ")
-
-  printWriter.write(write(TrainingData(winDistinct, noWinDistinct)))
+  printWriter.write(write(TrainingData(trainingData._1, trainingData._2)))
   printWriter.close()
 }
 
