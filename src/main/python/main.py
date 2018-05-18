@@ -9,7 +9,7 @@ SET_NUM = 9*3+4+3
 
 class State:
     def __init__(self):
-        self.drew = None
+        self.event = None
         self.hands = [[0 for _ in range(SET_NUM)] for _ in range(4)]
         self.docks = [[0 for _ in range(SET_NUM)] for _ in range(4)]
         self.walls = [4 for _ in range(SET_NUM)]
@@ -91,23 +91,18 @@ class State:
         # TODO kong trigger
         return None
 
-    def loop(self, players:List[Player]):
-        while True:
-            if self.drew is None:
-                drew = self.draw()
-                self.hands[self.player_turn][drew] += 1
-            # TODO check win
-            # TODO should we add to hand before checking?
-            discarded = players[self.player_turn].on_draw(self, drew)
-            assert self.hands[self.player_turn][discarded] > 0
-            discard_action = self.discarded_trigger(discarded)
-            if discard_action is None:
-                self.trash[discarded]+=1
-            elif discard_action == "pong":
-                continue
+    def next(self, players:List[Player]):
+        if self.event is None:
+            drew = self.draw()
+            self.event = ('draw', drew)
+            self.hands[self.player_turn][drew] += 1 # TODO separate next state?
+        # TODO check win
+        # TODO should we add to hand before checking?
+        discarded = players[self.player_turn].on_draw(self, drew)
+        assert self.hands[self.player_turn][discarded] > 0
+        discard_action = self.discarded_trigger(discarded)
+        if discard_action is None:
+            self.trash[discarded]+=1
+        elif discard_action == "pong":
+            continue
 
-
-
-
-players:Player=None
-players.gon
