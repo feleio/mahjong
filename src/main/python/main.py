@@ -2,8 +2,8 @@ import random
 from typing import List
 from copy import deepcopy
 
-from src.main.python.tile import tiles
-from src.main.python.player import Player
+from src.main.python.tile import pretty, symbol
+from src.main.python.player import Player, Human
 
 SET_NUM = 9*3+4+3
 draw = 0
@@ -27,7 +27,10 @@ class State:
         return "|".join("".join(map(str, hand)) for hand in self.hands)
 
     def pretty(self) -> str:
-        return "|".join("".join(tiles[set_idx]*h for set_idx, h in enumerate(hand)) for hand in self.hands)
+        return "|".join("".join(pretty[set_idx]*h for set_idx, h in enumerate(hand)) for hand in self.hands)
+
+    def symbol(self) -> str:
+        return "|".join("".join(symbol[set_idx]*h for set_idx, h in enumerate(hand)) for hand in self.hands)
 
     def draw(self) -> int:
         if any(self.walls):
@@ -67,6 +70,9 @@ class State:
     def next(self, players:List[Player]):
         if self.event is None:
             drew = self.draw()
+            discarded = players[0].on_draw(self, (draw, [], drew, 0))
+            assert self.hands[0][discarded] > 0
+            return draw, discarded, drew, 0
 
         event_type, event_discard, event_drew, event_pid, *_ = self.event
         # Resolve new current state
@@ -110,3 +116,5 @@ class State:
         assert self.hands[(event_pid + 1) % 4][discarded] > 0
         return draw, discarded, drew, (event_pid + 1) % 4
 
+state=State()
+state.next([Human()]*4)
