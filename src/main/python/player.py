@@ -1,9 +1,12 @@
 from abc import ABC, abstractclassmethod
+from typing import List
+from random import choices
+
 from src.main.python.tile import symbol
 
 class Player(ABC):
     @abstractclassmethod
-    def on_draw(self, state, drew) -> int:
+    def on_draw(self, state, event: (int, List[int], int, int)) -> int:
         pass
 
     @abstractclassmethod
@@ -11,32 +14,70 @@ class Player(ABC):
         pass
 
     @abstractclassmethod
-    def on_pong(self, state) -> bool:
+    def on_pong(self, state, event: (int, List[int], int, int)) -> int:
         """ (is_pong, discard) """
         pass
 
     @abstractclassmethod
-    def on_chow(self, state) -> int:
+    def on_chow(self, state, event: (int, List[int], int, int)) -> int:
         pass
 
     @abstractclassmethod
-    def on_kong(self):
+    def on_kong(self, state, event: (int, List[int], int, int)) -> int:
         pass
+
+    @abstractclassmethod
+    def on_event(self, state, event: (int, List[int], int, int)) -> None:
+        pass
+
 
 class Human(Player):
 
-    def on_draw(self, state, event) -> int:
-        return int(symbol.index(input(f"on_draw{state.symbol(event[3])}")))
+    def on_draw(self, state, event: (int, List[int], int, int)) -> int:
+        input_str = input(f"on_draw{state.symbol(event[3])} *{symbol[event[2]]}")
+        if input_str:
+            return int(symbol.index(input_str))
+        return event[2]
 
     def on_win(self, state) -> bool:
         return bool(input(f"on_win{state}"))
 
-    def on_pong(self, state) -> bool:
-        """ (is_pong, discard) """
-        return bool(input(f"on_pong{state}"))
+    def on_pong(self, state, event: (int, List[int], int, int)) -> int:
+        input_str = input(f"on_pong{state.symbol(event[3])} !{symbol[event[2]]}")
+        if input_str:
+            return int(symbol.index(input_str))
+        return None
 
-    def on_chow(self, state) -> int:
-        return bool(input(f"on_chow{state}"))
+    def on_chow(self, state, event: (int, List[int], int, int)) -> int:
+        input_str = input(f"on_chow{state.symbol(event[3])} !{symbol[event[2]]}")
+        if input_str:
+            return int(symbol.index(input_str))
+        return None
 
-    def on_kong(self):
-        return bool(input(f"on_kong{state}"))
+    def on_kong(self, state, event: (int, List[int], int, int)) -> int:
+        return int(symbol.index(input(f"on_kong{state.symbol(event[3])} !{symbol[event[2]]}")))
+
+    def on_event(self, state, event: (int, List[int], int, int)) -> None:
+        print(f"on_event{event} {symbol[event[1]]}")
+
+
+class RandomP(Player):
+
+    def on_draw(self, state, event: (int, List[int], int, int)) -> int:
+        return choices(range(len(symbol)), state.hands[event[3]])[0]
+
+    def on_win(self, state) -> bool:
+        return True
+
+    def on_pong(self, state, event: (int, List[int], int, int)) -> int:
+        return choices(range(len(symbol)), state.hands[event[3]])[0]
+
+    def on_chow(self, state, event: (int, List[int], int, int)) -> int:
+        return choices(range(len(symbol)), state.hands[event[3]])[0]
+
+    def on_kong(self, state, event: (int, List[int], int, int)) -> int:
+        return choices(range(len(symbol)), state.hands[event[3]])[0]
+
+    def on_event(self, state, event: (int, List[int], int, int)) -> None:
+        pass
+
