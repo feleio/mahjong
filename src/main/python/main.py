@@ -116,6 +116,7 @@ class State:
         assert self.hands[(event_pid + 1) % 4][discarded] > 0
         return draw, discarded, drew, (event_pid + 1) % 4
 
-state=State()
-event=state.next([Human()]*4)
-event=state.next([Human()]*4, event)
+if __name__ == '__main__':
+    state=State()
+    event=state.next([Human()]*4)
+    event=state.next([Human()]*4, event)

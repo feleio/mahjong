@@ -20,7 +20,7 @@ class Player(ABC):
         pass
 
     @abstractclassmethod
-    def gon(self):
+    def on_kong(self):
         pass
 
 class Human(Player):
@@ -33,10 +33,10 @@ class Human(Player):
 
     def on_pong(self, state) -> bool:
         """ (is_pong, discard) """
-        return bool(input(f"on_draw{state}"))
+        return bool(input(f"on_pong{state}"))
 
     def on_chow(self, state) -> int:
-        return bool(input(f"on_draw{state}"))
+        return bool(input(f"on_chow{state}"))
 
-    def gon(self):
-        return bool(input(f"on_draw{state}"))
+    def on_kong(self):
+        return bool(input(f"on_kong{state}"))
