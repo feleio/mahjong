@@ -41,22 +41,29 @@ class State:
 
     @staticmethod
     def is_win(hand:List[int])->bool:
+
+        def is_win_no_eyes(hand):
+            new_hand = hand[:]
+            new_hand[possible_eye_idx] -= 2
+            for h in [new_hand[0:9], new_hand[9:18], new_hand[18:27]]:
+                for i in range(9):
+                    while h[i] > 0:
+                        if h[i] >= 3:
+                            h[i] -= 3
+                        elif i + 2 < 9 and h[i] > 0 and h[i + 1] > 0 and h[i + 2] > 0:
+                            h[i] -= 1
+                            h[i + 1] -= 1
+                            h[i + 2] -= 1
+                        else:
+                            return False
+            return all(h == 3 or h == 0 for h in new_hand[27:])
+
         for possible_eye_idx in range(len(hand)):
             if hand[possible_eye_idx] >= 2:
-                new_hand = hand[:]
-                new_hand[possible_eye_idx] -= 2
-                for h in [new_hand[0:9], new_hand[9:18], new_hand[18:27]]:
-                    for i in range(9):
-                        while h[i] > 0:
-                            if h[i] >= 3:
-                                h[i] -= 3
-                            elif i + 2 < 9 and h[i] > 0 and h[i + 1] > 0 and h[i + 2] > 0:
-                                h[i] -= 1
-                                h[i + 1] -= 1
-                                h[i + 2] -= 1
-                            else:
-                                return False
-                return all(h==3 or h==0 for h in new_hand[27:])
+                if is_win_no_eyes(hand):
+                    return True
+        return False
+
 
     @staticmethod
     def hand_to_chunk(hand:List[int]):
