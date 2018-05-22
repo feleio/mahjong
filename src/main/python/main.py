@@ -13,8 +13,6 @@ chow = 2
 
 class State:
     def __init__(self):
-        # ('draw', drew, discard), ('chow', c, discard),
-        self.event = None
         self.hands = [[0 for _ in range(SET_NUM)] for _ in range(4)]
         self.docks = [[0 for _ in range(SET_NUM)] for _ in range(4)]
         self.walls = [4 for _ in range(SET_NUM)]
@@ -29,7 +27,9 @@ class State:
     def pretty(self) -> str:
         return "|".join("".join(pretty[set_idx]*h for set_idx, h in enumerate(hand)) for hand in self.hands)
 
-    def symbol(self) -> str:
+    def symbol(self, pid=None) -> str:
+        if pid is not None:
+            return "".join(symbol[set_idx] * h for set_idx, h in enumerate(self.hands[pid]))
         return "|".join("".join(symbol[set_idx]*h for set_idx, h in enumerate(hand)) for hand in self.hands)
 
     def draw(self) -> int:
@@ -67,14 +67,14 @@ class State:
     def hand_coord_to_chunk(hand_coord:int) -> (int, int):
         return hand_coord // 9, hand_coord % 9
 
-    def next(self, players:List[Player]):
-        if self.event is None:
+    def next(self, players: List[Player], event=None):
+        if event is None:
             drew = self.draw()
             discarded = players[0].on_draw(self, (draw, [], drew, 0))
             assert self.hands[0][discarded] > 0
             return draw, discarded, drew, 0
 
-        event_type, event_discard, event_drew, event_pid, *_ = self.event
+        event_type, event_discard, event_drew, event_pid, *_ = event
         # Resolve new current state
         self.hands[event_pid][event_drew] += 1
         self.hands[event_pid][event_discard] -= 1
@@ -112,9 +112,10 @@ class State:
                             return on_chow_discard, event_discard, (event_pid + 1) % 4
 
         drew = self.draw()
-        discarded = players[(event_pid + 1) % 4].on_draw(self, drew)
+        discarded = players[(event_pid + 1) % 4].on_draw(self, (draw, [], drew, (event_pid + 1) % 4))
         assert self.hands[(event_pid + 1) % 4][discarded] > 0
         return draw, discarded, drew, (event_pid + 1) % 4
 
 state=State()
-state.next([Human()]*4)
+event=state.next([Human()]*4)
+event=state.next([Human()]*4, event)

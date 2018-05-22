@@ -26,7 +26,7 @@ class Player(ABC):
 class Human(Player):
 
     def on_draw(self, state, event) -> int:
-        return int(symbol.index(input(f"on_draw{state.symbol()}{event}")))
+        return int(symbol.index(input(f"on_draw{state.symbol(event[3])}")))
 
     def on_win(self, state) -> bool:
         return bool(input(f"on_win{state}"))
