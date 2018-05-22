@@ -1,20 +1,24 @@
 import random
 from typing import List
+from copy import deepcopy
 
 from src.main.python.tile import tiles
 from src.main.python.player import Player
 
 SET_NUM = 9*3+4+3
+draw = 0
+pong = 1
+chow = 2
 
 
 class State:
     def __init__(self):
+        # ('draw', drew, discard), ('chow', c, discard),
         self.event = None
         self.hands = [[0 for _ in range(SET_NUM)] for _ in range(4)]
         self.docks = [[0 for _ in range(SET_NUM)] for _ in range(4)]
         self.walls = [4 for _ in range(SET_NUM)]
         self.trash = [0 for _ in range(SET_NUM)]
-        self.player_turn = 0
         for hand_idx in range(4):
             for _ in range(13):
                 self.hands[hand_idx][self.draw()] += 1
@@ -60,49 +64,49 @@ class State:
     def hand_coord_to_chunk(hand_coord:int) -> (int, int):
         return hand_coord // 9, hand_coord % 9
 
-    def discard_trigger(self, discarded) -> str:
+    def next(self, players:List[Player]):
+        if self.event is None:
+            drew = self.draw()
+
+        event_type, event_discard, event_drew, event_pid, *_ = self.event
+        # Resolve new current state
+        self.hands[event_pid][event_drew] += 1
+        self.hands[event_pid][event_discard] -= 1
+        self.trash[event_discard] += 1
+
+        # Discard trigger
         # win trigger
         for hand_player_id, hand in enumerate(self.hands):
-            if hand_player_id != self.player_turn:
+            if hand_player_id != event_pid:
                 new_hand = hand[:]
-                new_hand[discarded] += 1
+                new_hand[event_discard] += 1
                 if State.is_win(new_hand) and players[hand_player_id].on_win(self):
                     return "win"
         # pong trigger
         for hand_player_id, hand in enumerate(self.hands):
-            if hand_player_id != self.player_turn:
-                if hand[discarded] >= 2 and players[hand_player_id].on_pong(self):
-                    self.player_turn = hand_player_id
-                    self.drew = discarded
-                    return "pong"
+            if hand_player_id != event_pid:
+                if hand[event_discard] >= 2:
+                    on_pong_discard = players[hand_player_id].on_pong(self)
+                    if on_pong_discard:
+                        # assert self.hands[event_pid][discarded] > 0
+                        return pong, on_pong_discard, event_discard, hand_player_id
         # chow trigger
-        hand = self.hands[(self.player_turn+1)%4]
-        a,b = State.hand_coord_to_chunk(discarded)
+        hand = self.hands[(event_pid + 1) % 4]
+        a, b = State.hand_coord_to_chunk(event_discard)
         if a in {0, 1, 2}:
             chunk = State.hand_to_chunk(hand)
-            spree=0
+            spree = 0
             for convolution in [-2, -1, 0, 1, 2]:
                 if (b + convolution > 0 and b + convolution < 9 and chunk[a][b - convolution] > 0) or convolution == 0:
-                    spree+=1
-                    if spree == 3 and players[self.player_turn].on_chow(self): # TODO assert
-                        players[self.player_turn].on_draw(self)  # TODO change player turn discard
-                        return "chow"
+                    spree += 1
+                    if spree == 3:
+                        on_chow_discard = players[(event_pid + 1) % 4].on_chow(self)
+                        if on_chow_discard:
+                            # TODO assert
+                            return on_chow_discard, event_discard, (event_pid + 1) % 4
 
-        # TODO kong trigger
-        return None
-
-    def next(self, players:List[Player]):
-        if self.event is None:
-            drew = self.draw()
-            self.event = ('draw', drew)
-            self.hands[self.player_turn][drew] += 1 # TODO separate next state?
-        # TODO check win
-        # TODO should we add to hand before checking?
-        discarded = players[self.player_turn].on_draw(self, drew)
-        assert self.hands[self.player_turn][discarded] > 0
-        discard_action = self.discarded_trigger(discarded)
-        if discard_action is None:
-            self.trash[discarded]+=1
-        elif discard_action == "pong":
-            continue
+        drew = self.draw()
+        discarded = players[(event_pid + 1) % 4].on_draw(self, drew)
+        assert self.hands[(event_pid + 1) % 4][discarded] > 0
+        return draw, discarded, drew, (event_pid + 1) % 4
 
