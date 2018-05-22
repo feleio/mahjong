@@ -103,13 +103,13 @@ class State:
             chunk = State.hand_to_chunk(hand)
             spree = 0
             for convolution in [-2, -1, 0, 1, 2]:
-                if (b + convolution > 0 and b + convolution < 9 and chunk[a][b - convolution] > 0) or convolution == 0:
+                if (b + convolution > 0 and b + convolution < 9 and chunk[a][b + convolution] > 0) or convolution == 0:
                     spree += 1
                     if spree == 3:
                         on_chow_discard = players[(event_pid + 1) % 4].on_chow(self)
                         if on_chow_discard:
                             # TODO assert
-                            return on_chow_discard, event_discard, (event_pid + 1) % 4
+                            return chow, on_chow_discard, event_discard, (event_pid + 1) % 4
 
         drew = self.draw()
         discarded = players[(event_pid + 1) % 4].on_draw(self, (draw, [], drew, (event_pid + 1) % 4))

@@ -29,3 +29,10 @@ event=state.next(mock_humans, event)
 
 mock_humans[3].on_pong.assert_called_once()
 
+mock_humans[0].on_pong.assert_not_called()
+mock_humans[2].on_pong.assert_not_called()
+
+for mock_human in mock_humans:
+    mock_human.on_win.assert_not_called()
+    mock_human.on_chow.assert_not_called()
+
