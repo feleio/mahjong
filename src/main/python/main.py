@@ -1,10 +1,10 @@
 import random
 from typing import List
-from copy import deepcopy
 
 from src.main.python.tile import pretty, symbol
 from src.main.python.player import Player, Human, RandomP
 
+win = -1
 draw = 0
 pong = 1
 chow = 2
@@ -73,7 +73,7 @@ class State:
     def hand_coord_to_chunk(hand_coord:int) -> (int, int):
         return hand_coord // 9, hand_coord % 9
 
-    def next(self, players: List[Player], event=None):
+    def next(self, event=None):
         event_pid = -1
         if event is not None:
             event_type, event_discard, event_drew, event_pid, *_ = event
@@ -88,16 +88,14 @@ class State:
                 if hand_player_id != event_pid:
                     new_hand = hand[:]
                     new_hand[event_discard] += 1
-                    if State.is_win(new_hand) and players[hand_player_id].on_win(self):
-                        return "win"
+                    if State.is_win(new_hand):
+                        yield win, None, None, hand_player_id
             # pong trigger
             for hand_player_id, hand in enumerate(self.hands):
                 if hand_player_id != event_pid:
                     if hand[event_discard] >= 2:
-                        on_pong_discard = players[hand_player_id].on_pong(self, (pong, [], event_discard, hand_player_id))
-                        if on_pong_discard:
-                            assert self.hands[hand_player_id][on_pong_discard] > 0
-                            return pong, on_pong_discard, event_discard, hand_player_id
+                        yield (pong, [], event_discard, hand_player_id)
+
             # chow trigger
             hand = self.hands[(event_pid + 1) % 4]
             a, b = State.hand_coord_to_chunk(event_discard)
@@ -108,22 +106,45 @@ class State:
                     if (b + convolution > 0 and b + convolution < 9 and chunk[a][b + convolution] > 0) or convolution == 0:
                         spree += 1
                         if spree == 3:
-                            on_chow_discard = players[(event_pid + 1) % 4].on_chow(self, (chow, [], event_discard, (event_pid + 1) % 4))
-                            if on_chow_discard:
-                                assert self.hands[(event_pid + 1) % 4][on_chow_discard] > 0
-                                return chow, on_chow_discard, event_discard, (event_pid + 1) % 4
+                            yield (chow, [], event_discard, (event_pid + 1) % 4)
 
         drew = self.draw()
-        discarded = players[(event_pid + 1) % 4].on_draw(self, (draw, [], drew, (event_pid + 1) % 4))
-        assert self.hands[(event_pid + 1) % 4][discarded] > 0 or discarded == drew
-        return draw, discarded, drew, (event_pid + 1) % 4
+        yield (draw, [], drew, (event_pid + 1) % 4)
 
 if __name__ == '__main__':
     state=State()
     event=None
     players=[Human()]+[RandomP()]*3
-    while True:
-        event=state.next(players, event)
-        for player in players:
-            player.on_event(state, event)
+    won = False
+    while not won:
+        for nx_ev_act, _, nx_ev_in, nx_ev_pid in state.next(event):
+            if nx_ev_act == win:
+                if players[nx_ev_pid].on_win(state):
+                    won = True
+                    break
+            elif nx_ev_act == draw:
+                discarded = players[nx_ev_pid].on_draw(state, (nx_ev_act, _, nx_ev_in, nx_ev_pid))
+                if discarded is not None:
+                    assert state.hands[nx_ev_pid][discarded] > 0 or discarded == nx_ev_in
+                    event = (nx_ev_act, discarded, nx_ev_in, nx_ev_pid)
+                    for player in players:
+                        player.on_event(state, event)
+                    break
+            elif nx_ev_act == pong:
+                discarded = players[nx_ev_pid].on_pong(state, (nx_ev_act, _, nx_ev_in, nx_ev_pid))
+                if discarded is not None:
+                    assert state.hands[nx_ev_pid][discarded] > 0
+                    event = (nx_ev_act, discarded, nx_ev_in, nx_ev_pid)
+                    for player in players:
+                        player.on_event(state, event)
+                    break
+            elif nx_ev_act == chow:
+                discarded = players[nx_ev_pid].on_chow(state, (nx_ev_act, _, nx_ev_in, nx_ev_pid))
+                if discarded is not None:
+                    assert state.hands[nx_ev_pid][discarded] > 0
+                    event = (nx_ev_act, discarded, nx_ev_in, nx_ev_pid)
+                    for player in players:
+                        player.on_event(state, event)
+                    break
+
 

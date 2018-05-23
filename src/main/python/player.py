@@ -40,7 +40,7 @@ class Human(Player):
         return event[2]
 
     def on_win(self, state) -> bool:
-        return bool(input(f"on_win{state}"))
+        return bool(input(f"on_win{state.symbol()}"))
 
     def on_pong(self, state, event: (int, List[int], int, int)) -> int:
         input_str = input(f"on_pong{state.symbol(event[3])} !{symbol[event[2]]}")
