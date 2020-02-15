@@ -14,7 +14,7 @@ object VerifyIfIsWinCorrect extends App {
   val j = parse(jStr)
   val nowins: List[List[Tile]] = j.children.map{
     case JArray(l) => l.map{
-      case JString(tStr) => Tile(TileValue.withName(tStr))
+      case JString(tStr) => Tile.toTile(TileValue.withName(tStr).id)
     }
   }
 

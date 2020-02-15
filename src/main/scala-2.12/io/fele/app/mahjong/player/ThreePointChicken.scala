@@ -70,8 +70,8 @@ class ThreePointChicken(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] 
     } else {
       // decision already made
       hand.dynamicTiles.find(_.`type` != target.get).getOrElse(
-        hand.dynamicTiles.find(tile => tile.`type` == HONOR || hand.dynamicTileStats(tile.value.id) == 1).getOrElse(
-          hand.dynamicTiles.find(tile => tile.`type` != HONOR && hand.dynamicTileStats(tile.value.id) < 2 && !isContinues(tile, hand.dynamicTiles)).getOrElse(
+        hand.dynamicTiles.find(tile => tile.`type` == HONOR || hand.dynamicTileStats(tile.toTileValue) == 1).getOrElse(
+          hand.dynamicTiles.find(tile => tile.`type` != HONOR && hand.dynamicTileStats(tile.toTileValue) < 2 && !isContinues(tile, hand.dynamicTiles)).getOrElse(
             hand.dynamicTiles.head
           )
         )
@@ -80,9 +80,4 @@ class ThreePointChicken(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] 
   }
 
   override def name: String = "ThreePointChicken"
-
-  private def isContinues(tile: Tile, tiles: List[Tile]) =
-    tile.`type` != TileType.HONOR && (
-      tile.num > 1 && tiles.contains(tile-1) || tile.num < 9 && tiles.contains(tile+1)
-      )
 }

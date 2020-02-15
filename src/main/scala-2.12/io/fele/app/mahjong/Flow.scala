@@ -151,8 +151,13 @@ class FlowImpl(val state: GameState, seed: Option[Long] = None)
       state.setCurPlayer(playerId)
       Some(state.curPlayer.pong(discard.tile, discard.playerId))
     case ChowableTile(playerId, chowPosition) =>
-      state.setCurPlayer(playerId)
-      Some(state.curPlayer.chow(discard.tile, discard.playerId, chowPosition))
+      discard.tile match {
+        case discardedTile: NumberTile =>
+          state.setCurPlayer(playerId)
+          Some(state.curPlayer.chow(discardedTile, discard.playerId, chowPosition))
+        case _ =>
+          throw new IllegalArgumentException("Must be a NumberTile to chow")
+      }
     case _ =>
       state.addDiscarded(discard.tile)
       state.setCurPlayer(state.nextPlayerId)

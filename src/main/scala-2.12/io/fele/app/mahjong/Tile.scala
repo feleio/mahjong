@@ -15,6 +15,18 @@ object TileType extends Enumeration {
   val HONOR = Value(3)
 }
 
+object HonorTileValue extends Enumeration {
+  type HonorTileValue = Value
+  // HONOR WIND and HONOR DRAGON
+  val HW_E = Value(0)
+  val HW_S = Value(1)
+  val HW_W = Value(2)
+  val HW_N = Value(3)
+  val HD_R = Value(4)
+  val HD_G = Value(5)
+  val HD_B = Value(6)
+}
+
 object TileValue extends Enumeration {
   type TileValue = Value
 
@@ -62,6 +74,7 @@ object TileValue extends Enumeration {
   val HD_G = Value(32)
   val HD_B = Value(33)
 
+  // TODO: throw if wrong input
   def shift(tileValue: TileValue, i: Int):TileValue = TileValue(tileValue.id + i)
 }
 
@@ -73,8 +86,101 @@ object ChowPosition extends Enumeration {
 
 import TileType._
 import TileValue._
+import HonorTileValue._
 
-case class Tile (value: TileValue){
+sealed trait Tile {
+  def `type`: TileType.Value
+  def toString: String
+
+  // TODO: try to delete this later if possible
+  def toTileValue: Int
+}
+
+object Tile {
+  def toTile(tileValue: Int): Tile = {
+    if (tileValue >= 0 && tileValue <= 8)
+      NumberTile(TileType.DOT, tileValue + 1)
+    else if (tileValue >= 9 && tileValue <= 17)
+      NumberTile(TileType.BAMBOO, tileValue % 9 + 1)
+    else if (tileValue >= 18 && tileValue <= 26)
+      NumberTile(TileType.CHARACTER, tileValue % 9 + 1)
+    else if (tileValue >= 27 && tileValue <= 33)
+      HonorTile(HonorTileValue(tileValue % 9))
+    else
+      throw new IllegalArgumentException("invalid tileValue")
+  }
+
+  def apply(tileValue: TileValue): Tile = Tile.toTile(tileValue.id)
+
+  implicit def tileValue2Tile(value: TileValue): Tile = Tile.toTile(value.id)
+
+  implicit def tileValue2Int(value: TileValue): Int = value.id
+
+  implicit class RickList(tiles: List[Tile]) {
+    def +(tile: Tile): List[Tile] ={
+      (tile :: tiles).sortBy(_.toTileValue)
+    }
+
+    def -(tile: Tile): List[Tile] ={
+      tiles diff List(tile)
+    }
+  }
+}
+
+sealed trait NumberTile extends Tile {
+  def number: Int
+  def +(i: Int): NumberTile = {
+    if(number + i < 1 || number + i > 9)
+      throw new IllegalArgumentException("invalid value to add / minus on a Tile")
+    else
+      NumberTile(`type`, number + i)
+  }
+  def -(i: Int): NumberTile = this + -i
+
+  override def toString: String= s"${`type`.toString} $number"
+
+  override def toTileValue: Int = `type` match {
+    case TileType.DOT => number - 1
+    case TileType.BAMBOO => 9 + number - 1
+    case TileType.CHARACTER => (9 * 2) + number - 1
+  }
+}
+
+object NumberTile {
+  def apply(`type`: TileType, number: Int): NumberTile = `type` match {
+    case TileType.DOT => DotTile(number)
+    case TileType.BAMBOO => BambooTile(number)
+    case TileType.CHARACTER => CharacterTile(number)
+  }
+}
+
+final case class DotTile(number: Int) extends NumberTile{
+  override val `type`: TileType = TileType.DOT
+
+  override def toTileValue: Int = number - 1
+}
+
+final case class BambooTile(number: Int) extends NumberTile{
+  override val `type`: TileType = TileType.BAMBOO
+
+  override def toTileValue: Int = 9 + number - 1
+}
+
+final case class CharacterTile(number: Int) extends NumberTile{
+  override val `type`: TileType = TileType.CHARACTER
+
+  override def toTileValue: Int = (9 * 2) + number - 1
+}
+
+final case class HonorTile(value: HonorTileValue) extends Tile{
+  override val `type`: TileType = TileType.HONOR
+
+  override def toString: String = value.toString
+
+  override def toTileValue: Int = (9 * 3) + value.id
+}
+
+case class TileKill (value: TileValue){
   val `type` = value.id / 9 match {
     case 0 => DOT
     case 1 => BAMBOO
@@ -82,30 +188,9 @@ case class Tile (value: TileValue){
     case 3 => HONOR
   }
 
-  val num = if (`type` == HONOR) 0 else value.id % 9 + 1
-
-  def +(i: Int): Tile = this match {
-    case t if t.`type` != HONOR && this.num + i >= 1 && this.num + i <= 9 => Tile(TileValue(this.value.id + i))
-  }
-  def -(i: Int): Tile = this + -i
+  val num: Option[Int] = if (`type` == HONOR) None else Some(value.id % 9 + 1)
 
   override def toString: String = value.toString
-}
-
-object Tile {
-  implicit def tileValue2Tile(value: TileValue): Tile = Tile(value)
-
-  implicit def tileValue2Int(value: TileValue): Int = value.id
-
-  implicit class RickList(tiles: List[Tile]) {
-    def +(tile: Tile): List[Tile] ={
-      (tile :: tiles).sortBy(_.value.id)
-    }
-
-    def -(tile: Tile): List[Tile] ={
-      tiles diff List(tile)
-    }
-  }
 }
 
 case class DrawerState(shuffledTiles: Seq[Tile], curPos: Int)
@@ -145,6 +230,6 @@ class RandomTileDrawer(
 }
 
 object RandomTileDrawer {
-  val tiles: Seq[Tile] = TileValue.values.toSeq.sorted.flatMap(x => List.fill(4)(Tile(x)))
+  val tiles: Seq[Tile] = TileValue.values.toSeq.sorted.flatMap(x => List.fill(4)(Tile.toTile(x.id)))
   val tilesNum = tiles.size
 }

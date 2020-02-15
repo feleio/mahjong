@@ -65,7 +65,7 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
     discarded
   }
 
-  def chow(tile: Tile, discardPlayerId: Int, position: ChowPosition)
+  def chow(tile: NumberTile, discardPlayerId: Int, position: ChowPosition)
           (implicit stateGenerator: CurStateGenerator, gameLogger: GameLogger): Tile = {
     hand.chow(tile, position)
     gameLogger.chow(ChowEvent(id, discardPlayerId, tile, position))
@@ -110,6 +110,11 @@ abstract class Player(val id: Int, tiles: List[Tile], tileGroups: List[TileGroup
   }
 
   def overrideDiscardDecision(decision: Tile): Unit = discardDecision = Some(decision)
+
+  protected def isContinues(tile: Tile, tiles: List[Tile]) = tile match {
+    case t: NumberTile => t.number > 1 && tiles.contains(t-1) || t.number < 9 && tiles.contains(t+1)
+    case _ => false
+  }
 
   override def toString = hand.toString
 

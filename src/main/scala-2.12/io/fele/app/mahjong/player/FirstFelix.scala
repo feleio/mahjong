@@ -76,8 +76,8 @@ class FirstFelix(id: Int, tiles: List[Tile], sameSuitNum: Int, tileGroups: List[
     var maxPairSuit: Option[TileType] = None
     val isDecideDiffSuitAllPong = {
       val pairTileValues: Seq[Tile] = hand.dynamicTileStats.zipWithIndex
-        .filter{case (tileCount, i) => tileCount >= 2}
-        .map(v => Tile(TileValue(v._2)))
+        .filter{case (tileCount, _) => tileCount >= 2}
+        .map(v => Tile.toTile(v._2))
       val pairTileStat: Map[TileType, Int] = pairTileValues.groupBy(_.`type`).mapValues(_.size)
       maxPairSuit = pairTileStat.keySet.filter(_ != HONOR) match {
         case ks if ks.nonEmpty => Some(ks.maxBy(k => pairTileStat(k)))
@@ -118,9 +118,9 @@ class FirstFelix(id: Int, tiles: List[Tile], sameSuitNum: Int, tileGroups: List[
     } else {
       // decision already made
       hand.dynamicTiles.find(_.`type` != target.get.`type`).getOrElse(
-        hand.dynamicTiles.find(tile => tile.`type` == HONOR || hand.dynamicTileStats(tile.value.id) == 1).getOrElse(
+        hand.dynamicTiles.find(tile => tile.`type` == HONOR || hand.dynamicTileStats(tile.toTileValue) == 1).getOrElse(
           hand.dynamicTiles.find(tile => target.exists(_.`type` == SameSuit) && tile.`type` == HONOR).getOrElse(
-            hand.dynamicTiles.find(tile => tile.`type` != HONOR && hand.dynamicTileStats(tile.value.id) < 2 && !isContinues(tile, hand.dynamicTiles)).getOrElse(
+            hand.dynamicTiles.find(tile => tile.`type` != HONOR && hand.dynamicTileStats(tile.toTileValue) < 2 && !isContinues(tile, hand.dynamicTiles)).getOrElse(
               hand.dynamicTiles.head
             )
           )
@@ -134,9 +134,4 @@ class FirstFelix(id: Int, tiles: List[Tile], sameSuitNum: Int, tileGroups: List[
   def printDebug: Unit = {
     println(s"first felix target: $target")
   }
-
-  private def isContinues(tile: Tile, tiles: List[Tile]) =
-    tile.`type` != TileType.HONOR && (
-      tile.num > 1 && tiles.contains(tile-1) || tile.num < 9 && tiles.contains(tile+1)
-      )
 }
