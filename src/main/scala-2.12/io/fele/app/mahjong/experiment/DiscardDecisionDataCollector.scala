@@ -1,9 +1,10 @@
-package io.fele.app.mahjong
+package io.fele.app.mahjong.experiment
 
 import com.typesafe.scalalogging.Logger
+import io.fele.app.mahjong.Tile._
+import io.fele.app.mahjong._
 
 import scala.collection.mutable
-import io.fele.app.mahjong.Tile._
 
 case class DiscardRecord(ts: List[Tile], discard: Tile)
 
