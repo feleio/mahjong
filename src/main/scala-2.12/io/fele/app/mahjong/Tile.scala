@@ -180,19 +180,6 @@ final case class HonorTile(value: HonorTileValue) extends Tile{
   override def toTileValue: Int = (9 * 3) + value.id
 }
 
-case class TileKill (value: TileValue){
-  val `type` = value.id / 9 match {
-    case 0 => DOT
-    case 1 => BAMBOO
-    case 2 => CHARACTER
-    case 3 => HONOR
-  }
-
-  val num: Option[Int] = if (`type` == HONOR) None else Some(value.id % 9 + 1)
-
-  override def toString: String = value.toString
-}
-
 case class DrawerState(shuffledTiles: Seq[Tile], curPos: Int)
 
 trait TileDrawer {

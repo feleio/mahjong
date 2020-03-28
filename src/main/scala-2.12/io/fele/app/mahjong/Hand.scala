@@ -11,7 +11,7 @@ import scala.collection.mutable
   * Created by felix.ling on 04/12/2016.
   */
 
-trait TileGroup {
+sealed trait TileGroup {
   def getCount: Int
   def toString: String
 }
