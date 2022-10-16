@@ -206,7 +206,7 @@ class ScoreCalculatorTest extends FreeSpec with Matchers {
   "hand with Thirteen " - {
     "scores max points" in {
       val calculator = new ScoreCalculator(
-        List[Tile](B1, D1, C1, D9, B9, C9, C9, HW_E, HW_S, HW_W, HW_N, HD_R, HD_G, HD_B).sortBy(_.value.id),
+        List[Tile](B1, D1, C1, D9, B9, C9, C9, HW_E, HW_S, HW_W, HW_N, HD_R, HD_G, HD_B).sortBy(_.toTileValue),
         List.empty[TileGroup],
         Tile(C9),
         maxScore

@@ -1,8 +1,12 @@
-package io.fele.app.mahjong
+package io.fele.app.mahjong.service
+
+import io.fele.app.mahjong.Config
 
 import scala.collection.mutable
 import io.fele.app.mahjong.TileType._
 import io.fele.app.mahjong.TileValue._
+import io.fele.app.mahjong.model.{ChowGroup, Hand, KongGroup, NumberTile, PongGroup, Tile, TileGroup}
+import io.fele.app.mahjong.util.Utils
 
 /**
   * Created by felix.ling on 18/06/2017.
@@ -34,14 +38,15 @@ class ScoreCalculator(
   val dynamicTiles: List[Tile],
   val fixedTileGroups: List[TileGroup],
   val eyeTile: Tile,
-  val maxScore: Int)(implicit val config: Config) {
+  val maxScore: Int) {
+  import HandService.RichTile
 
   val tileStats: mutable.ArraySeq[Int] = mutable.ArraySeq.fill[Int](34)(0)
-  dynamicTiles.foreach(t => tileStats(t.toTileValue) += 1)
+  dynamicTiles.foreach(t => tileStats(t.toValue) += 1)
   fixedTileGroups.foreach{
-    case KongGroup(t) => tileStats(t.toTileValue) += 4
-    case PongGroup(t) => tileStats(t.toTileValue) += 3
-    case ChowGroup(tileSet) => tileSet.foreach(t => tileStats(t.toTileValue) += 1)
+    case KongGroup(t) => tileStats(t.toValue) += 4
+    case PongGroup(t) => tileStats(t.toValue) += 3
+    case ChowGroup(tileSet) => tileSet.foreach(t => tileStats(t.toValue) += 1)
   }
 
   val tileTypeStats: mutable.ArraySeq[Int] = mutable.ArraySeq.fill(4)(0)
@@ -71,7 +76,7 @@ class ScoreCalculator(
       case _ => true
     }
     val dTilesWithoutEyes = dynamicTiles diff List.fill[Tile](2)(eyeTile)
-    val isAllPong = validateAllPong(dTilesWithoutEyes.sortBy(t => t.toTileValue))
+    val isAllPong = validateAllPong(dTilesWithoutEyes.sortBy(_.toValue))
     isNoChowGroups && isAllPong
   }
 
@@ -81,7 +86,7 @@ class ScoreCalculator(
       case _ => false
     }
     val dTilesWithoutEyes = dynamicTiles diff List.fill[Tile](2)(eyeTile)
-    val isAllChow = validateAllChow(dTilesWithoutEyes.sortBy(t => t.toTileValue))
+    val isAllChow = validateAllChow(dTilesWithoutEyes.sortBy(_.toValue))
     isOnlyChowGroups && isAllChow
   }
 
@@ -91,7 +96,7 @@ class ScoreCalculator(
 
   private def smallFourDirection = {
     val allDirections = List(HW_E, HW_S, HW_W, HW_N)
-    allDirections.map(_.id).contains(eyeTile.toTileValue) && (allDirections.map(_.id) diff List(eyeTile.toTileValue)).forall(tileStats(_) >= 3)
+    allDirections.map(_.id).contains(eyeTile.toValue) && (allDirections.map(_.id) diff List(eyeTile.toValue)).forall(tileStats(_) >= 3)
   }
 
   private def bigThreeCircle = {
@@ -100,7 +105,7 @@ class ScoreCalculator(
 
   private def smallThreeCircle = {
     val allCircle = List(HD_G, HD_R, HD_B)
-    allCircle.map(_.id).contains(eyeTile.toTileValue) && (allCircle.map(_.id) diff List(eyeTile.toTileValue)).forall(tileStats(_) >= 3)
+    allCircle.map(_.id).contains(eyeTile.toValue) && (allCircle.map(_.id) diff List(eyeTile.toValue)).forall(tileStats(_) >= 3)
   }
 
   private def eighteenGods = {
@@ -111,22 +116,22 @@ class ScoreCalculator(
   }
 
   private def oneNine = {
-    val allTiles: Set[Tile] = (0 to 33).map(x => Tile.fromValue(x)).toSet
-    val oneNineTiles: Set[Tile] = Set(D1, D9, B1, B9, C1, C9).map(x => Tile.fromValue(x.id))
-    val honorTiles: Set[Tile] = Set(HW_E, HW_S, HW_W, HW_N, HD_R, HD_G, HD_B).map(x => Tile.fromValue(x.id))
+    val allTiles: Set[Tile] = (0 to 33).map(x => Utils.int2Tile(x)).toSet
+    val oneNineTiles: Set[Tile] = Set(D1, D9, B1, B9, C1, C9).map(x => Utils.int2Tile(x.id))
+    val honorTiles: Set[Tile] = Set(HW_E, HW_S, HW_W, HW_N, HD_R, HD_G, HD_B).map(x => Utils.int2Tile(x.id))
 
-    val allHonorOrOneNine = (allTiles diff oneNineTiles diff honorTiles).forall(t => tileStats(t.toTileValue) == 0)
-    val isOneNineExist = oneNineTiles.exists(t => tileStats(t.toTileValue) > 0)
-    val isHonorExist = honorTiles.exists(t => tileStats(t.toTileValue) > 0)
+    val allHonorOrOneNine = (allTiles diff oneNineTiles diff honorTiles).forall(t => tileStats(t.toValue) == 0)
+    val isOneNineExist = oneNineTiles.exists(t => tileStats(t.toValue) > 0)
+    val isHonorExist = honorTiles.exists(t => tileStats(t.toValue) > 0)
 
     allHonorOrOneNine && isHonorExist && isOneNineExist && !thirteen
   }
 
   private def pureOneNine = {
-    val allTiles: Set[Tile] = (0 to 33).map(x => Tile.fromValue(x)).toSet
-    val oneNineTiles: Set[Tile] = Set(D1, D9, B1, B9, C1, C9).map(x => Tile.fromValue(x.id))
+    val allTiles: Set[Tile] = (0 to 33).map(x => Utils.int2Tile(x)).toSet
+    val oneNineTiles: Set[Tile] = Set(D1, D9, B1, B9, C1, C9).map(x => Utils.int2Tile(x.id))
 
-    (allTiles diff oneNineTiles).forall(t => tileStats(t.toTileValue) == 0)
+    (allTiles diff oneNineTiles).forall(t => tileStats(t.toValue) == 0)
   }
 
   private def thirteen = (dynamicTiles diff List(eyeTile)) == Hand.thirteenValidateTiles && fixedTileGroups.isEmpty
@@ -137,14 +142,17 @@ class ScoreCalculator(
     case _ => false
   }
 
-  private def validateAllChow(sortedTiles: List[Tile]): Boolean = sortedTiles match {
-    case Nil =>
-      true
-    case (t1: NumberTile) :: rest
-      if t1.number <= 7 && rest.contains(t1 + 1) && rest.contains(t1 + 2) =>
+  private def validateAllChow(sortedTiles: List[Tile]): Boolean = {
+    import HandService.RichNumberTile
+    sortedTiles match {
+      case Nil =>
+        true
+      case (t1: NumberTile) :: rest
+        if t1.number <= 7 && rest.contains(t1 + 1) && rest.contains(t1 + 2) =>
         validateAllChow(sortedTiles diff List(t1, t1 + 1, t1 + 2))
-    case _ =>
-      false
+      case _ =>
+        false
+    }
   }
 
   val scoreTypes: Map[ScoreType, (Boolean, Int)] = Map(

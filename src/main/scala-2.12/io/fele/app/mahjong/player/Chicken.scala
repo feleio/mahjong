@@ -15,7 +15,7 @@ class Chicken(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.emp
   override def decideChow(tile: Tile, positions: Set[ChowPosition], curState: CurState): Option[ChowPosition] = positions.headOption
   override def decideDiscard(curState: CurState): Tile = {
     val uselessTiles = hand.dynamicTiles.filter(tile => {
-      hand.dynamicTileStats(tile.value.id) < 2 && !isContinues(tile, hand.dynamicTiles)
+      hand.dynamicTileStats(tile.toTileValue) < 2 && !isContinues(tile, hand.dynamicTiles)
     })
 
     uselessTiles.size match {
@@ -24,9 +24,4 @@ class Chicken(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.emp
     }
   }
   override def name: String = "Chicken"
-
-  private def isContinues(tile: Tile, tiles: List[Tile]) =
-    tile.`type` != TileType.HONOR && (
-      tile.num > 1 && tiles.contains(tile-1) || tile.num < 9 && tiles.contains(tile+1)
-      )
 }
