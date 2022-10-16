@@ -111,9 +111,9 @@ class ScoreCalculator(
   }
 
   private def oneNine = {
-    val allTiles: Set[Tile] = (0 to 33).map(x => Tile.toTile(x)).toSet
-    val oneNineTiles: Set[Tile] = Set(D1, D9, B1, B9, C1, C9).map(x => Tile.toTile(x.id))
-    val honorTiles: Set[Tile] = Set(HW_E, HW_S, HW_W, HW_N, HD_R, HD_G, HD_B).map(x => Tile.toTile(x.id))
+    val allTiles: Set[Tile] = (0 to 33).map(x => Tile.fromValue(x)).toSet
+    val oneNineTiles: Set[Tile] = Set(D1, D9, B1, B9, C1, C9).map(x => Tile.fromValue(x.id))
+    val honorTiles: Set[Tile] = Set(HW_E, HW_S, HW_W, HW_N, HD_R, HD_G, HD_B).map(x => Tile.fromValue(x.id))
 
     val allHonorOrOneNine = (allTiles diff oneNineTiles diff honorTiles).forall(t => tileStats(t.toTileValue) == 0)
     val isOneNineExist = oneNineTiles.exists(t => tileStats(t.toTileValue) > 0)
@@ -123,8 +123,8 @@ class ScoreCalculator(
   }
 
   private def pureOneNine = {
-    val allTiles: Set[Tile] = (0 to 33).map(x => Tile.toTile(x)).toSet
-    val oneNineTiles: Set[Tile] = Set(D1, D9, B1, B9, C1, C9).map(x => Tile.toTile(x.id))
+    val allTiles: Set[Tile] = (0 to 33).map(x => Tile.fromValue(x)).toSet
+    val oneNineTiles: Set[Tile] = Set(D1, D9, B1, B9, C1, C9).map(x => Tile.fromValue(x.id))
 
     (allTiles diff oneNineTiles).forall(t => tileStats(t.toTileValue) == 0)
   }

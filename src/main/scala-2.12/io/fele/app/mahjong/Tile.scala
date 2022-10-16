@@ -97,7 +97,7 @@ sealed trait Tile {
 }
 
 object Tile {
-  def toTile(tileValue: Int): Tile = {
+  def fromValue(tileValue: Int): Tile = {
     if (tileValue >= 0 && tileValue <= 8)
       NumberTile(TileType.DOT, tileValue + 1)
     else if (tileValue >= 9 && tileValue <= 17)
@@ -110,9 +110,9 @@ object Tile {
       throw new IllegalArgumentException("invalid tileValue")
   }
 
-  def apply(tileValue: TileValue): Tile = Tile.toTile(tileValue.id)
+  def apply(tileValue: TileValue): Tile = Tile.fromValue(tileValue.id)
 
-  implicit def tileValue2Tile(value: TileValue): Tile = Tile.toTile(value.id)
+  implicit def tileValue2Tile(value: TileValue): Tile = Tile.fromValue(value.id)
 
   implicit def tileValue2Int(value: TileValue): Int = value.id
 
@@ -217,6 +217,6 @@ class RandomTileDrawer(
 }
 
 object RandomTileDrawer {
-  val tiles: Seq[Tile] = TileValue.values.toSeq.sorted.flatMap(x => List.fill(4)(Tile.toTile(x.id)))
+  val tiles: Seq[Tile] = TileValue.values.toSeq.sorted.flatMap(x => List.fill(4)(Tile.fromValue(x.id)))
   val tilesNum = tiles.size
 }

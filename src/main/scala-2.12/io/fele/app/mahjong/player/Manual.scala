@@ -75,7 +75,7 @@ class Manual(id: Int, tiles: List[Tile], tileGroups: List[TileGroup] = List.empt
     logger.info(s"which tile do you want to discard? [${curState.myInfo.tiles.mkString("/")}]")
     scala.io.StdIn.readLine() match {
       case s if Try(TileValue.withName(s.toUpperCase())).isSuccess
-        && curState.myInfo.tiles.contains(Tile.toTile(TileValue.withName(s.toUpperCase()).id))
+        && curState.myInfo.tiles.contains(Tile.fromValue(TileValue.withName(s.toUpperCase()).id))
           => TileValue.withName(s.toUpperCase())
       case _ => decideDiscard(curState)
     }

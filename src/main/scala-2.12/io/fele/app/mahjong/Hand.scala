@@ -77,7 +77,7 @@ class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup])(implicit
         val scoreResult = new ScoreCalculator(
           dynamicTiles + tile,
           fixedTileGroups,
-          Tile.toTile(eyeTileId),
+          Tile.fromValue(eyeTileId),
           config.maxScore
         ).cal
         CanWinResult(scoreResult.score >= config.minScore, Math.max(result.score, scoreResult.score))
@@ -88,7 +88,7 @@ class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup])(implicit
       val scoreResult = new ScoreCalculator(
         dynamicTiles + tile,
         fixedTileGroups,
-        Tile.toTile(eyeTileIds.head),
+        Tile.fromValue(eyeTileIds.head),
         config.maxScore
       ).cal
       res = CanWinResult(scoreResult.score >= config.minScore, Math.max(res.score, scoreResult.score))
@@ -98,7 +98,7 @@ class Hand(ts: List[Tile], gs: List[TileGroup] = List.empty[TileGroup])(implicit
 
   // find which tile can be kong in current hand. It can be tile count == 4 OR pong group + count == 1
   def canSelfKong(): Set[Tile] = {
-    val kongableTiles = dynamicTileStats.zipWithIndex.collect{case (count, tileId) if count >= 4 => Tile.toTile(tileId)}.toSet
+    val kongableTiles = dynamicTileStats.zipWithIndex.collect{case (count, tileId) if count >= 4 => Tile.fromValue(tileId)}.toSet
     val kongablePongGroupTiles = fixedTileGroups.collect{case PongGroup(tile) if dynamicTileStats(tile.toTileValue) >= 1 => tile}.toSet
     kongableTiles | kongablePongGroupTiles
   }

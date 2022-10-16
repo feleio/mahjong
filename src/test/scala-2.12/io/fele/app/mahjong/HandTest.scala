@@ -12,7 +12,7 @@ import io.fele.app.mahjong.ChowPosition._
 class HandTest extends FreeSpec with Matchers {
   implicit val config = new Config(Some("application-test.conf"))
 
-  def toNumberTile(tileValue: TileValue): NumberTile = Tile.toTile(tileValue.id) match {
+  def toNumberTile(tileValue: TileValue): NumberTile = Tile.fromValue(tileValue.id) match {
     case t: NumberTile => t
     case _: HonorTile => throw new IllegalArgumentException("HonorTile cannot be converted to NumberTile")
   }

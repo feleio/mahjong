@@ -77,7 +77,7 @@ class FirstFelix(id: Int, tiles: List[Tile], sameSuitNum: Int, tileGroups: List[
     val isDecideDiffSuitAllPong = {
       val pairTileValues: Seq[Tile] = hand.dynamicTileStats.zipWithIndex
         .filter{case (tileCount, _) => tileCount >= 2}
-        .map(v => Tile.toTile(v._2))
+        .map(v => Tile.fromValue(v._2))
       val pairTileStat: Map[TileType, Int] = pairTileValues.groupBy(_.`type`).mapValues(_.size)
       maxPairSuit = pairTileStat.keySet.filter(_ != HONOR) match {
         case ks if ks.nonEmpty => Some(ks.maxBy(k => pairTileStat(k)))
