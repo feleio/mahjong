@@ -16,11 +16,12 @@ References
 import collections
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 
 from env import MahjongEnv, OBS_DIM
@@ -60,31 +61,40 @@ class RolloutBuffer:
 
     def finish_episode(self, final_reward: float) -> None:
         """
-        Assign the game-level reward to all transitions in the current episode
-        and compute GAE advantages using a simple Monte-Carlo return
-        (since every intermediate reward is 0, the return equals the terminal
-        reward discounted by how many steps remain in the episode).
+        Compute Monte-Carlo returns and GAE advantages for the current episode.
+
+        Step rewards may include intermediate shaping signals (e.g. tenpai
+        bonus) in addition to the terminal game balance.  The standard GAE
+        formulation is used:
+
+            delta[i] = r[i] + gamma * V[i+1] * (1-done[i]) - V[i]
+            A[i]     = delta[i] + gamma * lambda * A[i+1] * (1-done[i])
+            R[i]     = r[i] + gamma * R[i+1]          (Monte-Carlo target)
         """
         ep = self._buf[self._ep_start:]
         n  = len(ep)
         if n == 0:
             return
 
-        # Compute discounted returns (terminal reward only model)
+        step_rewards = np.array([t.reward for t in ep], dtype=np.float32)
+        done_arr     = np.array([t.done   for t in ep], dtype=np.float32)
+        values       = np.array([t.value  for t in ep], dtype=np.float32)
+
+        # Bootstrap: V[i+1]; 0 at the terminal step (done=True)
+        next_vals = np.append(values[1:], 0.0)
+
+        # Monte-Carlo returns with intermediate rewards
         returns = np.zeros(n, dtype=np.float32)
-        returns[-1] = final_reward
+        returns[-1] = step_rewards[-1]
         for i in range(n - 2, -1, -1):
-            returns[i] = self.gamma * returns[i + 1]
+            returns[i] = step_rewards[i] + self.gamma * returns[i + 1]
 
         # GAE advantages
-        values = np.array([t.value for t in ep], dtype=np.float32)
-        next_vals = np.append(values[1:], final_reward)
-        deltas = (returns - values +
-                  self.gamma * next_vals * (1.0 - np.array([t.done for t in ep], dtype=np.float32)))
+        deltas = step_rewards + self.gamma * next_vals * (1.0 - done_arr) - values
         advantages = np.zeros(n, dtype=np.float32)
         adv = 0.0
         for i in range(n - 1, -1, -1):
-            adv = deltas[i] + self.gamma * self.gae_lambda * adv * (1.0 - ep[i].done)
+            adv = deltas[i] + self.gamma * self.gae_lambda * adv * (1.0 - done_arr[i])
             advantages[i] = adv
 
         # Patch transitions in-place with return and advantage
@@ -328,3 +338,123 @@ class PPOTrainer:
             n_episodes += 1
             seed += 1
         return rewards, n_episodes
+
+    def collect_rollout_vec(
+        self, vec_env: Any, target_steps: int
+    ) -> Tuple[List[float], int]:
+        """
+        Collect transitions using N parallel environments via batched inference.
+
+        Each step:
+          1. Drain decision requests from all env threads (grouped by decision type).
+          2. Run a single batched forward pass per decision type.
+          3. Deliver actions back to env threads.
+          4. Collect step results; when an episode ends, compute GAE and flush
+             the episode's transitions into the rollout buffer.
+
+        Returns (list of episode rewards, number of episodes played).
+        """
+        rewards: List[float] = []
+        n_episodes = 0
+        # Per-env local episode buffers (accumulate until done)
+        ep_bufs: Dict[int, List[Transition]] = {
+            i: [] for i in range(vec_env.n_envs)
+        }
+
+        while not self.buffer.full():
+            requests = vec_env.get_decisions()   # [(env_id, obs, info), …]
+            if not requests:
+                continue
+
+            # ── Group by decision type for batched inference ───────────────────
+            by_dec: Dict[str, list] = {}
+            for env_id, obs, info in requests:
+                dec = info["decision"]
+                if dec not in by_dec:
+                    by_dec[dec] = []
+                by_dec[dec].append((env_id, obs, info))
+
+            # ── One forward pass per decision type ────────────────────────────
+            # action_map: env_id → (action, log_prob, value, dec, obs_np, mask_np)
+            action_map: Dict[int, tuple] = {}
+            for dec, group in by_dec.items():
+                env_ids  = [x[0] for x in group]
+                obs_list = [x[1] for x in group]
+                infos    = [x[2] for x in group]
+
+                obs_t = torch.tensor(
+                    np.stack(obs_list), dtype=torch.float32, device=self.device
+                )
+                n_acts = MahjongEnv.decision_spaces[dec]
+                mask_arr = np.ones((len(group), n_acts), dtype=bool)
+                for i, inf in enumerate(infos):
+                    if inf.get("action_mask") is not None:
+                        mask_arr[i] = inf["action_mask"]
+                mask_t = torch.tensor(mask_arr, dtype=torch.bool, device=self.device)
+
+                with torch.no_grad():
+                    acts_t, lps_t, vals_t = self.net.act(obs_t, dec, mask_t)
+
+                for i, eid in enumerate(env_ids):
+                    action_map[eid] = (
+                        int(acts_t[i].item()),
+                        float(lps_t[i].item()),
+                        float(vals_t[i].item()),
+                        dec,
+                        obs_list[i],
+                        infos[i].get("action_mask"),
+                    )
+
+            # ── Deliver actions ────────────────────────────────────────────────
+            vec_env.send_actions([(eid, action_map[eid][0]) for eid in action_map])
+
+            # ── Process step results ───────────────────────────────────────────
+            step_results = vec_env.get_results(len(action_map))
+            for env_id, _ob, _inf, _on, reward, done, _in in step_results:
+                action, log_prob, value, dec, obs_np, mask_np = action_map[env_id]
+                t = Transition(
+                    obs=obs_np, decision=dec, action=action,
+                    log_prob=log_prob, value=value,
+                    reward=reward, done=done, action_mask=mask_np,
+                )
+                ep_bufs[env_id].append(t)
+
+                if done:
+                    self._add_finished_episode(ep_bufs[env_id])
+                    ep_bufs[env_id] = []
+                    rewards.append(reward)
+                    n_episodes += 1
+
+        return rewards, n_episodes
+
+    def _add_finished_episode(self, ep: List[Transition]) -> None:
+        """Compute GAE advantages for a completed episode and append to the buffer."""
+        n = len(ep)
+        if n == 0:
+            return
+
+        step_rewards = np.array([t.reward for t in ep], dtype=np.float32)
+        done_arr     = np.array([t.done   for t in ep], dtype=np.float32)
+        values       = np.array([t.value  for t in ep], dtype=np.float32)
+        next_vals    = np.append(values[1:], 0.0)
+
+        returns = np.zeros(n, dtype=np.float32)
+        returns[-1] = step_rewards[-1]
+        for i in range(n - 2, -1, -1):
+            returns[i] = step_rewards[i] + self.buffer.gamma * returns[i + 1]
+
+        deltas     = step_rewards + self.buffer.gamma * next_vals * (1.0 - done_arr) - values
+        advantages = np.zeros(n, dtype=np.float32)
+        adv = 0.0
+        for i in range(n - 1, -1, -1):
+            adv = deltas[i] + self.buffer.gamma * self.buffer.gae_lambda * adv * (1.0 - done_arr[i])
+            advantages[i] = adv
+
+        for i, t in enumerate(ep):
+            finished = Transition(
+                obs=t.obs, decision=t.decision, action=t.action,
+                log_prob=t.log_prob, value=t.value,
+                reward=float(returns[i]), done=t.done, action_mask=t.action_mask,
+            )
+            finished.advantage = float(advantages[i])  # type: ignore[attr-defined]
+            self.buffer._buf.append(finished)

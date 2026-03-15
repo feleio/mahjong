@@ -214,7 +214,7 @@ class MahjongAgent:
 
     @classmethod
     def load(cls, path: str, device: str = "cpu") -> "MahjongAgent":
-        ckpt  = torch.load(path, map_location=device)
-        agent = cls(obs_dim=ckpt["obs_dim"], device=device)
+        ckpt  = torch.load(path, map_location=device, weights_only=False)
+        agent = cls(obs_dim=ckpt.get("obs_dim", OBS_DIM), device=device)
         agent.net.load_state_dict(ckpt["net_state"])
         return agent

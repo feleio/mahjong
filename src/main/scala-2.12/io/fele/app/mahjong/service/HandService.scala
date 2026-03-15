@@ -56,25 +56,34 @@ class HandService(config: Config, handRepo: HandRepo) {
     val hand: Hand = handRepo.get
     val dynamicTiles: List[Tile] = hand.tiles
     val fixedTileGroups = hand.tileGroups
+    def toMainTile(t: Tile): io.fele.app.mahjong.Tile =
+      io.fele.app.mahjong.Tile.fromValue(t.toValue)
+
+    def toMainGroup(g: io.fele.app.mahjong.model.TileGroup): io.fele.app.mahjong.TileGroup = g match {
+      case PongGroup(t) => io.fele.app.mahjong.PongGroup(toMainTile(t))
+      case KongGroup(t) => io.fele.app.mahjong.KongGroup(toMainTile(t))
+      case ChowGroup(ts) => io.fele.app.mahjong.ChowGroup(ts.map(toMainTile))
+    }
+
     var result: CanWinResult = eyeTileIds.foldLeft(CanWinResult(canWin = false))((result, eyeTileId) => {
       if(checkWin((dynamicTiles + tile) diff List.fill[Tile](2)(TileValue(eyeTileId)))) {
-        val scoreResult = new ScoreCalculator(
-          dynamicTiles + tile,
-          fixedTileGroups,
-          Utils.tileValue2Tile(TileValue(eyeTileId)),
+        val scoreResult = new io.fele.app.mahjong.ScoreCalculator(
+          (dynamicTiles + tile).map(toMainTile),
+          fixedTileGroups.map(toMainGroup),
+          toMainTile(Utils.tileValue2Tile(TileValue(eyeTileId))),
           config.maxScore
-        ).cal
+        )(config).cal
         CanWinResult(scoreResult.score >= config.minScore, Math.max(result.score, scoreResult.score))
       } else result
     })
 
     if(eyeTileIds.size == 1 && validateThirteen((dynamicTiles + tile) diff List[Tile](TileValue(eyeTileIds.head)))) {
-      val scoreResult = new ScoreCalculator(
-        dynamicTiles + tile,
-        fixedTileGroups,
-        Utils.int2Tile(eyeTileIds.head),
+      val scoreResult = new io.fele.app.mahjong.ScoreCalculator(
+        (dynamicTiles + tile).map(toMainTile),
+        fixedTileGroups.map(toMainGroup),
+        toMainTile(Utils.int2Tile(eyeTileIds.head)),
         config.maxScore
-      ).cal
+      )(config).cal
       result = CanWinResult(scoreResult.score >= config.minScore, Math.max(result.score, scoreResult.score))
     }
     result

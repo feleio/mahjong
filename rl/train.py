@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from env import MahjongEnv
 from model import MahjongNet
 from ppo import PPOTrainer
+from vec_env import VecMahjongEnv
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -48,6 +49,11 @@ def parse_args() -> argparse.Namespace:
                    help="Path to the assembled Scala fat-JAR")
     p.add_argument("--java", type=str, default="java",
                    help="java executable (default: java)")
+    p.add_argument("--n-envs", type=int, default=1,
+                   help="Number of parallel environments (>1 uses VecMahjongEnv)")
+    p.add_argument("--opponent", type=str, default="chicken",
+                   choices=["chicken", "firstfelix", "mixed"],
+                   help="Opponent type: chicken, firstfelix, or mixed (50/50 each game)")
 
     # Training budget
     p.add_argument("--total-steps", type=int, default=2_000_000,
@@ -145,8 +151,16 @@ def train(args: argparse.Namespace) -> None:
         print(f"Resumed at step {total_steps:,}")
 
     # ── Open environment ──────────────────────────────────────────────────────
-    print(f"Starting Scala game server: {args.jar}")
-    env = MahjongEnv(jar_path=args.jar, java_bin=args.java)
+    use_vec = args.n_envs > 1
+    if use_vec:
+        print(f"Starting {args.n_envs} parallel Scala game servers: {args.jar}")
+        env = VecMahjongEnv(
+            jar_path=args.jar, n_envs=args.n_envs,
+            java_bin=args.java, opponent=args.opponent,
+        )
+    else:
+        print(f"Starting Scala game server: {args.jar}")
+        env = MahjongEnv(jar_path=args.jar, java_bin=args.java, opponent=args.opponent)
 
     stats  = RunningStats()
     t_last_log  = total_steps
@@ -154,13 +168,17 @@ def train(args: argparse.Namespace) -> None:
     t_start     = time.time()
 
     print(f"Training for {args.total_steps:,} total steps …")
-    print(f"Rollout steps: {args.rollout_steps}  |  PPO epochs: {args.n_epochs}")
+    print(f"Rollout steps: {args.rollout_steps}  |  PPO epochs: {args.n_epochs}"
+          + (f"  |  n_envs: {args.n_envs}" if use_vec else ""))
     print("-" * 60)
 
     try:
         while total_steps < args.total_steps:
             # ── Collect rollout ───────────────────────────────────────────────
-            ep_rewards, n_eps = trainer.collect_rollout(env, args.rollout_steps)
+            if use_vec:
+                ep_rewards, n_eps = trainer.collect_rollout_vec(env, args.rollout_steps)
+            else:
+                ep_rewards, n_eps = trainer.collect_rollout(env, args.rollout_steps)
             rollout_steps      = len(trainer.buffer._buf)  # actual collected
             total_steps       += rollout_steps
             total_episodes    += n_eps
@@ -169,11 +187,13 @@ def train(args: argparse.Namespace) -> None:
             loss_stats = trainer.update()
 
             # ── Logging ───────────────────────────────────────────────────────
-            mean_r  = float(np.mean(ep_rewards)) if ep_rewards else float("nan")
-            win_r   = float(np.mean([r > 0 for r in ep_rewards])) if ep_rewards else 0.0
+            # money = per-game balance: +ve = won $, -ve = paid $
+            mean_money  = float(np.mean(ep_rewards)) if ep_rewards else float("nan")
+            win_money   = [r for r in ep_rewards if r > 0]
+            avg_win_pay = float(np.mean(win_money)) if win_money else 0.0
             stats.update(
-                reward=mean_r,
-                win_rate=win_r,
+                money=mean_money,
+                avg_win_pay=avg_win_pay,
                 **loss_stats,
             )
 
@@ -182,8 +202,8 @@ def train(args: argparse.Namespace) -> None:
                 sps     = total_steps / max(elapsed, 1)
                 print(
                     f"step={total_steps:>8,}  eps={total_episodes:>7,}  "
-                    f"reward={stats['reward']:+.1f}  "
-                    f"win_rate={stats['win_rate']:.2%}  "
+                    f"money={stats['money']:+.1f}  "
+                    f"avg_win_pay={stats['avg_win_pay']:+.1f}  "
                     f"loss={stats['loss']:.4f}  "
                     f"entropy={stats['entropy']:.4f}  "
                     f"sps={sps:.0f}"

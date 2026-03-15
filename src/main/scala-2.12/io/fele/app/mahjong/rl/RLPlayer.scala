@@ -21,6 +21,15 @@ class RLPlayer(id: Int, tiles: List[Tile])(implicit config: Config)
 
   implicit val formats: Formats = Serialization.formats(NoTypeHints)
 
+  // Reward sent on the NEXT observation after the agent discards to tenpai.
+  // 2.0 = 25% of the minimum win payout ($8), a modest shaping signal.
+  private val TENPAI_REWARD = 2.0
+  private var pendingTenpaiReward: Double = 0.0
+
+  /** True if the current 13-tile hand is tenpai (any tile would win). */
+  private def checkTenpai(): Boolean =
+    (0 until 34).exists(v => hand.canWin(Tile.fromValue(v)).canWin)
+
   // ---------------------------------------------------------------------------
   // State serialization helpers
   // ---------------------------------------------------------------------------
@@ -59,16 +68,19 @@ class RLPlayer(id: Int, tiles: List[Tile])(implicit config: Config)
   // Communication primitives
   // ---------------------------------------------------------------------------
 
-  /** Write an observation message to stdout (Python reads it). */
+  /** Write an observation message to stdout (Python reads it).
+   *  Includes any pending tenpai reward and resets it. */
   private def sendObservation(decision: String,
                                curState: CurState,
                                context: Map[String, Any]): Unit = {
     val msg = Map(
-      "type"     -> "observation",
-      "decision" -> decision,
-      "state"    -> stateToMap(curState),
-      "context"  -> context
+      "type"          -> "observation",
+      "decision"      -> decision,
+      "state"         -> stateToMap(curState),
+      "context"       -> context,
+      "tenpai_reward" -> pendingTenpaiReward
     )
+    pendingTenpaiReward = 0.0
     println(write(msg))
     System.out.flush()
   }
@@ -149,7 +161,13 @@ class RLPlayer(id: Int, tiles: List[Tile])(implicit config: Config)
     val validTiles = hand.dynamicTiles.map(_.toTileValue).distinct.sorted
     sendObservation("discard", curState,
       Map("valid_tiles" -> validTiles))
-    Tile.fromValue(readIntAction())
+    val tile = Tile.fromValue(readIntAction())
+    // Simulate post-discard hand to check tenpai, then restore.
+    // Engine does the actual discard after we return.
+    hand.discard(tile)
+    if (checkTenpai()) pendingTenpaiReward = TENPAI_REWARD
+    hand.add(tile)
+    tile
   }
 
   override def name: String = "RLAgent"

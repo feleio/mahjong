@@ -200,9 +200,10 @@ class MahjongEnv:
     obs_dim = OBS_DIM
     decision_spaces = DECISION_SPACES
 
-    def __init__(self, jar_path: str, java_bin: str = "java") -> None:
+    def __init__(self, jar_path: str, java_bin: str = "java", opponent: str = "chicken") -> None:
         self.jar_path = jar_path
         self.java_bin = java_bin
+        self.opponent = opponent
         self._proc: Optional[subprocess.Popen] = None
         self._pending_decision: Optional[str] = None
 
@@ -212,7 +213,10 @@ class MahjongEnv:
         if self._proc is not None and self._proc.poll() is None:
             return
         self._proc = subprocess.Popen(
-            [self.java_bin, "-cp", self.jar_path,
+            [self.java_bin,
+             "-Dlogback.statusListenerClass=ch.qos.logback.core.status.NopStatusListener",
+             f"-Drl.opponent={self.opponent}",
+             "-cp", self.jar_path,
              "io.fele.app.mahjong.rl.RLGymServer"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -281,8 +285,9 @@ class MahjongEnv:
         msg = self._recv()
 
         if msg["type"] == "observation":
+            tenpai_reward = float(msg.get("tenpai_reward", 0.0))
             obs, info = self._parse_observation(msg)
-            return obs, 0.0, False, info
+            return obs, tenpai_reward, False, info
         elif msg["type"] == "game_over":
             self._pending_decision = None
             reward = float(msg.get("reward", 0.0))
@@ -294,6 +299,7 @@ class MahjongEnv:
                 "winner_ids":  msg.get("winner_ids", []),
                 "loser_id":    msg.get("loser_id"),
                 "is_self_win": msg.get("is_self_win", False),
+                "agent_score": msg.get("agent_score"),  # int 3-10 if agent won, else None
             }
             return np.zeros(OBS_DIM, dtype=np.float32), reward, True, info
         else:

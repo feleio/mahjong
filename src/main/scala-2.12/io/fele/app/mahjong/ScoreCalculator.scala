@@ -166,7 +166,6 @@ class ScoreCalculator(
   def cal: ScoreResult = {
     val result: ScoreResult = scoreTypes.keySet.foldLeft(ScoreResult())((scoreResult, scoreType) => {
       val rule = scoreTypes(scoreType)
-      println(if (rule._1) s"${scoreType.toString} yes" else s"${scoreType.toString} no")
       val s = scoreResult.score + (if (rule._1) rule._2 else 0)
       val types = scoreResult.scoreTypes ++ (if (rule._1) Set(scoreType) else Set.empty[ScoreType])
       ScoreResult(s, types)
