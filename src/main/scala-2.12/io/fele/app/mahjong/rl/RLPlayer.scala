@@ -1,0 +1,156 @@
+package io.fele.app.mahjong.rl
+
+import io.fele.app.mahjong._
+import io.fele.app.mahjong.ChowPosition._
+import io.fele.app.mahjong.player.Player
+import org.json4s._
+import org.json4s.native.JsonMethods._
+import org.json4s.native.Serialization
+import org.json4s.native.Serialization.write
+
+/**
+  * RLPlayer: A mahjong player that delegates all decisions to an external
+  * reinforcement learning agent via JSON messages over stdin/stdout.
+  *
+  * Protocol:
+  *   Scala → Python: JSON observation line written to stdout
+  *   Python → Scala: JSON action line read from stdin
+  */
+class RLPlayer(id: Int, tiles: List[Tile])(implicit config: Config)
+    extends Player(id, tiles) {
+
+  implicit val formats: Formats = Serialization.formats(NoTypeHints)
+
+  // ---------------------------------------------------------------------------
+  // State serialization helpers
+  // ---------------------------------------------------------------------------
+
+  private def tileGroupsToMap(groups: List[TileGroup]): Map[String, Any] = {
+    val pongTiles  = groups.collect { case PongGroup(t) => t.toTileValue }
+    val kongTiles  = groups.collect { case KongGroup(t) => t.toTileValue }
+    val chowTiles  = groups.collect {
+      case ChowGroup(ts) => ts.map(_.toTileValue).toList.sorted
+    }
+    Map("pongs" -> pongTiles, "kongs" -> kongTiles, "chows" -> chowTiles)
+  }
+
+  /** Encode CurState into a plain Map that json4s can serialise. */
+  private def stateToMap(curState: CurState): Map[String, Any] = {
+    // Count of each tile type in hand (index 0-33)
+    val handCounts = Array.fill[Int](34)(0)
+    curState.myInfo.tiles.foreach(t => handCounts(t.toTileValue) += 1)
+
+    // Count of each tile type in discard pile
+    val discardCounts = Array.fill[Int](34)(0)
+    curState.discards.foreach(d => discardCounts(d.tile.toTileValue) += 1)
+
+    Map(
+      "hand"           -> handCounts.toList,
+      "my_groups"      -> tileGroupsToMap(curState.myInfo.tileGroups),
+      "opp_groups"     -> curState.otherInfos.map(info => tileGroupsToMap(info.tileGroups)),
+      "discarded"      -> discardCounts.toList,
+      "remaining"      -> curState.remainTileNum,
+      "my_id"          -> id,
+      "cur_player_id"  -> curState.curPlayerId
+    )
+  }
+
+  // ---------------------------------------------------------------------------
+  // Communication primitives
+  // ---------------------------------------------------------------------------
+
+  /** Write an observation message to stdout (Python reads it). */
+  private def sendObservation(decision: String,
+                               curState: CurState,
+                               context: Map[String, Any]): Unit = {
+    val msg = Map(
+      "type"     -> "observation",
+      "decision" -> decision,
+      "state"    -> stateToMap(curState),
+      "context"  -> context
+    )
+    println(write(msg))
+    System.out.flush()
+  }
+
+  /** Read one JSON line from stdin (Python writes it). */
+  private def readAction(): Map[String, Any] = {
+    val line = scala.io.StdIn.readLine()
+    if (line == null) throw new RuntimeException("RL agent closed stdin unexpectedly")
+    parse(line).values.asInstanceOf[Map[String, Any]]
+  }
+
+  /** Convenience: read a boolean action field. */
+  private def readBoolAction(): Boolean = readAction()("action").asInstanceOf[Boolean]
+
+  /** Convenience: read an optional int action field (null → None). */
+  private def readOptIntAction(): Option[Int] = readAction()("action") match {
+    case null       => None
+    case v: BigInt  => Some(v.toInt)
+    case v: Int     => Some(v)
+    case v: Long    => Some(v.toInt)
+  }
+
+  /** Convenience: read a mandatory int action field. */
+  private def readIntAction(): Int = readAction()("action") match {
+    case v: BigInt => v.toInt
+    case v: Int    => v
+    case v: Long   => v.toInt
+  }
+
+  // ---------------------------------------------------------------------------
+  // Decision methods (called by the game engine)
+  // ---------------------------------------------------------------------------
+
+  override def decideSelfWin(tile: Tile, score: Int, curState: CurState): Boolean = {
+    sendObservation("self_win", curState,
+      Map("tile_id" -> tile.toTileValue, "score" -> score))
+    readBoolAction()
+  }
+
+  override def decideWin(tile: Tile, score: Int, curState: CurState): Boolean = {
+    sendObservation("win", curState,
+      Map("tile_id" -> tile.toTileValue, "score" -> score,
+          "discard_player_id" -> curState.curPlayerId))
+    readBoolAction()
+  }
+
+  override def decideSelfKong(selfKongTiles: Set[Tile], curState: CurState): Option[Tile] = {
+    sendObservation("self_kong", curState,
+      Map("valid_tiles" -> selfKongTiles.map(_.toTileValue).toList.sorted))
+    readOptIntAction().map(Tile.fromValue)
+  }
+
+  override def decideKong(tile: Tile, curState: CurState): Boolean = {
+    sendObservation("kong", curState,
+      Map("tile_id" -> tile.toTileValue,
+          "discard_player_id" -> curState.curPlayerId))
+    readBoolAction()
+  }
+
+  override def decidePong(tile: Tile, curState: CurState): Boolean = {
+    sendObservation("pong", curState,
+      Map("tile_id" -> tile.toTileValue,
+          "discard_player_id" -> curState.curPlayerId))
+    readBoolAction()
+  }
+
+  override def decideChow(tile: Tile,
+                           positions: Set[ChowPosition],
+                           curState: CurState): Option[ChowPosition] = {
+    sendObservation("chow", curState,
+      Map("tile_id"           -> tile.toTileValue,
+          "positions"         -> positions.map(_.id).toList.sorted,
+          "discard_player_id" -> curState.curPlayerId))
+    readOptIntAction().map(ChowPosition(_))
+  }
+
+  override def decideDiscard(curState: CurState): Tile = {
+    val validTiles = hand.dynamicTiles.map(_.toTileValue).distinct.sorted
+    sendObservation("discard", curState,
+      Map("valid_tiles" -> validTiles))
+    Tile.fromValue(readIntAction())
+  }
+
+  override def name: String = "RLAgent"
+}

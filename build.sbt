@@ -12,5 +12,13 @@ libraryDependencies ++= Seq(
   "ch.qos.logback" % "logback-classic" % "1.1.7",
   "org.mockito" % "mockito-all" % "2.0.2-beta",
   "org.json4s" % "json4s-native_2.12" % "3.5.2"
-
 )
+
+// Assembly settings for building a fat-JAR (used by the Python RL framework)
+assembly / assemblyMergeStrategy := {
+  case PathList("META-INF", _*) => MergeStrategy.discard
+  case "reference.conf"         => MergeStrategy.concat
+  case _                        => MergeStrategy.first
+}
+
+assembly / mainClass := Some("io.fele.app.mahjong.rl.RLGymServer")
