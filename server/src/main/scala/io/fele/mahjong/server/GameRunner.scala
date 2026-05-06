@@ -51,6 +51,8 @@ class GameRunner private (
           implicit val gl: GameLogger = hooks.gameLogger(state, seats)
           val flow: Flow = new FlowImpl(state)
           flow.start()
+          // Wall exhausted with no winner → push a final isFinished=true snapshot
+          if (state.winnersInfo.isEmpty) hooks.forceFinishSnapshot()
           hooks.publish(Json.obj("type" -> Json.fromString("end")))
         } catch {
           case e: Throwable =>
@@ -72,8 +74,9 @@ class GameRunner private (
   private def annotateForSeat(j: Json, seat: Option[Int]): Json = {
     j.hcursor.get[String]("type").toOption match {
       case Some("snapshot") =>
+        val isFinished = j.hcursor.get[Boolean]("isFinished").toOption.getOrElse(false)
         val players = j.hcursor.downField("players").as[List[Json]].toOption.getOrElse(Nil)
-        val redacted = players.map { pj =>
+        val redacted = if (isFinished) players else players.map { pj =>
           val pseat = pj.hcursor.get[Int]("seat").toOption
           if (seat.exists(_ == pseat.getOrElse(-1))) pj
           else pj.mapObject(_.remove("handTiles"))
@@ -93,7 +96,8 @@ class GameRunner private (
 class GameHooks(
   val roomId:     RoomId,
   val topic:      Topic[IO, Json],
-  val dispatcher: Dispatcher[IO]
+  val dispatcher: Dispatcher[IO],
+  onFinished:     IO[Unit] = IO.unit
 ) {
   @volatile private var _snapshot:    Option[Json] = None
   @volatile private var _lastPrompts: Map[Int, Json] = Map.empty
@@ -102,7 +106,14 @@ class GameHooks(
   def snapshot:           Option[Json] = _snapshot
   def promptFor(seat: Option[Int]): Option[Json] = seat.flatMap(_lastPrompts.get)
   def finished:           Boolean      = _finished
-  def markFinished():     Unit         = _finished = true
+  def markFinished():     Unit         = { _finished = true; dispatcher.unsafeRunAndForget(onFinished) }
+
+  /** Patch the cached snapshot to isFinished=true and re-broadcast (used for wall-exhausted draws). */
+  def forceFinishSnapshot(): Unit = _snapshot.foreach { j =>
+    val updated = j.deepMerge(Json.obj("isFinished" -> Json.fromBoolean(true)))
+    _snapshot = Some(updated)
+    publish(updated)
+  }
 
   def publish(j: Json): Unit = if (j != Json.Null) {
     dispatcher.unsafeRunAndForget(topic.publish1(j).void)
@@ -180,7 +191,8 @@ object GameRunner {
     seats:      List[Seat],
     seed:       Option[Long],
     topic:      Topic[IO, Json],
-    dispatcher: Dispatcher[IO]
+    dispatcher: Dispatcher[IO],
+    onFinished: IO[Unit] = IO.unit
   )(implicit config: Config): GameRunner = {
     require(seats.size == 4, "must have 4 seats")
     require(seats.forall(_.kind != SeatKind.Open), "cannot start with an open seat")
@@ -188,7 +200,7 @@ object GameRunner {
     val drawer: TileDrawer = new RandomTileDrawer(seed)
     val hands: List[List[Tile]] = (0 until 4).map(_ => drawer.popHand()).toList
 
-    val hooks = new GameHooks(roomId, topic, dispatcher)
+    val hooks = new GameHooks(roomId, topic, dispatcher, onFinished)
     val webPlayers = scala.collection.mutable.Map.empty[Int, WebSocketPlayer]
 
     val players: List[Player] = seats.zip(hands).map { case (seat, hand) =>

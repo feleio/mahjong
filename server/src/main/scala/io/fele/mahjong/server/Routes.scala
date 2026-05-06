@@ -18,6 +18,8 @@ object Routes {
   case class JoinResp(room: Room, seat: Int, playerId: PlayerId)
   case class SetSeatReq(hostPlayerId: PlayerId, seatIndex: Int, kind: SeatKind)
   case class StartReq(hostPlayerId: PlayerId)
+  case class ReadyReq(playerId: PlayerId)
+  case class StartNextReq(hostPlayerId: PlayerId)
   case class ErrResp(error: String)
 
   /** CORS for the Next.js dev server. Adds the headers when the inner routes
@@ -82,6 +84,24 @@ object Routes {
     case req @ POST -> Root / "api" / "rooms" / id / "start" =>
       req.as[StartReq].flatMap { body =>
         rm.startGame(id, body.hostPlayerId).flatMap {
+          case Right(r)  => Ok(r.asJson)
+          case Left(err) => BadRequest(ErrResp(err).asJson)
+        }
+      }
+
+    /* Mark a player ready for the next game */
+    case req @ POST -> Root / "api" / "rooms" / id / "ready" =>
+      req.as[ReadyReq].flatMap { body =>
+        rm.markReady(id, body.playerId).flatMap {
+          case Right(seats) => Ok(Map("readySeats" -> seats.toList.sorted).asJson)
+          case Left(err)    => BadRequest(ErrResp(err).asJson)
+        }
+      }
+
+    /* Host starts the next game once all seats are ready */
+    case req @ POST -> Root / "api" / "rooms" / id / "start-next" =>
+      req.as[StartNextReq].flatMap { body =>
+        rm.startNextGame(id, body.hostPlayerId).flatMap {
           case Right(r)  => Ok(r.asJson)
           case Left(err) => BadRequest(ErrResp(err).asJson)
         }

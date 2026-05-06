@@ -5,6 +5,7 @@ import cats.effect.std.{AtomicCell, Dispatcher}
 import cats.syntax.all._
 import fs2.concurrent.Topic
 import io.circe.Json
+import io.circe.syntax._
 import io.fele.app.mahjong.Config
 import io.fele.mahjong.server.Models._
 
@@ -129,7 +130,8 @@ class RoomManager private (
         case Some(live) if !live.room.isFull =>
           (m, Left("room is not full"))
         case Some(live) =>
-          val runner = GameRunner.create(live.room.id, live.room.seats, None, live.topic, dispatcher)
+          val runner = GameRunner.create(live.room.id, live.room.seats, None, live.topic, dispatcher,
+            onFinished = autoReadyBots(roomId))
           val updated = live.room.copy(status = RoomStatus.Playing)
           (m.updated(roomId, live.copy(room = updated, runner = Some(runner))), Right((updated, runner)))
       }
@@ -137,6 +139,73 @@ class RoomManager private (
       case Right((r, runner)) => IO.delay(runner.start()) *> repo.upsert(r).as(Right(r))
       case Left(e)            => IO.pure(Left(e))
     }
+
+  /** Mark a human seat as ready for the next game; bots are also auto-readied. */
+  def markReady(roomId: RoomId, playerId: PlayerId): IO[Either[String, Set[Int]]] =
+    cell.modify { m =>
+      m.get(roomId) match {
+        case None => (m, IO.pure(Left("room not found"): Either[String, Set[Int]]))
+        case Some(live) =>
+          live.room.seats.find(_.playerId.contains(playerId)) match {
+            case None => (m, IO.pure(Left("player not found in this room")))
+            case Some(seat) =>
+              val aiSeats  = live.room.seats.filter(s => s.kind != SeatKind.Human && s.kind != SeatKind.Open).map(_.index).toSet
+              val newReady = live.readySeats + seat.index ++ aiSeats
+              val io = live.topic.publish1(
+                Json.obj("type" -> "ready_update".asJson, "readySeats" -> newReady.toList.sorted.asJson)
+              ).void.as(Right(newReady): Either[String, Set[Int]])
+              (m.updated(roomId, live.copy(readySeats = newReady)), io)
+          }
+      }
+    }.flatten
+
+  /** Auto-ready all AI seats when a game ends (used as onFinished callback). */
+  private def autoReadyBots(roomId: RoomId): IO[Unit] =
+    cell.modify { m =>
+      m.get(roomId) match {
+        case None => (m, IO.unit)
+        case Some(live) =>
+          val aiSeats  = live.room.seats.filter(s => s.kind != SeatKind.Human && s.kind != SeatKind.Open).map(_.index).toSet
+          val newReady = live.readySeats ++ aiSeats
+          val io = live.topic.publish1(
+            Json.obj("type" -> "ready_update".asJson, "readySeats" -> newReady.toList.sorted.asJson)
+          ).void *> markRoomFinished(roomId)
+          (m.updated(roomId, live.copy(readySeats = newReady)), io)
+      }
+    }.flatten
+
+  private def markRoomFinished(roomId: RoomId): IO[Unit] =
+    cell.modify { m =>
+      m.get(roomId) match {
+        case None => (m, IO.unit)
+        case Some(live) if live.room.status == RoomStatus.Playing =>
+          val updated = live.room.copy(status = RoomStatus.Finished)
+          (m.updated(roomId, live.copy(room = updated)), repo.upsert(updated).void)
+        case _ => (m, IO.unit)
+      }
+    }.flatten
+
+  /** Host starts the next game once all seats (incl. bots) are ready. */
+  def startNextGame(roomId: RoomId, hostId: PlayerId): IO[Either[String, Room]] =
+    cell.modify { m =>
+      m.get(roomId) match {
+        case None => (m, IO.pure(Left("room not found"): Either[String, Room]))
+        case Some(live) if live.room.hostId != hostId =>
+          (m, IO.pure(Left("only the host can start the game")))
+        case Some(live) if live.room.status != RoomStatus.Finished =>
+          (m, IO.pure(Left("game has not finished yet")))
+        case Some(live) if live.readySeats.size < 4 =>
+          (m, IO.pure(Left("not all seats are ready")))
+        case Some(live) =>
+          val runner  = GameRunner.create(live.room.id, live.room.seats, None, live.topic, dispatcher,
+            onFinished = autoReadyBots(roomId))
+          val updated = live.room.copy(status = RoomStatus.Playing)
+          val io = IO.delay(runner.start()) *>
+            live.topic.publish1(Json.obj("type" -> "ready_update".asJson, "readySeats" -> Json.arr())).void *>
+            repo.upsert(updated).as(Right(updated): Either[String, Room])
+          (m.updated(roomId, live.copy(room = updated, runner = Some(runner), readySeats = Set.empty)), io)
+      }
+    }.flatten
 
   def runner(id: RoomId): IO[Option[GameRunner]] = cell.get.map(_.get(id).flatMap(_.runner))
 
@@ -153,7 +222,7 @@ class RoomManager private (
 }
 
 object RoomManager {
-  case class Live(room: Models.Room, runner: Option[GameRunner], topic: Topic[IO, Json])
+  case class Live(room: Models.Room, runner: Option[GameRunner], topic: Topic[IO, Json], readySeats: Set[Int] = Set.empty)
 
   def create(repo: RoomRepo, dispatcher: Dispatcher[IO])(implicit config: Config, ec: ExecutionContext): IO[RoomManager] =
     AtomicCell[IO].of(Map.empty[Models.RoomId, Live]).map { cell =>

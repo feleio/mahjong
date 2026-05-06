@@ -36,6 +36,7 @@ export default function GameTable({ snap, room, yourSeat, prompt, onAct }: Props
             p={p}
             you={p.seat === yourSeat}
             isTurn={p.seat === snap.curPlayer}
+            isFinished={snap.isFinished}
           />
         ))}
       </div>
@@ -79,26 +80,30 @@ export default function GameTable({ snap, room, yourSeat, prompt, onAct }: Props
   );
 }
 
-function SeatBlock({ p, you, isTurn }: { p: PlayerView; you: boolean; isTurn: boolean }) {
+function SeatBlock({ p, you, isTurn, isFinished }: { p: PlayerView; you: boolean; isTurn: boolean; isFinished: boolean }) {
+  const showHand = you || isFinished;
   return (
     <div className={`seat ${you ? "you" : ""} ${isTurn ? "turn" : ""}`} style={{ flex: 1 }}>
       <div className="label">Seat {p.seat + 1}{you ? " · you" : ""}</div>
       <div style={{ fontSize: 16, fontWeight: 600 }}>{p.name}</div>
       <div className="event">{p.kind === "human" ? "Human" : p.kind}</div>
 
-      <div className="row tight" style={{ marginTop: 8 }}>
-        <span className="event">hand:</span>
-        {!you ? (
-          Array.from({ length: p.handCount }).map((_, i) => (
-            <Tile key={i} tile="?" small faceDown />
-          ))
-        ) : (
-          (p.handTiles ?? []).map((t, i) => <Tile key={i} tile={t} small />)
-        )}
-      </div>
+      {/* For the current player we skip hand tiles here — shown larger in "Your hand" below */}
+      {!you && (
+        <div className="row tight" style={{ marginTop: 8 }}>
+          <span className="event">hand:</span>
+          {showHand && p.handTiles ? (
+            p.handTiles.map((t, i) => <Tile key={i} tile={t} small />)
+          ) : (
+            Array.from({ length: p.handCount }).map((_, i) => (
+              <Tile key={i} tile="?" small faceDown />
+            ))
+          )}
+        </div>
+      )}
 
       {p.fixedGroups.length > 0 && (
-        <div className="row tight" style={{ marginTop: 6 }}>
+        <div className="row tight" style={{ marginTop: you ? 8 : 6 }}>
           <span className="event">groups:</span>
           {p.fixedGroups.flatMap((g, gi) => g.tiles.map((t, ti) => (
             <Tile key={`${gi}-${ti}`} tile={t} small />

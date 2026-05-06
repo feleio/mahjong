@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getRoom, setSeat, startGame, WS_BASE } from "@/lib/api";
+import { getRoom, setSeat, startGame, markReady, startNextGame, WS_BASE } from "@/lib/api";
 import {
   AI_KINDS,
   ClientAction,
@@ -15,6 +15,7 @@ import {
 } from "@/lib/types";
 import { loadCreds, RoomCreds } from "@/lib/storage";
 import GameTable from "@/components/GameTable";
+import GameOverModal from "@/components/GameOverModal";
 import PromptPanel from "@/components/PromptPanel";
 import SeatConfig from "@/components/SeatConfig";
 
@@ -27,10 +28,12 @@ export default function RoomPage() {
   const [creds, setCreds] = useState<RoomCreds | null>(null);
   const [snap,  setSnap]  = useState<GameSnapshot | null>(null);
   const [prompt,setPrompt]= useState<Prompt | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy,  setBusy]  = useState(false);
-  const wsRef             = useRef<WebSocket | null>(null);
-  const [wsEpoch, setWsEpoch] = useState(0);
+  const [error,      setError]      = useState<string | null>(null);
+  const [busy,       setBusy]       = useState(false);
+  const [readySeats, setReadySeats] = useState<number[]>([]);
+  const [myReady,    setMyReady]    = useState(false);
+  const wsRef                           = useRef<WebSocket | null>(null);
+  const [wsEpoch, setWsEpoch]           = useState(0);
 
   useEffect(() => {
     setCreds(loadCreds(roomId));
@@ -72,6 +75,9 @@ export default function RoomPage() {
           case "end":
             setPrompt(null);
             break;
+          case "ready_update":
+            setReadySeats(msg.readySeats);
+            break;
           case "error":
             setError(msg.message);
             break;
@@ -108,6 +114,13 @@ export default function RoomPage() {
     return () => clearInterval(t);
   }, [room?.status]);
 
+  useEffect(() => {
+    if (snap && !snap.isFinished) {
+      setMyReady(false);
+      setReadySeats([]);
+    }
+  }, [snap?.isFinished]);
+
   async function changeSeat(idx: number, kind: SeatKind) {
     if (!creds?.isHost || !room) return;
     setBusy(true); setError(null);
@@ -127,6 +140,34 @@ export default function RoomPage() {
     try {
       const updated = await startGame(roomId, creds.playerId);
       setRoom(updated);
+    } catch (e: any) {
+      setError(String(e.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleReady() {
+    if (!creds) return;
+    setBusy(true); setError(null);
+    try {
+      await markReady(roomId, creds.playerId);
+      setMyReady(true);
+    } catch (e: any) {
+      setError(String(e.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleStartNext() {
+    if (!creds?.isHost) return;
+    setBusy(true); setError(null);
+    try {
+      const updated = await startNextGame(roomId, creds.playerId);
+      setRoom(updated);
+      setSnap(null);
+      setPrompt(null);
     } catch (e: any) {
       setError(String(e.message ?? e));
     } finally {
@@ -190,15 +231,17 @@ export default function RoomPage() {
             <PromptPanel prompt={prompt} onAct={send} />
           )}
           {snap.isFinished && (
-            <div className="card">
-              <h3>Game over</h3>
-              {snap.winners.length === 0 && <p>No winners (draw).</p>}
-              {snap.winners.map((w) => (
-                <p key={w.seat}>
-                  Seat {w.seat + 1} ({room.seats[w.seat]?.name}) won with score {w.score}
-                </p>
-              ))}
-            </div>
+            <GameOverModal
+              snap={snap}
+              room={room}
+              yourSeat={creds?.seat ?? null}
+              isHost={creds?.isHost ?? false}
+              readySeats={readySeats}
+              myReady={myReady}
+              busy={busy}
+              onReady={handleReady}
+              onStartNext={handleStartNext}
+            />
           )}
         </>
       )}

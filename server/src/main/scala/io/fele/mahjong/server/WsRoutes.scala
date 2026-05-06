@@ -54,20 +54,23 @@ object WsRoutes {
 
               val inSink: Pipe[IO, WebSocketFrame, Unit] = _.evalMap {
                 case WebSocketFrame.Text(text, _) =>
-                  IO.delay {
-                    for {
-                      j     <- parse(text).toOption
-                      a     <- j.as[Action].toOption
-                      seatI <- authorisedSeat
-                    } {
-                      val ca = WebSocketPlayer.ClientAction(
-                        yes     = a.yes,
-                        tile    = a.tile.flatMap(t => Models.tileFromWire(t).toOption),
-                        chowPos = a.chowPos.flatMap(p => scala.util.Try(CP.withName(p.toUpperCase)).toOption)
-                      )
-                      runner.submitAction(seatI, ca)
-                    }
-                  }.void
+                  rm.runner(roomId).flatMap { currentRunner =>
+                    IO.delay {
+                      for {
+                        r     <- currentRunner
+                        j     <- parse(text).toOption
+                        a     <- j.as[Action].toOption
+                        seatI <- authorisedSeat
+                      } {
+                        val ca = WebSocketPlayer.ClientAction(
+                          yes     = a.yes,
+                          tile    = a.tile.flatMap(t => Models.tileFromWire(t).toOption),
+                          chowPos = a.chowPos.flatMap(p => scala.util.Try(CP.withName(p.toUpperCase)).toOption)
+                        )
+                        r.submitAction(seatI, ca)
+                      }
+                    }.void
+                  }
                 case _ => IO.unit
               }
 

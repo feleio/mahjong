@@ -103,8 +103,9 @@ export interface LobbyMsg {
 
 export interface EndMsg { type: "end" }
 export interface ErrorMsg { type: "error"; message: string }
+export interface ReadyUpdateMsg { type: "ready_update"; readySeats: number[] }
 
-export type WsMessage = GameSnapshot | Prompt | LobbyMsg | EndMsg | ErrorMsg;
+export type WsMessage = GameSnapshot | Prompt | LobbyMsg | EndMsg | ErrorMsg | ReadyUpdateMsg;
 
 export interface ClientAction {
   kind: PromptKind;

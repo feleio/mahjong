@@ -78,3 +78,29 @@ export async function startGame(
     }),
   );
 }
+
+export async function markReady(
+  roomId: string,
+  playerId: string,
+): Promise<void> {
+  await check(
+    await fetch(`${API}/api/rooms/${roomId}/ready`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ playerId }),
+    }),
+  );
+}
+
+export async function startNextGame(
+  roomId: string,
+  hostPlayerId: string,
+): Promise<Room> {
+  return check(
+    await fetch(`${API}/api/rooms/${roomId}/start-next`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hostPlayerId }),
+    }),
+  );
+}
