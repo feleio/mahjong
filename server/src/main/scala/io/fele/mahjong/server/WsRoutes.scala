@@ -9,7 +9,7 @@ import io.fele.app.mahjong.{ChowPosition => CP, Tile}
 import io.fele.mahjong.server.Models._
 import org.http4s.HttpRoutes
 import org.http4s.dsl.io._
-import org.http4s.server.websocket.WebSocketBuilder
+import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
 
 object WsRoutes {
@@ -21,7 +21,7 @@ object WsRoutes {
     * - `seat` and `player` are optional. If both supplied and they match a
     *   human seat in the room, this connection can submit actions for that seat.
     *   Otherwise the connection is read-only (a spectator). */
-  def routes(rm: RoomManager, wsb: WebSocketBuilder[IO]): HttpRoutes[IO] = HttpRoutes.of[IO] {
+  def routes(rm: RoomManager, wsb: WebSocketBuilder2[IO]): HttpRoutes[IO] = HttpRoutes.of[IO] {
 
     case req @ GET -> Root / "ws" / "rooms" / roomId =>
       val seat   = req.params.get("seat").flatMap(s => scala.util.Try(s.toInt).toOption)

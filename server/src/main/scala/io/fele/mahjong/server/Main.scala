@@ -48,8 +48,11 @@ object Main extends IOApp {
         .withHost(host)
         .withPort(port)
         .withHttpWebSocketApp { wsb =>
-          val all = Routes.withCors(Routes.routes(rm)) <+> WsRoutes.routes(rm, wsb)
-          Router("/" -> all).orNotFound
+          val combined: org.http4s.HttpRoutes[IO] = org.http4s.HttpRoutes[IO] { req =>
+            Routes.withCors(Routes.routes(rm)).run(req)
+              .orElse(WsRoutes.routes(rm, wsb).run(req))
+          }
+          Router("/" -> combined).orNotFound
         }
         .build
     }.use { _ =>
