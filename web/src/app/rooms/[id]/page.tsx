@@ -30,6 +30,7 @@ export default function RoomPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy,  setBusy]  = useState(false);
   const wsRef             = useRef<WebSocket | null>(null);
+  const [wsEpoch, setWsEpoch] = useState(0);
 
   useEffect(() => {
     setCreds(loadCreds(roomId));
@@ -80,13 +81,25 @@ export default function RoomPage() {
       }
     };
     ws.onerror = () => setError("WebSocket error");
-    ws.onclose = () => { if (wsRef.current === ws) wsRef.current = null; };
+    ws.onclose = () => {
+      if (wsRef.current === ws) {
+        wsRef.current = null;
+        setWsEpoch(e => e + 1);
+      }
+    };
+
+    /* keepalive: send a non-JSON ping every 30 s to prevent the server's
+       idle-read timeout from closing an otherwise quiet connection */
+    const keepalive = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) ws.send("ping");
+    }, 30_000);
 
     return () => {
+      clearInterval(keepalive);
       ws.close();
       if (wsRef.current === ws) wsRef.current = null;
     };
-  }, [roomId, room?.status, creds?.playerId]);
+  }, [roomId, room?.status, creds?.playerId, wsEpoch]);
 
   /* re-poll the room while waiting (cheap) */
   useEffect(() => {
@@ -166,7 +179,13 @@ export default function RoomPage() {
 
       {(room.status === "playing" || room.status === "finished") && snap && (
         <>
-          <GameTable snap={snap} room={room} yourSeat={creds?.seat ?? null} />
+          <GameTable
+            snap={snap}
+            room={room}
+            yourSeat={creds?.seat ?? null}
+            prompt={creds && prompt?.seat === creds.seat ? prompt : null}
+            onAct={send}
+          />
           {prompt && creds && prompt.seat === creds.seat && (
             <PromptPanel prompt={prompt} onAct={send} />
           )}

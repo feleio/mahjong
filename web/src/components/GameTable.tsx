@@ -1,16 +1,23 @@
 "use client";
 
-import { GameSnapshot, PlayerView, Room } from "@/lib/types";
+import { useState, useEffect } from "react";
+import { ClientAction, GameSnapshot, PlayerView, Prompt, Room } from "@/lib/types";
 import Tile from "./Tile";
 
 interface Props {
-  snap: GameSnapshot;
-  room: Room;
-  yourSeat: number | null;
+  snap:      GameSnapshot;
+  room:      Room;
+  yourSeat:  number | null;
+  prompt?:   Prompt | null;
+  onAct?:    (a: ClientAction) => void;
 }
 
-export default function GameTable({ snap, room, yourSeat }: Props) {
+export default function GameTable({ snap, room, yourSeat, prompt, onAct }: Props) {
   const me = yourSeat !== null ? snap.players.find((p) => p.seat === yourSeat) : null;
+  const [picked, setPicked] = useState<string | null>(null);
+  const isDiscardTurn = prompt?.kind === "discard";
+
+  useEffect(() => { setPicked(null); }, [prompt]);
 
   return (
     <div className="card">
@@ -44,11 +51,27 @@ export default function GameTable({ snap, room, yourSeat }: Props) {
 
       {me && (
         <div className="card" style={{ marginTop: 16 }}>
-          <div className="label">Your hand</div>
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <div className="label">Your hand</div>
+            {isDiscardTurn && <span className="event">Your turn — pick a tile to discard</span>}
+          </div>
           <div className="hand" style={{ marginTop: 6 }}>
             {(me.handTiles ?? []).map((t, i) => (
-              <Tile key={i} tile={t} />
+              <Tile
+                key={i}
+                tile={t}
+                onClick={isDiscardTurn ? () => setPicked(t) : undefined}
+                highlight={picked === t}
+              />
             ))}
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button
+              disabled={!isDiscardTurn || !picked}
+              onClick={() => picked && onAct?.({ kind: "discard", tile: picked })}
+            >
+              Discard {picked ?? "…"}
+            </button>
           </div>
         </div>
       )}

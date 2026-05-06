@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { ClientAction, Prompt } from "@/lib/types";
 import Tile from "./Tile";
 
@@ -10,8 +9,6 @@ interface Props {
 }
 
 export default function PromptPanel({ prompt, onAct }: Props) {
-  const [picked, setPicked] = useState<string | null>(null);
-
   switch (prompt.kind) {
     case "self_win":
       return (
@@ -85,32 +82,8 @@ export default function PromptPanel({ prompt, onAct }: Props) {
         </div>
       );
     }
-    case "discard": {
-      const tiles = prompt.handTiles ?? [];
-      return (
-        <div className="prompt">
-          <strong>Your turn — pick a tile to discard.</strong>
-          <div className="hand" style={{ marginTop: 8 }}>
-            {tiles.map((t, i) => (
-              <Tile
-                key={`${t}-${i}`}
-                tile={t}
-                onClick={() => setPicked(t)}
-                highlight={picked === t}
-              />
-            ))}
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <button
-              disabled={!picked}
-              onClick={() => picked && onAct({ kind: "discard", tile: picked })}
-            >
-              Discard {picked ?? "…"}
-            </button>
-          </div>
-        </div>
-      );
-    }
+    case "discard":
+      return null;
     default:
       return null;
   }
