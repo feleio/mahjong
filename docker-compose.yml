@@ -1,0 +1,21 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB:       mahjong
+      POSTGRES_USER:     mahjong
+      POSTGRES_PASSWORD: mahjong
+    ports:
+      - "5432:5432"
+    volumes:
+      - mahjong-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mahjong"]
+      interval: 5s
+      timeout:  3s
+      retries:  10
+
+volumes:
+  mahjong-pg:
