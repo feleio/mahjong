@@ -3,21 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev":   "next dev -p 3000",
+    "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
-    "lint":  "next lint",
+    "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "next":  "14.2.7",
+    "next": "14.2.7",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },
   "devDependencies": {
-    "typescript": "5.4.5",
-    "@types/node":  "20.12.7",
+    "@playwright/test": "^1.56.1",
+    "@types/node": "20.12.7",
     "@types/react": "18.2.79",
-    "@types/react-dom": "18.2.25"
+    "@types/react-dom": "18.2.25",
+    "typescript": "5.4.5"
   }
 }

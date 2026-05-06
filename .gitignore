@@ -51,3 +51,5 @@ web/out/
 web/.env.local
 web/.env*.local
 web/tsconfig.tsbuildinfo
+web/test-results/
+web/playwright-report/
