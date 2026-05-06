@@ -80,9 +80,12 @@ export default function RoomPage() {
       }
     };
     ws.onerror = () => setError("WebSocket error");
-    ws.onclose = () => { wsRef.current = null; };
+    ws.onclose = () => { if (wsRef.current === ws) wsRef.current = null; };
 
-    return () => { ws.close(); wsRef.current = null; };
+    return () => {
+      ws.close();
+      if (wsRef.current === ws) wsRef.current = null;
+    };
   }, [roomId, room?.status, creds?.playerId]);
 
   /* re-poll the room while waiting (cheap) */
