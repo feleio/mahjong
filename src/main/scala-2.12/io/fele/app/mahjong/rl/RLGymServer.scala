@@ -1,7 +1,7 @@
 package io.fele.app.mahjong.rl
 
 import io.fele.app.mahjong._
-import io.fele.app.mahjong.player.{Chicken, FirstFelix}
+import io.fele.app.mahjong.player.{Chicken, FirstFelix, Player}
 import org.json4s._
 import org.json4s.native.JsonMethods._
 import org.json4s.native.Serialization
@@ -48,41 +48,73 @@ object RLGymServer extends App {
   }
 
   private def sendGameOver(result: GameResult,
+                            selfPlay: Boolean,
                             rlPlayerId: Int,
                             lastState: Option[Map[String, Any]]): Unit = {
-    val reward: Double = result.winnersInfo match {
-      case None => 0.0
-      case Some(info) =>
-        val balance = info.winnersBalance
-        balance.find(_.id == rlPlayerId).map(_.amount.toDouble).getOrElse(0.0)
-    }
-
     val winnerIds: List[Int] = result.winnersInfo
       .map(_.winners.map(_.id).toList).getOrElse(List.empty)
-    val loserId: Option[Int] = result.winnersInfo.flatMap(_.loserId)
-    val isSelfWin: Boolean   = result.winnersInfo.exists(_.isSelfWin)
-    // Raw score (3–10 pts) for the RL agent's win; null if agent didn't win
-    val agentScore: Option[Int] = result.winnersInfo.flatMap(
-      _.winners.find(_.id == rlPlayerId).map(_.score)
-    )
+    val loserId: Option[Int]  = result.winnersInfo.flatMap(_.loserId)
+    val isSelfWin: Boolean    = result.winnersInfo.exists(_.isSelfWin)
 
-    val msg = Map(
-      "type"         -> "game_over",
-      "reward"       -> reward,
-      "winner_ids"   -> winnerIds,
-      "loser_id"     -> loserId.map(_.toString).orNull,
-      "is_self_win"  -> isSelfWin,
-      "agent_score"  -> agentScore.map(_.asInstanceOf[Any]).orNull,
-      "state"        -> lastState.orNull
-    )
-    println(write(msg))
-    System.out.flush()
+    if (selfPlay) {
+      // Send per-seat rewards for all 4 players.
+      // Add a quality bonus for high-scoring wins to incentivise building
+      // better hands (5pt +20%, 7pt +50%, 8pt +100%).
+      val balMap: Map[Int, Double] = result.winnersInfo match {
+        case None       => Map.empty
+        case Some(info) => info.winnersBalance.map(b => b.id -> b.amount.toDouble).toMap
+      }
+      val winnerScores: Map[Int, Int] = result.winnersInfo match {
+        case None       => Map.empty
+        case Some(info) => info.winners.map(w => w.id -> w.score).toMap
+      }
+      val allRewards = (0 to 3).map { i =>
+        val base  = balMap.getOrElse(i, 0.0)
+        val bonus = if (base > 0) winnerScores.get(i).map { s =>
+          if (s >= 8)      base * 1.0   // 8pt → 2× payout
+          else if (s >= 7) base * 0.5   // 7pt → 1.5×
+          else if (s >= 5) base * 0.2   // 5pt → 1.2×
+          else             0.0
+        }.getOrElse(0.0) else 0.0
+        i.toString -> (base + bonus)
+      }.toMap
+      val msg = Map(
+        "type"        -> "game_over",
+        "rewards"     -> allRewards,
+        "winner_ids"  -> winnerIds,
+        "loser_id"    -> loserId.map(_.toString).orNull,
+        "is_self_win" -> isSelfWin
+      )
+      println(write(msg))
+      System.out.flush()
+    } else {
+      val reward: Double = result.winnersInfo match {
+        case None => 0.0
+        case Some(info) =>
+          info.winnersBalance.find(_.id == rlPlayerId).map(_.amount.toDouble).getOrElse(0.0)
+      }
+      val agentScore: Option[Int] = result.winnersInfo.flatMap(
+        _.winners.find(_.id == rlPlayerId).map(_.score)
+      )
+      val msg = Map(
+        "type"        -> "game_over",
+        "reward"      -> reward,
+        "winner_ids"  -> winnerIds,
+        "loser_id"    -> loserId.map(_.toString).orNull,
+        "is_self_win" -> isSelfWin,
+        "agent_score" -> agentScore.map(_.asInstanceOf[Any]).orNull,
+        "state"       -> lastState.orNull
+      )
+      println(write(msg))
+      System.out.flush()
+    }
   }
 
   // ── Main loop ──────────────────────────────────────────────────────────────
 
-  val opponentType = System.getProperty("rl.opponent", "chicken").toLowerCase
-  val rng = new scala.util.Random()
+  val selfPlay     = System.getProperty("rl.selfplay",  "false").toLowerCase == "true"
+  val opponentType = System.getProperty("rl.opponent",  "chicken").toLowerCase
+  val rng          = new scala.util.Random()
 
   var gameCount = 0
 
@@ -101,15 +133,21 @@ object RLGymServer extends App {
 
       // Build game
       val drawer: TileDrawer = new RandomTileDrawer(seed.orElse(Some(gameCount.toLong)))
-      // For "mixed", randomly pick chicken or firstfelix each game
-      val useFirstFelix = opponentType == "firstfelix" ||
-        (opponentType == "mixed" && rng.nextBoolean())
-      val rlPlayer  = new RLPlayer(0, drawer.popHand())
-      val opponents = (1 to 3).map(i =>
-        if (useFirstFelix) new FirstFelix(i, drawer.popHand(), 5)
-        else new Chicken(i, drawer.popHand())
-      ).toList
-      val players   = rlPlayer :: opponents
+
+      val players: List[Player] = if (selfPlay) {
+        // True self-play: all 4 seats are RL agents sharing the same Python model
+        (0 to 3).map(i => new RLPlayer(i, drawer.popHand())).toList
+      } else {
+        // Single RL agent (seat 0) vs Chicken / FirstFelix opponents
+        val useFirstFelix = opponentType == "firstfelix" ||
+          (opponentType == "mixed" && rng.nextBoolean())
+        val rlPlayer  = new RLPlayer(0, drawer.popHand())
+        val opponents = (1 to 3).map(i =>
+          if (useFirstFelix) new FirstFelix(i, drawer.popHand(), 5)
+          else new Chicken(i, drawer.popHand())
+        ).toList
+        rlPlayer :: opponents
+      }
 
       val initPlayerId = seed.map(s => (s % 4).toInt).getOrElse(gameCount % 4)
       val state = GameState(players, None, Nil, initPlayerId.toInt, drawer)
@@ -120,12 +158,11 @@ object RLGymServer extends App {
       val result = Try(flow.start()) match {
         case Success(r) => r
         case Failure(ex) =>
-          // Surface unexpected errors; Python can handle a game_over with null state
           System.err.println(s"Game $gameCount crashed: ${ex.getMessage}")
           GameResult(None)
       }
 
-      sendGameOver(result, rlPlayerId = 0, lastState = None)
+      sendGameOver(result, selfPlay = selfPlay, rlPlayerId = 0, lastState = None)
     }
   }
 }

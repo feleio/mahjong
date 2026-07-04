@@ -3,7 +3,7 @@ MahjongNet — Multi-head actor-critic network for Hong Kong Mahjong.
 
 Architecture
 ────────────
-  Shared encoder  : Linear(OBS_DIM→512) → LayerNorm → ReLU
+  Shared encoder  : Linear(OBS_DIM→512) → LayerNorm → ReLU  (OBS_DIM=587)
                     Linear(512→256)      → LayerNorm → ReLU
 
   Value head      : Linear(256→1)                          (critic)
@@ -26,7 +26,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
 
-from env import OBS_DIM, DECISION_SPACES
+from env import OBS_DIM, OBS_DIM_V3, DECISION_SPACES
 
 # ── Network ───────────────────────────────────────────────────────────────────
 
@@ -38,20 +38,26 @@ class MahjongNet(nn.Module):
     hidden_size  : int   – width of shared hidden layers (default 512)
     """
 
-    def __init__(self, obs_dim: int = OBS_DIM, hidden_size: int = 512) -> None:
+    def __init__(self, obs_dim: int = OBS_DIM, hidden_size: int = 512,
+                 n_layers: int = 2) -> None:
         super().__init__()
         self.obs_dim = obs_dim
+        self.n_layers = n_layers
 
         # ── Shared encoder ────────────────────────────────────────────────────
-        self.encoder = nn.Sequential(
-            nn.Linear(obs_dim, hidden_size),
-            nn.LayerNorm(hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size // 2),
-            nn.LayerNorm(hidden_size // 2),
-            nn.ReLU(),
-        )
-        enc_out = hidden_size // 2  # 256
+        layers = []
+        in_dim = obs_dim
+        for i in range(n_layers):
+            out_dim = hidden_size if i == 0 else hidden_size // (2 ** i)
+            out_dim = max(out_dim, 128)  # floor at 128
+            layers.extend([
+                nn.Linear(in_dim, out_dim),
+                nn.LayerNorm(out_dim),
+                nn.ReLU(),
+            ])
+            in_dim = out_dim
+        self.encoder = nn.Sequential(*layers)
+        enc_out = in_dim
 
         # ── Critic ────────────────────────────────────────────────────────────
         self.value_head = nn.Linear(enc_out, 1)
@@ -166,6 +172,156 @@ class MahjongNet(nn.Module):
         return log_prob, entropy, value
 
 
+# ── Convolutional network (obs v3) ────────────────────────────────────────────
+
+class _ResBlock1d(nn.Module):
+    def __init__(self, ch: int):
+        super().__init__()
+        self.conv1 = nn.Conv1d(ch, ch, kernel_size=3, padding=1)
+        self.norm1 = nn.GroupNorm(8, ch)
+        self.conv2 = nn.Conv1d(ch, ch, kernel_size=3, padding=1)
+        self.norm2 = nn.GroupNorm(8, ch)
+
+    def forward(self, x):
+        h = F.relu(self.norm1(self.conv1(x)))
+        h = self.norm2(self.conv2(h))
+        return F.relu(x + h)
+
+
+class MahjongConvNet(nn.Module):
+    """
+    Residual 1D CNN over the 34-tile axis for obs v3 (725 dims).
+
+    The flat observation is reorganised into 21 tile-planes (17 original +
+    4 shanten/ukeire feature planes) plus 11 scalars broadcast as constant
+    planes → 32 input channels of length 34. Convolution over the tile axis
+    gives the suit-run/adjacency inductive bias an MLP lacks.
+
+    Heads:
+      discard   : 1×1 conv → per-tile logit (spatially aligned with the input)
+      self_kong : per-tile logits (1×1 conv) + pooled pass-logit → 35
+      binary / chow / value : mean+max pooled features → MLP
+    """
+
+    N_PLANES_V2 = 17   # hand, my 3 groups, 3×3 opp groups, 4 discard planes
+    N_SCAL_V2   = 9    # remaining + my seat one-hot + cur player one-hot
+    N_PLANES_V3 = 5    # shanten_after, ukeire_after, improve_tiles, unseen, context_tile
+    N_SCAL_V3   = 2    # cur_shanten, is_discard_state
+
+    def __init__(self, obs_dim: int = OBS_DIM_V3, channels: int = 128,
+                 n_blocks: int = 6) -> None:
+        super().__init__()
+        assert obs_dim == OBS_DIM_V3, "MahjongConvNet requires obs v3"
+        self.obs_dim  = obs_dim
+        self.channels = channels
+        self.n_blocks = n_blocks
+
+        n_planes  = self.N_PLANES_V2 + self.N_PLANES_V3          # 21
+        n_scalars = self.N_SCAL_V2 + self.N_SCAL_V3              # 11
+        in_ch     = n_planes + n_scalars                          # 32
+
+        self.stem   = nn.Sequential(
+            nn.Conv1d(in_ch, channels, kernel_size=3, padding=1),
+            nn.GroupNorm(8, channels),
+            nn.ReLU(),
+        )
+        self.blocks = nn.Sequential(*[_ResBlock1d(channels) for _ in range(n_blocks)])
+
+        # Per-tile heads
+        self.discard_conv   = nn.Conv1d(channels, 1, kernel_size=1)
+        self.self_kong_conv = nn.Conv1d(channels, 1, kernel_size=1)
+
+        # Pooled heads. Binary decisions get SEPARATE heads: the observation
+        # does not identify which question is being asked, and kong labels
+        # (which depend on FF's hidden target state) would otherwise corrupt
+        # the always-accept win/self_win behaviour through a shared head.
+        self.pool_fc     = nn.Sequential(nn.Linear(2 * channels, 256), nn.ReLU())
+        self.value_head  = nn.Linear(256, 1)
+        self.win_head      = nn.Linear(256, 2)
+        self.self_win_head = nn.Linear(256, 2)
+        self.pong_head     = nn.Linear(256, 2)
+        self.kong_head     = nn.Linear(256, 2)
+        self.chow_head   = nn.Linear(256, DECISION_SPACES["chow"])  # 4
+        self.self_kong_pass = nn.Linear(256, 1)
+
+    # ── Input reorganisation ──────────────────────────────────────────────────
+
+    def _to_planes(self, obs: torch.Tensor) -> torch.Tensor:
+        B = obs.shape[0]
+        p2 = self.N_PLANES_V2 * 34                       # 578
+        s2 = p2 + self.N_SCAL_V2                          # 587
+        p3 = s2 + self.N_PLANES_V3 * 34                   # 723
+        planes = torch.cat([
+            obs[:, :p2].view(B, self.N_PLANES_V2, 34),
+            obs[:, s2:p3].view(B, self.N_PLANES_V3, 34),
+        ], dim=1)                                         # (B, 21, 34)
+        scalars = torch.cat([obs[:, p2:s2], obs[:, p3:]], dim=1)  # (B, 11)
+        scal_planes = scalars.unsqueeze(-1).expand(-1, -1, 34)     # (B, 11, 34)
+        return torch.cat([planes, scal_planes], dim=1)             # (B, 32, 34)
+
+    # ── Forward ───────────────────────────────────────────────────────────────
+
+    def forward(
+        self,
+        obs: torch.Tensor,
+        decision: str,
+        action_mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        x = self.stem(self._to_planes(obs))
+        x = self.blocks(x)                                # (B, C, 34)
+
+        pooled = torch.cat([x.mean(dim=2), x.amax(dim=2)], dim=1)  # (B, 2C)
+        feat   = self.pool_fc(pooled)                                # (B, 256)
+        value  = self.value_head(feat).squeeze(-1)
+
+        if decision == "discard":
+            logits = self.discard_conv(x).squeeze(1)                 # (B, 34)
+        elif decision in ("win", "self_win", "pong", "kong"):
+            head = {"win": self.win_head, "self_win": self.self_win_head,
+                    "pong": self.pong_head, "kong": self.kong_head}[decision]
+            logits = head(feat)                                      # (B, 2)
+        elif decision == "chow":
+            logits = self.chow_head(feat)                            # (B, 4)
+        elif decision == "self_kong":
+            per_tile = self.self_kong_conv(x).squeeze(1)             # (B, 34)
+            logits = torch.cat([self.self_kong_pass(feat), per_tile], dim=1)  # (B, 35)
+        else:
+            raise ValueError(f"Unknown decision: {decision!r}")
+
+        if action_mask is not None:
+            logits = logits.masked_fill(~action_mask, float("-inf"))
+        return logits, value
+
+    # Same sampling/evaluation API as MahjongNet
+    act              = MahjongNet.act
+    evaluate_actions = MahjongNet.evaluate_actions
+
+
+def load_net(path: str, device: str = "cpu"):
+    """Load a checkpoint into the right architecture (MLP or conv).
+
+    Returns (net, meta) where meta holds the architecture fields needed to
+    re-save a compatible checkpoint.
+    """
+    ckpt = torch.load(path, map_location="cpu", weights_only=False)
+    arch = ckpt.get("arch", "mlp")
+    if arch == "conv":
+        net = MahjongConvNet(obs_dim=ckpt.get("obs_dim", OBS_DIM_V3),
+                             channels=ckpt.get("channels", 128),
+                             n_blocks=ckpt.get("n_blocks", 6))
+        meta = {"obs_dim": net.obs_dim, "arch": "conv",
+                "channels": net.channels, "n_blocks": net.n_blocks}
+    else:
+        net = MahjongNet(obs_dim=ckpt.get("obs_dim", OBS_DIM),
+                         hidden_size=ckpt.get("hidden_size", 512),
+                         n_layers=ckpt.get("n_layers", 2))
+        meta = {"obs_dim": net.obs_dim, "arch": "mlp",
+                "hidden_size": ckpt.get("hidden_size", 512),
+                "n_layers": net.n_layers}
+    net.load_state_dict(ckpt["net_state"])
+    return net.to(device), meta
+
+
 # ── Convenience wrapper ───────────────────────────────────────────────────────
 
 class MahjongAgent:
@@ -182,10 +338,19 @@ class MahjongAgent:
         self,
         obs_dim: int = OBS_DIM,
         hidden_size: int = 512,
+        n_layers: int = 2,
         device: str = "cpu",
+        arch: str = "mlp",
+        channels: int = 128,
+        n_blocks: int = 6,
     ) -> None:
         self.device = torch.device(device)
-        self.net    = MahjongNet(obs_dim, hidden_size).to(self.device)
+        self.arch   = arch
+        if arch == "conv":
+            self.net = MahjongConvNet(obs_dim, channels=channels,
+                                      n_blocks=n_blocks).to(self.device)
+        else:
+            self.net = MahjongNet(obs_dim, hidden_size, n_layers=n_layers).to(self.device)
 
     def select_action(
         self,
@@ -204,17 +369,27 @@ class MahjongAgent:
         return int(action.item())
 
     def save(self, path: str) -> None:
-        torch.save(
-            {
-                "net_state": self.net.state_dict(),
-                "obs_dim":   self.net.obs_dim,
-            },
-            path,
-        )
+        meta = {
+            "net_state": self.net.state_dict(),
+            "obs_dim":   self.net.obs_dim,
+            "arch":      self.arch,
+        }
+        if self.arch == "conv":
+            meta["channels"] = self.net.channels
+            meta["n_blocks"] = self.net.n_blocks
+        else:
+            meta["n_layers"] = self.net.n_layers
+        torch.save(meta, path)
 
     @classmethod
     def load(cls, path: str, device: str = "cpu") -> "MahjongAgent":
         ckpt  = torch.load(path, map_location=device, weights_only=False)
-        agent = cls(obs_dim=ckpt.get("obs_dim", OBS_DIM), device=device)
+        agent = cls(obs_dim=ckpt.get("obs_dim", OBS_DIM),
+                    hidden_size=ckpt.get("hidden_size", 512),
+                    n_layers=ckpt.get("n_layers", 2),
+                    arch=ckpt.get("arch", "mlp"),
+                    channels=ckpt.get("channels", 128),
+                    n_blocks=ckpt.get("n_blocks", 6),
+                    device=device)
         agent.net.load_state_dict(ckpt["net_state"])
         return agent
