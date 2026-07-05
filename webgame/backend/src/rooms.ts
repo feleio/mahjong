@@ -94,6 +94,15 @@ export class RoomManager {
     const room = this.roomOfUser(userId);
     if (room) {
       room.emptySince = null;
+      // If this seat's decision was fast-forwarded to the 3s disconnect timer,
+      // restore the full deadline now that the player is back.
+      const game = room.game;
+      const p = game?.pendingDecision;
+      if (game && p && room.seats[p.seat].userId === userId) {
+        clearTimeout(p.timer);
+        const remaining = Math.max(1_000, p.deadlineTs - Date.now());
+        p.timer = setTimeout(() => this.autoAct(room, game, p.requestId), remaining);
+      }
       this.broadcastRoom(room);
     }
   }
@@ -320,23 +329,32 @@ export class RoomManager {
       }
     });
 
+    // Claim the room synchronously before any await — a second room:start
+    // (double-click, second tab) must fail the lobby check above.
+    room.status = 'playing';
+
     const seed = Math.floor(Math.random() * 2 ** 31);
     const gameId = randomUUID();
-    const dbGame = await this.prisma.game.create({
-      data: {
-        roomId: room.id,
-        seed: BigInt(seed),
-        dealerSeat: room.dealerSeat,
-        seats: room.seats.map((s, i) => ({
-          seat: i,
-          userId: s.userId,
-          isBot: s.isBot,
-          name: s.isBot ? s.name : (this.userNames.get(s.userId!) ?? s.name),
-        })),
-      },
-    });
+    let dbGame;
+    try {
+      dbGame = await this.prisma.game.create({
+        data: {
+          roomId: room.id,
+          seed: BigInt(seed),
+          dealerSeat: room.dealerSeat,
+          seats: room.seats.map((s, i) => ({
+            seat: i,
+            userId: s.userId,
+            isBot: s.isBot,
+            name: s.isBot ? s.name : (this.userNames.get(s.userId!) ?? s.name),
+          })),
+        },
+      });
+    } catch (e) {
+      room.status = 'lobby';
+      throw e;
+    }
 
-    room.status = 'playing';
     const seatSpecs = room.seats.map((s) => (s.userId ? 'remote' : 'chicken')) as (
       | 'remote'
       | 'chicken'

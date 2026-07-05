@@ -16,6 +16,7 @@ export class Engine {
   private proc: ChildProcessWithoutNullStreams | null = null;
   private handlers = new Map<string, EngineHandler>();
   private jarPath: string;
+  private alive = false;
 
   constructor(jarPath: string) {
     this.jarPath = path.resolve(jarPath);
@@ -26,6 +27,7 @@ export class Engine {
     this.proc = spawn('java', ['-cp', this.jarPath, MAIN_CLASS], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    this.alive = true;
     const rl = createInterface({ input: this.proc.stdout });
     rl.on('line', (line) => {
       let msg: EngineMessage;
@@ -47,6 +49,7 @@ export class Engine {
       /* engine logs — ignore */
     });
     this.proc.on('exit', (code) => {
+      this.alive = false;
       console.error(`[engine] process exited (code ${code}), restarting…`);
       // Fail all in-flight games, then restart the process.
       for (const [gameId, handler] of this.handlers) {
@@ -66,6 +69,12 @@ export class Engine {
     opts: { seed: number; dealerSeat: number; seats: ('remote' | 'chicken')[] },
     handler: EngineHandler,
   ) {
+    if (!this.alive || !this.proc) {
+      // Engine is mid-restart — fail fast so the room returns to lobby
+      // instead of wedging in "playing" with a game that never starts.
+      setImmediate(() => handler({ type: 'error', gameId, message: 'engine restarting, try again' }));
+      return;
+    }
     this.handlers.set(gameId, handler);
     this.send({ cmd: 'new_game', gameId, ...opts });
   }

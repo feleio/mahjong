@@ -103,6 +103,12 @@ object WebGameServer extends App {
       val requestId = requestCounter.incrementAndGet()
       val queue = new ArrayBlockingQueue[Any](1)
       pending.put(requestId, queue)
+      // Re-check after registering: an abort() between the check above and the
+      // put() would drain pending before our queue existed, blocking forever.
+      if (aborted) {
+        pending.remove(requestId)
+        throw new GameAbortedException
+      }
       send(Map(
         "type" -> "decision_request", "gameId" -> gameId, "requestId" -> requestId,
         "seat" -> seat, "decision" -> decision, "context" -> context,
