@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+:root {
+  --felt: #0b3d2e;
+  --felt-dark: #062319;
+  --foreground: #e9f5ee;
+}
+
+@theme inline {
+  --color-felt: var(--felt);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(
+      ellipse 120% 90% at 50% 30%,
+      #11543f 0%,
+      var(--felt) 45%,
+      var(--felt-dark) 100%
+    )
+    fixed;
+  color: var(--foreground);
+  font-family:
+    var(--font-geist-sans),
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  overscroll-behavior-y: none;
+}
+
+/* brief highlight on the panel of a seat that just discarded */
+@keyframes discard-flash {
+  0% {
+    background-color: rgba(251, 191, 36, 0.28);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.discard-flash {
+  animation: discard-flash 0.9s ease-out;
+}
