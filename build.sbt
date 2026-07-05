@@ -14,6 +14,13 @@ libraryDependencies ++= Seq(
   "org.json4s" % "json4s-native_2.12" % "3.5.2"
 )
 
+// Old mockito needs reflective access that JDK 17+ blocks by default
+Test / fork := true
+Test / javaOptions ++= Seq(
+  "--add-opens=java.base/java.lang=ALL-UNNAMED",
+  "--add-opens=java.base/java.util=ALL-UNNAMED"
+)
+
 // Assembly settings for building a fat-JAR (used by the Python RL framework)
 assembly / assemblyMergeStrategy := {
   case PathList("META-INF", _*) => MergeStrategy.discard
