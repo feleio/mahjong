@@ -49,18 +49,28 @@ class RLPlayer(id: Int, tiles: List[Tile])(implicit config: Config)
     val handCounts = Array.fill[Int](34)(0)
     curState.myInfo.tiles.foreach(t => handCounts(t.toTileValue) += 1)
 
-    // Count of each tile type in discard pile
+    // Count of each tile type in discard pile (total, for backward compat)
     val discardCounts = Array.fill[Int](34)(0)
     curState.discards.foreach(d => discardCounts(d.tile.toTileValue) += 1)
 
+    // Per-player discard counts (4 players × 34 tile types)
+    val perPlayerDiscards = Array.fill[Array[Int]](4)(Array.fill[Int](34)(0))
+    curState.discards.foreach(d => perPlayerDiscards(d.playerId)(d.tile.toTileValue) += 1)
+
     Map(
-      "hand"           -> handCounts.toList,
-      "my_groups"      -> tileGroupsToMap(curState.myInfo.tileGroups),
-      "opp_groups"     -> curState.otherInfos.map(info => tileGroupsToMap(info.tileGroups)),
-      "discarded"      -> discardCounts.toList,
-      "remaining"      -> curState.remainTileNum,
-      "my_id"          -> id,
-      "cur_player_id"  -> curState.curPlayerId
+      "hand"                -> handCounts.toList,
+      "my_groups"           -> tileGroupsToMap(curState.myInfo.tileGroups),
+      "opp_groups"          -> curState.otherInfos.map(info => tileGroupsToMap(info.tileGroups)),
+      "discarded"           -> discardCounts.toList,
+      "discarded_by_player" -> perPlayerDiscards.map(_.toList).toList,
+      "remaining"           -> curState.remainTileNum,
+      "my_id"               -> id,
+      "cur_player_id"       -> curState.curPlayerId
+    ) ++ RLFeatures.featureMap(
+      handCounts,
+      curState.myInfo.tileGroups,
+      curState.otherInfos.map(_.tileGroups),
+      discardCounts
     )
   }
 
@@ -75,6 +85,7 @@ class RLPlayer(id: Int, tiles: List[Tile])(implicit config: Config)
                                context: Map[String, Any]): Unit = {
     val msg = Map(
       "type"          -> "observation",
+      "seat_id"       -> id,
       "decision"      -> decision,
       "state"         -> stateToMap(curState),
       "context"       -> context,

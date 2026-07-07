@@ -11,7 +11,8 @@ libraryDependencies ++= Seq(
   "com.typesafe.scala-logging" %% "scala-logging" % "3.5.0",
   "ch.qos.logback" % "logback-classic" % "1.1.7",
   "org.mockito" % "mockito-all" % "2.0.2-beta",
-  "org.json4s" % "json4s-native_2.12" % "3.5.2"
+  "org.json4s" % "json4s-native_2.12" % "3.5.2",
+  "com.microsoft.onnxruntime" % "onnxruntime" % "1.17.1"
 )
 
 // Old mockito needs reflective access that JDK 17+ blocks by default

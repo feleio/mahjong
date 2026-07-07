@@ -121,7 +121,15 @@ def train(args: argparse.Namespace) -> None:
     save_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Build network and trainer ─────────────────────────────────────────────
-    net = MahjongNet(hidden_size=args.hidden_size)
+    # Peek at checkpoint to get architecture if provided
+    if args.checkpoint:
+        _ckpt_peek = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+        _hidden = _ckpt_peek.get("hidden_size", args.hidden_size)
+        _layers = _ckpt_peek.get("n_layers", 2)
+        del _ckpt_peek
+    else:
+        _hidden, _layers = args.hidden_size, 2
+    net = MahjongNet(hidden_size=_hidden, n_layers=_layers)
     trainer = PPOTrainer(
         net=net,
         lr=args.lr,
@@ -145,7 +153,8 @@ def train(args: argparse.Namespace) -> None:
         print(f"Loading checkpoint: {args.checkpoint}")
         ckpt = torch.load(args.checkpoint, map_location=args.device)
         net.load_state_dict(ckpt["net_state"])
-        trainer.optimizer.load_state_dict(ckpt["optimizer_state"])
+        if "optimizer_state" in ckpt:
+            trainer.optimizer.load_state_dict(ckpt["optimizer_state"])
         total_steps    = ckpt.get("total_steps", 0)
         total_episodes = ckpt.get("total_episodes", 0)
         print(f"Resumed at step {total_steps:,}")
@@ -219,6 +228,8 @@ def train(args: argparse.Namespace) -> None:
                         "optimizer_state": trainer.optimizer.state_dict(),
                         "total_steps":     total_steps,
                         "total_episodes":  total_episodes,
+                        "hidden_size":     net.obs_dim and _hidden,
+                        "n_layers":        _layers,
                     },
                     ckpt_path,
                 )
@@ -239,6 +250,8 @@ def train(args: argparse.Namespace) -> None:
             "optimizer_state": trainer.optimizer.state_dict(),
             "total_steps":     total_steps,
             "total_episodes":  total_episodes,
+            "hidden_size":     _hidden,
+            "n_layers":        _layers,
         },
         final_path,
     )
