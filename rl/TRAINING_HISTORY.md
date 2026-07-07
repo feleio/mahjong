@@ -617,3 +617,119 @@ No FF-specific exploitation; the model learned general play quality.
 |--------|---------|--------------|
 | **Raw net:** `rl/checkpoints/exit_v3_r3_soft/exit_final.pt` | **+$2.25 / 20.9%** | **+$9.40 / 25.8%** |
 | **Net + search:** same + `PairedMCTSPolicy(n_worlds=64)` | **+$3.65 / 25.7%** | — |
+
+---
+
+## AlphaZero-Style Program: Self-Play RL + NN-Guided Search (2026-07-05)
+
+Goal shift: from "beat FirstFelix" to general strength. Three stages; user
+approved the full program.
+
+### Stage A — KL-anchored PPO self-play fine-tune (`rl/ppo_selfplay.py`)
+60k games from exit_v3_r3_soft: 12 true-self-play tables (all 4 seats share
+the evolving net, zero-sum rewards — score-bonus shaping now behind
+`-Drl.scorebonus`, default off) + 6 FF tables, batched forwards, KL(new‖anchor)
+penalty (0.3), value-head-only warmup (2k games), reward /25, γ=1.
+Fixed a NaN: -inf masked logits on both sides of the anchor KL make
+(-inf)−(-inf)=NaN and torch.where leaks NaN grads — re-mask with -30.0.
+
+**Result: `ppo_a/ppo_final.pt` ≈ r3 everywhere.** League head-to-head
+(new `rl/league_eval.py`, 1000 paired 1v3 games both directions):
++0.86±1.13 n.s. vs FF: -0.16±0.54 n.s. vs Chicken: +0.35±0.51 n.s.
+No regression, no breakthrough — teacher ceiling is the binding constraint.
+
+### Stage B — NN-guided rollouts (the real AlphaZero move)
+1. **Fast student policy** (`rl/distill_student.py`): 48ch×2-block conv
+   (260KB) distilled from r3 on 2.7M states; 60.7% discard / 94-100% meld
+   agreement. ONNX 0.084ms/call (teacher: 4ms). `rl/export_onnx.py` exports
+   all heads + parity check.
+2. **Scala**: `NNRollout.scala` — `V3Obs` (exact port of encode_state v3;
+   parity test `rl/test_v3obs.py`: 0.00e+00 error on 495 real decisions),
+   `OnnxPolicyService` (batched ORT via LinkedBlockingQueue + single
+   inference thread), `NNPlayer` (greedy masked argmax). MCTSRolloutServer:
+   `self_policy`/`rollout_opp` ∈ {firstfelix, chicken, nn}, parallel worlds
+   (`-Drl.rolloutThreads`), rollout GameState now seeded with the REAL
+   discard history (`discards_by_player`, relative seat order) — heuristic
+   rollouts ignored it, NN policies need it. Build needs JDK 11
+   (JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 sbt assembly); onnxruntime
+   1.17.1 added to build.sbt.
+3. **Rollout timing** (K=64, 6 cands, steady state): FF/FF 1thr 359ms →
+   8thr 87ms (threading alone = 4× win). NN-self/FF-opp 8thr ≈ 1.3s,
+   32thr ≈ 0.95s. NN/NN ≈ 8s (too slow for bulk datagen).
+4. **A/B gate** (`rl/eval_mcts_ab.py`, 400 paired games, base=r3, K=64):
+   search w/ NN-self rollouts +$6.15/game vs FF-self +$4.75 —
+   **paired delta +1.40 ± 1.76** (n.s. but positive at every checkpoint;
+   best generator measured to date).
+
+### Stage B ExIt round 1 (self-play) — RUNNING overnight
+`rl/exit_datagen2.py`: self-play tables (seat0 = r3+search, seats1-3 = raw
+r3), rollouts self=nn(student48) opp=firstfelix, K=64 top6 z1.5.
+6 workers × 12k games total → rl/data/exit_sp1. Distill with
+exit_distill_soft.py when enough shards exist; gate with league_eval vs r3
+AND eval_parallel vs FF/Chicken.
+
+### Insight extraction (2026-07-04, separate thread)
+136,811 search overrides mined ($4.77 mean). Simple-rule capture vs recorded
+per-candidate Q-gains: min-shanten/max-ukeire greedy −$0.68/decision (worse
+than instinct); always-take-tenpai −$0.68/fire; only "fix dead tenpai wait"
+is positive (+$4.68/fire, 0.4% of decisions). Strategy guide artifact
+published. Scripts in session scratchpad.
+
+### Self-play ExIt round 1 RESULT — first improvement over r3 (2026-07-06)
+Full 12k self-play games (6 workers × 2k, teacher = r3 + NN-guided search,
+self-rollout=student48, opp-rollout=firstfelix, K=64). Teacher held
++$5.4/game vs the raw-r3 table across all 12k games, override rate steady
+15.7% (vs FF-based loop's declining 12→11→10.8%). ~410k Q-labeled decisions.
+
+Distilled `exit_sp1b_soft/exit_final.pt` (soft targets, 6 epochs, warm-start
+r3, switched-agree 28.9%). **Gates vs r3 — all three positive:**
+| Gate | candidate B | r3 | paired delta |
+|------|-------------|-----|--------------|
+| League head-to-head (2000×2) | — | — | **+$1.13 ± 0.75** |
+| vs 3×FF (3000) | +$2.13 / 21.0% / $41.1 pay | +$1.41 / 19.7% / $37.8 | +$0.72 ± 0.62 |
+| vs 3×Chicken (3000) | +$10.10 / 24.8% / $44.9 | +$9.51 / 25.7% / $40.7 | +$0.59 ± 0.57 |
+
+Three independent conditions, inverse-variance pooled ≈ **+$0.76 ± 0.37 (~2σ)**.
+Same bigger-wins signature (avg pay up in every column). **PROMOTED as new
+base** → `rl/checkpoints/best_raw_net.pt`. Stage A PPO was flat; this
+NN-guided self-play round is the program's first real gain over r3.
+
+NEW BEST (2026-07-06):
+| Player | vs 3×FF | vs 3×Chicken |
+|--------|---------|--------------|
+| `exit_sp1b_soft/exit_final.pt` (= best_raw_net.pt) | +$2.13 / 21.0% | +$10.10 / 24.8% |
+
+Next: fresh student distilled from sp1b (student48_sp1b) → export ONNX →
+self-play ExIt round 2 (teacher = sp1b + NN search). Iterate until flat.
+
+### Self-play ExIt round 2 — CONVERGED (do not promote; 2026-07-07)
+Full 12k self-play games from sp1b base (teacher held +$4.6/game vs raw-sp1b,
+override rate 14.0%, down from round-1's 15.7%). Distilled
+`exit_sp2c_soft/exit_final.pt` (switched-agree 14.6%, half of sp1b's 28.9% —
+first sign the teacher's overrides are getting unlearnable on the stronger base).
+
+**Gates vs sp1b — INCOHERENT (specialization, not general strength):**
+| Reference | candidate C vs sp1b |
+|-----------|---------------------|
+| head-to-head league (2000×2) | **+$1.28 ± 0.81** (C wins) |
+| vs 3×FF anchor (3000) | +$0.24 ± 0.59 (flat) |
+| vs 3×Chicken anchor (3000) | −$0.64 ± 0.53 (worse) |
+| vs r3 anchor, transitive (2000×2) | C beats r3 +$0.80 vs sp1b's +$1.13 → **worse** |
+
+C matchup-beats its own training partner but is flat/worse on ALL THREE fixed
+anchors (FF, Chicken, r3). Round 1 (sp1b) was coherent across all conditions
+(+1.13/+0.72/+0.59); round 2 is not. Classic self-play cycling/style-overfit
+(issue #13 lever 6). **sp1b remains champion (best_raw_net.pt unchanged).**
+
+**Self-play ExIt distillation loop CONVERGED.** One genuine universal gain
+(r3 → sp1b, ~2σ) then specialization. Next: pivot to deeper search levers
+(issue #13) that raise the teacher's GENERAL strength — belief-state
+determinization + IS-MCTS — rather than distillation chasing self-play
+matchups. A cheaper round-3 variant worth trying first: mixed-opponent
+datagen (seats 1-3 sampled from {sp1b, r3, FF, Chicken, past ckpts}) to keep
+the improvement operator honest against a population instead of one partner.
+
+### FINAL BEST (as of 2026-07-07) — unchanged from round 1
+| Player | vs 3×FF | vs 3×Chicken |
+|--------|---------|--------------|
+| **`best_raw_net.pt` = `exit_sp1b_soft/exit_final.pt`** | **+$2.13 / 21.0%** | **+$10.10 / 24.8%** |
