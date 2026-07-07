@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String       @id @default(uuid())
+  token     String       @unique
+  name      String
+  createdAt DateTime     @default(now())
+  members   RoomMember[]
+}
+
+model Room {
+  id          String       @id @default(uuid())
+  code        String       @unique
+  hostId      String
+  status      String       @default("lobby") // lobby | playing | closed
+  dealerSeat  Int          @default(0)
+  gamesPlayed Int          @default(0)
+  createdAt   DateTime     @default(now())
+  members     RoomMember[]
+  games       Game[]
+}
+
+model RoomMember {
+  id       String   @id @default(uuid())
+  roomId   String
+  userId   String
+  seat     Int
+  balance  Int      @default(0)
+  joinedAt DateTime @default(now())
+  room     Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@unique([roomId, seat])
+  @@unique([roomId, userId])
+}
+
+model Game {
+  id          String    @id @default(uuid())
+  roomId      String
+  seed        BigInt
+  dealerSeat  Int
+  seats       Json      // [{seat, userId|null, isBot, name}]
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  winnersInfo Json?     // WinnersInfo or null (draw)
+  balances    Json?     // [4 ints]
+  room        Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+}

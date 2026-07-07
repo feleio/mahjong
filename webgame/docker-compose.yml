@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mahjong-postgres
+    environment:
+      POSTGRES_USER: mahjong
+      POSTGRES_PASSWORD: mahjong
+      POSTGRES_DB: mahjong
+    ports:
+      - "5433:5432"
+    volumes:
+      - mahjong_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mahjong"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  mahjong_pgdata:

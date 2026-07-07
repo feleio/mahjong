@@ -15,6 +15,13 @@ libraryDependencies ++= Seq(
   "com.microsoft.onnxruntime" % "onnxruntime" % "1.17.1"
 )
 
+// Old mockito needs reflective access that JDK 17+ blocks by default
+Test / fork := true
+Test / javaOptions ++= Seq(
+  "--add-opens=java.base/java.lang=ALL-UNNAMED",
+  "--add-opens=java.base/java.util=ALL-UNNAMED"
+)
+
 // Assembly settings for building a fat-JAR (used by the Python RL framework)
 assembly / assemblyMergeStrategy := {
   case PathList("META-INF", _*) => MergeStrategy.discard
