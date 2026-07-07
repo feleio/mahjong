@@ -43,6 +43,17 @@ object MCTSRolloutServer extends App {
 
   private val rng = new Random()
 
+  // NN rollout policy (loaded lazily from -Drl.nnmodel=<path.onnx>)
+  private lazy val nnService: OnnxPolicyService = {
+    val path = System.getProperty("rl.nnmodel")
+    require(path != null, "self_policy/rollout_opp 'nn' needs -Drl.nnmodel=<path.onnx>")
+    new OnnxPolicyService(path)
+  }
+
+  // Parallel world evaluation (-Drl.rolloutThreads=N)
+  private lazy val rolloutPool = java.util.concurrent.Executors.newFixedThreadPool(
+    Integer.getInteger("rl.rolloutThreads", 1))
+
   // ── Custom TileDrawer that operates over a pre-set tile sequence ─────────────
 
   private class FixedDrawer(tiles: Seq[Tile]) extends TileDrawer {
@@ -95,6 +106,13 @@ object MCTSRolloutServer extends App {
 
   // ── Single rollout ───────────────────────────────────────────────────────────
 
+  private def makePlayer(policy: String, seat: Int, dyn: List[Tile],
+                         grps: List[TileGroup]): Player = policy match {
+    case "nn"         => new NNPlayer(seat, dyn, grps, nnService)
+    case "firstfelix" => new FirstFelix(seat, dyn, 5, grps)
+    case _            => new Chicken(seat, dyn, grps)
+  }
+
   private def runRollout(
     myDynamic:   List[Tile],
     myGroups:    List[TileGroup],
@@ -102,8 +120,9 @@ object MCTSRolloutServer extends App {
     discardTile: Tile,
     unknown:     Seq[Tile],              // shuffled pool to split
     remaining:   Int,                   // tiles to assign to draw pile
-    useFF:       Boolean,
-    selfFF:      Boolean = false        // our own seat plays FirstFelix in the rollout
+    oppPolicy:   String,                // "chicken" | "firstfelix" | "nn"
+    selfPolicy:  String,                // "chicken" | "firstfelix" | "nn"
+    preDiscards: List[DiscardInfo] = Nil // real discard history (NN policies read it)
   ): Double = {
 
     // --- Distribute unknown tiles ---
@@ -128,18 +147,13 @@ object MCTSRolloutServer extends App {
     if (!handsOk) return 0.0
 
     // --- Build players ---
-    def makeOpp(seat: Int, dyn: List[Tile], grps: List[TileGroup]): Player =
-      if (useFF) new FirstFelix(seat, dyn, 5, grps)
-      else       new Chicken(seat, dyn, grps)
-
-    val us: Player =
-      if (selfFF) new FirstFelix(0, myDynamic, 5, myGroups)
-      else        new Chicken(0, myDynamic, myGroups)
-    val opps: List[Player]   = (0 until 3).map(i => makeOpp(i + 1, oppDynamic(i), oppGroups(i))).toList
+    val us: Player = makePlayer(selfPolicy, 0, myDynamic, myGroups)
+    val opps: List[Player] = (0 until 3)
+      .map(i => makePlayer(oppPolicy, i + 1, oppDynamic(i), oppGroups(i))).toList
     val players: List[Player] = us :: opps
 
     val drawer = new FixedDrawer(drawPile)
-    val state  = GameState(players, None, Nil, 0, drawer)
+    val state  = GameState(players, None, preDiscards, 0, drawer)
     val flow   = new FlowImpl(state)
 
     Try(flow.resume(Some(discardTile))).toOption match {
@@ -208,6 +222,20 @@ object MCTSRolloutServer extends App {
     ParsedState(handCounts, myGroups, oppGroups, unknownBase, actualRemaining)
   }
 
+  /** Optional real discard history, 4×34 counts in rollout seat order
+    * (0 = our seat, 1-3 = opponents in opp_groups order). */
+  private def parsePreDiscards(cmd: Map[String, Any]): List[DiscardInfo] =
+    cmd.get("discards_by_player") match {
+      case None => Nil
+      case Some(raw) =>
+        asList(raw).map(row => asList(row).map(asInt)).zipWithIndex.flatMap {
+          case (counts, seat) =>
+            counts.zipWithIndex.flatMap { case (cnt, tileId) =>
+              List.fill(cnt)(DiscardInfo(seat, Tile.fromValue(tileId)))
+            }
+        }
+    }
+
   // ── Main server loop ─────────────────────────────────────────────────────────
 
   while (true) {
@@ -220,8 +248,9 @@ object MCTSRolloutServer extends App {
         val st            = parseState(cmd)
         val discardTileId = asInt(cmd("discard_tile"))
         val nRollouts     = asInt(cmd("n_rollouts"))
-        val useFF         = cmd.get("rollout_opp").exists(_ == "firstfelix")
-        val selfFF        = cmd.get("self_policy").exists(_ == "firstfelix")
+        val oppPolicy     = cmd.getOrElse("rollout_opp", "chicken").toString
+        val selfPolicy    = cmd.getOrElse("self_policy", "chicken").toString
+        val preDiscards   = parsePreDiscards(cmd)
 
         val discardTile = Tile.fromValue(discardTileId)
         val myDynamic   = st.dynamicAfterDiscard(discardTileId)
@@ -229,7 +258,7 @@ object MCTSRolloutServer extends App {
         val rewards = (0 until nRollouts).map { _ =>
           val shuffled = rng.shuffle(st.unknownBase)
           runRollout(myDynamic, st.myGroups, st.oppGroups, discardTile, shuffled,
-                     st.actualRemaining, useFF, selfFF)
+                     st.actualRemaining, oppPolicy, selfPolicy, preDiscards)
         }.toList
 
         val n    = rewards.size.toDouble
@@ -251,20 +280,32 @@ object MCTSRolloutServer extends App {
         val st         = parseState(cmd)
         val candidates = asList(cmd("candidate_tiles")).map(asInt)
         val nWorlds    = asInt(cmd("n_worlds"))
-        val useFF      = cmd.get("rollout_opp").exists(_ == "firstfelix")
-        val selfFF     = !cmd.get("self_policy").exists(_ == "chicken") // default FF
+        val oppPolicy  = cmd.getOrElse("rollout_opp", "chicken").toString
+        val selfPolicy = cmd.getOrElse("self_policy", "firstfelix").toString
+        val preDiscards = parsePreDiscards(cmd)
 
         val candTiles   = candidates.map(Tile.fromValue)
         val candDynamic = candidates.map(st.dynamicAfterDiscard)
 
-        // rewards(k)(c) = reward of candidate c in world k
-        val rewards: List[List[Double]] = (0 until nWorlds).map { _ =>
-          val shuffled = rng.shuffle(st.unknownBase)
-          candTiles.zip(candDynamic).map { case (tile, dyn) =>
-            runRollout(dyn, st.myGroups, st.oppGroups, tile, shuffled,
-                       st.actualRemaining, useFF, selfFF)
-          }
-        }.toList
+        // rewards(k)(c) = reward of candidate c in world k.
+        // Worlds run in parallel (-Drl.rolloutThreads=N); the shuffles are
+        // drawn sequentially up front so results don't depend on scheduling.
+        val worldSeeds = (0 until nWorlds).map(_ => rng.nextLong())
+        val tasks = new java.util.ArrayList[java.util.concurrent.Callable[List[Double]]]()
+        worldSeeds.foreach { seed =>
+          tasks.add(new java.util.concurrent.Callable[List[Double]] {
+            override def call(): List[Double] = {
+              val shuffled = new Random(seed).shuffle(st.unknownBase)
+              candTiles.zip(candDynamic).map { case (tile, dyn) =>
+                runRollout(dyn, st.myGroups, st.oppGroups, tile, shuffled,
+                           st.actualRemaining, oppPolicy, selfPolicy, preDiscards)
+              }
+            }
+          })
+        }
+        val futures = rolloutPool.invokeAll(tasks)
+        val rewards: List[List[Double]] =
+          (0 until nWorlds).map(k => futures.get(k).get()).toList
 
         val nW = nWorlds.toDouble
         val meanRewards = candidates.indices.map { c =>
@@ -276,6 +317,22 @@ object MCTSRolloutServer extends App {
           "mean_rewards" -> meanRewards,
           "rewards"      -> rewards
         )))
+        System.out.flush()
+
+      // ── Parity test: encode a state dict exactly like Python encode_state ───
+      case "encode_v3" =>
+        val handCounts = asList(cmd("hand")).map(asInt).toArray
+        val myGroups   = parseGroups(cmd("my_groups").asInstanceOf[Map[String, Any]])
+        val oppGroups  = asList(cmd("opp_groups"))
+          .map(g => parseGroups(g.asInstanceOf[Map[String, Any]]))
+        val discByPlayer = asList(cmd("discarded_by_player"))
+          .map(row => asList(row).map(asInt).toArray).toArray
+        val contextTile = cmd.get("context_tile").map(asInt)
+        val obs = V3Obs.encode(
+          handCounts, myGroups, oppGroups, discByPlayer,
+          asInt(cmd("remaining")), asInt(cmd("my_id")),
+          asInt(cmd("cur_player_id")), contextTile)
+        println(write(Map("obs" -> obs.toList)))
         System.out.flush()
 
       case _ => // ignore unknown commands

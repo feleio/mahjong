@@ -74,13 +74,21 @@ class MCTSRolloutClient:
         n_rollouts: int = 10,
         rollout_opp: str = "chicken",
         java_bin: str = "java",
+        nn_model: Optional[str] = None,
+        rollout_threads: int = 1,
     ) -> None:
         self.n_rollouts  = n_rollouts
         self.rollout_opp = rollout_opp
+        extra = []
+        if nn_model is not None:
+            extra.append(f"-Drl.nnmodel={nn_model}")
+        if rollout_threads > 1:
+            extra.append(f"-Drl.rolloutThreads={rollout_threads}")
         self._proc = subprocess.Popen(
             [
                 java_bin,
                 "-Dlogback.statusListenerClass=ch.qos.logback.core.status.NopStatusListener",
+                *extra,
                 "-cp", jar_path,
                 "io.fele.app.mahjong.rl.MCTSRolloutServer",
             ],
@@ -120,6 +128,12 @@ class MCTSRolloutClient:
             "rollout_opp":     self.rollout_opp,
             "self_policy":     self_policy,
         }
+        # Real discard history in rollout seat order (0 = us, then opponents
+        # in opp_groups order). NN rollout policies read it; heuristics don't.
+        dbp = state.get("discarded_by_player")
+        if dbp is not None:
+            me = int(state["my_id"])
+            cmd["discards_by_player"] = [dbp[(me + i) % 4] for i in range(4)]
         self._proc.stdin.write(json.dumps(cmd) + "\n")
         self._proc.stdin.flush()
         line = self._proc.stdout.readline()
@@ -358,6 +372,7 @@ class PairedMCTSPolicy:
         z_threshold: float = 1.5,
         min_gain: float = 0.25,
         device: str = "cpu",
+        self_policy: str = "firstfelix",
     ) -> None:
         self.net            = net
         self.rollout_client = rollout_client
@@ -366,6 +381,7 @@ class PairedMCTSPolicy:
         self.z_threshold    = z_threshold
         self.min_gain       = min_gain
         self.device         = torch.device(device)
+        self.self_policy    = self_policy
         # Stats
         self.n_discard_decisions = 0
         self.n_switches          = 0
@@ -422,7 +438,7 @@ class PairedMCTSPolicy:
         base_idx = candidates.index(nn_action) if nn_action in candidates else 0
 
         rewards = self.rollout_client.evaluate_batch(
-            state, candidates, self.n_worlds
+            state, candidates, self.n_worlds, self_policy=self.self_policy
         )  # (K, C)
 
         diffs = rewards - rewards[:, base_idx:base_idx + 1]     # paired diffs vs NN choice

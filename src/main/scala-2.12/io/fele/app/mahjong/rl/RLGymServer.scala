@@ -58,8 +58,9 @@ object RLGymServer extends App {
 
     if (selfPlay) {
       // Send per-seat rewards for all 4 players.
-      // Add a quality bonus for high-scoring wins to incentivise building
-      // better hands (5pt +20%, 7pt +50%, 8pt +100%).
+      // With -Drl.scorebonus=true, add a quality bonus for high-scoring wins
+      // (5pt +20%, 7pt +50%, 8pt +100%); default is the true zero-sum payout.
+      val scoreBonus = System.getProperty("rl.scorebonus", "false").toLowerCase == "true"
       val balMap: Map[Int, Double] = result.winnersInfo match {
         case None       => Map.empty
         case Some(info) => info.winnersBalance.map(b => b.id -> b.amount.toDouble).toMap
@@ -70,7 +71,7 @@ object RLGymServer extends App {
       }
       val allRewards = (0 to 3).map { i =>
         val base  = balMap.getOrElse(i, 0.0)
-        val bonus = if (base > 0) winnerScores.get(i).map { s =>
+        val bonus = if (scoreBonus && base > 0) winnerScores.get(i).map { s =>
           if (s >= 8)      base * 1.0   // 8pt → 2× payout
           else if (s >= 7) base * 0.5   // 7pt → 1.5×
           else if (s >= 5) base * 0.2   // 5pt → 1.2×
