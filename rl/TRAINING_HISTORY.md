@@ -733,3 +733,60 @@ the improvement operator honest against a population instead of one partner.
 | Player | vs 3×FF | vs 3×Chicken |
 |--------|---------|--------------|
 | **`best_raw_net.pt` = `exit_sp1b_soft/exit_final.pt`** | **+$2.13 / 21.0%** | **+$10.10 / 24.8%** |
+
+### Mixed-opponent ExIt round — BREAKS THE PLATEAU (2026-07-09)  ⭐
+Hypothesis (from round-2 specialization): the loop plateaued because datagen
+seats 1-3 were all copies of the champion, so distillation learned to beat one
+partner, not to improve in general. Fix (exit_datagen3.py): seat 0 = champion
+(sp1b) + NN-guided search, but each game's opponents drawn from a POPULATION —
+55% mixed self-play (seats 1-3 each sampled from {sp1b, r3, r2, imitation}),
+30% FirstFelix tables, 15% Chicken tables.
+
+12k games (6 workers) then, after an OOM pause, resumed leaner (3 workers,
+fresh seeds) — ~8,700 combined games, 87 shards (exit_mix1 + exit_mix1_r2).
+Distilled `exit_mix_soft/exit_final.pt` (warm-start sp1b, soft-Q, 6 epochs).
+
+**Gates vs sp1b — ALL THREE POSITIVE (universal gain, unlike round 2):**
+| Gate | delta (D − sp1b) |
+|------|------------------|
+| head-to-head league (2000×2) | **+$2.01 ± 0.81** (~2.5σ) |
+| vs 3×FF (3000) | +$0.68 ± 0.65 (win 20.9→23.2%) |
+| vs 3×Chicken (3000) | +$0.52 ± 0.52 (win 24.7→26.5%) |
+
+Contrast round 2 (same-partner): league +1.28 but FF +0.24 / Chicken −0.64.
+Opponent diversity converted a specializing loop back into a generalizing one.
+**PROMOTED as new champion** → `rl/checkpoints/best_raw_net.pt`.
+
+NEW BEST (2026-07-09):
+| Player | vs 3×FF | vs 3×Chicken |
+|--------|---------|--------------|
+| **`exit_mix_soft/exit_final.pt` (= best_raw_net.pt)** | **+$3.38 / 23.2%** | **+$10.62 / 26.5%** |
+
+Next: another mixed-opponent round with the new champion added to the pool
+(keep diversifying), or pivot to deeper search (issue #13 belief-state
+determinization). Add an Elo ladder now that head-to-head is the live metric.
+
+**CAVEAT (transitivity check, same day):** D vs r3 head-to-head = −$0.29 ± 0.90
+(EVEN), despite sp1b>r3 (+1.13) and D>sp1b (+2.01). Intransitive — head-to-head
+is matchup-dependent here (D's pool/search centered on sp1b, giving an
+anti-sp1b edge). D's promotion stands on the FIXED anchors (FF +0.68, Chicken
++0.52, both positive) but the gain is MODEST, not the +2.01 league number.
+Two head-to-head misleads now (round-2 false positive, this r3 anomaly) →
+build an ELO LADDER (round-robin over {r3,sp1b,D,imitation}+FF+Chicken) BEFORE
+the next round; stop trusting single pairwise duels for the promote decision.
+
+### Elo ladder (#15) — post-r3 nets are a TIE and an intransitive cycle (2026-07-09)
+Built rl/elo_ladder.py: paired round-robin, money-scale least-squares rating,
+bootstrap CIs, explicit intransitivity residual. Over {r3, sp1b, D, imit},
+2000 games/pair:
+- Ratings: D +0.52 / r3 +0.08 / sp1b -0.20 / imit -0.39 — ALL CIs overlap (no
+  net separated at 95%).
+- **Intransitivity $0.65/game** (≈ the whole rating spread): cycle
+  sp1b>r3 (+0.53), D>sp1b (+1.68), r3>D (+0.56).
+- Anchor calibration (common seeds): vs FF r3 best / D worst; vs Chicken D best
+  / sp1b worst — all within ~$0.5.
+**Conclusion:** the r3→sp1b→D "climb" was pairwise-gate noise; on fixed
+benchmarks and by ladder rating the three are peers. Distillation-of-search has
+saturated. The ladder (rl/checkpoints/elo.md) is now the promotion gate. Next
+real lever = stronger teacher (belief-state determinization + IS-MCTS, #13),
+not more distill rounds.
