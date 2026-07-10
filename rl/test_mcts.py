@@ -239,6 +239,74 @@ def test_paired_policy(jar: str, device: str) -> None:
         client.close()
 
 
+def test_search_depth1_matches_flat(jar: str, nn_model: str) -> None:
+    print("\n[Test 8] search (depth-1) ≈ flat evaluate_batch")
+    if not nn_model or not Path(nn_model).exists():
+        check(False, f"skipped: no --nn-model (search needs -Drl.nnmodel); got {nn_model!r}")
+        return
+
+    from mcts import SearchPolicy  # noqa: F401  (import-smoke)
+
+    # Same opponent + same (nn) self-policy in both, so at max_depth=1 the tree
+    # only branches at the root and every deeper discard is the NN tail — exactly
+    # what evaluate_batch does with self_policy="nn". Root Q(a) should therefore
+    # match the flat mean_rewards[a] in expectation.
+    client = MCTSRolloutClient(jar_path=jar, rollout_opp="firstfelix", nn_model=nn_model,
+                               rollout_threads=3)
+    try:
+        state      = make_synthetic_state()
+        candidates = [0, 1, 5, 13, 9, 12]
+
+        # Flat: many worlds, our seat plays nn.
+        n_worlds = 400
+        flat = client.evaluate_batch(state, candidates, n_worlds, self_policy="nn")
+        flat_mean = flat.mean(axis=0)  # aligned to candidates
+
+        # Depth-1 tree, forced ~uniform root exploration (huge c_puct) so every
+        # candidate is visited enough for its Q=w/n to be an accurate estimate.
+        # This is the true equivalence the plan targets: root Q(a) == flat
+        # mean_rewards[a] in expectation, independent of the (possibly skewed)
+        # net prior. With a normal c_puct PUCT would instead concentrate on the
+        # prior-preferred move — correct behaviour, but not a Q-accuracy test.
+        sims = 1800
+        resp = client.search(state, candidates, sims, max_depth=1, n_parallel=3,
+                             rollout_tail="inf", rollout_opp="firstfelix",
+                             temperature=1.0, c_puct=1e6)
+        tiles  = [int(t) for t in resp["tiles"]]
+        visits = np.asarray(resp["visits"], dtype=np.float64)
+        qs     = np.asarray(resp["q"],      dtype=np.float64)
+        policy = np.asarray(resp["policy"], dtype=np.float64)
+
+        check(tiles == candidates,                       f"tiles echo candidates: {tiles}")
+        check(np.isfinite(qs).all() and np.isfinite(visits).all(), "q/visits finite")
+        check(int(visits.sum()) == sims,                 f"visits sum to sims: {int(visits.sum())}=={sims}")
+        check(abs(policy.sum() - 1.0) < 1e-6,            f"policy sums to 1: {policy.sum():.6f}")
+        check((visits > 0).all(),                        "every candidate explored under forced exploration")
+
+        print(f"          flat mean : " + ", ".join(f"{t}:{m:+.2f}" for t, m in zip(candidates, flat_mean)))
+        print(f"          tree q    : " + ", ".join(f"{t}:{q:+.2f}" for t, q in zip(tiles, qs)))
+        print(f"          visits    : " + ", ".join(f"{t}:{int(v)}" for t, v in zip(tiles, visits)))
+
+        # Per-tile Q should track flat means (same rollout, same policies).
+        tree_best = tiles[int(np.argmax(qs))]
+        flat_best = candidates[int(np.argmax(flat_mean))]
+        check(tree_best == flat_best,
+              f"tree argmax-Q ({tree_best}) == flat argmax-mean ({flat_best})")
+        corr = np.corrcoef(qs, flat_mean)[0, 1]
+        check(corr > 0.9, f"per-tile Q vs flat-mean correlation: {corr:.3f}")
+
+        # Sanity: with the default c_puct + Q-normalization, PUCT concentrates on
+        # a high-value move and the visit policy is peaked (not a hard equality,
+        # just that normalization keeps exploration from starving — reported).
+        resp2 = client.search(state, candidates, 600, max_depth=1, n_parallel=3,
+                              rollout_tail="inf", rollout_opp="firstfelix", c_puct=1.5)
+        v2 = np.asarray(resp2["visits"], dtype=np.float64)
+        print(f"          default c_puct visits: "
+              + ", ".join(f"{t}:{int(v)}" for t, v in zip(resp2["tiles"], v2)))
+    finally:
+        client.close()
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def parse_args() -> argparse.Namespace:
@@ -247,6 +315,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--java",       default="java", type=str)
     p.add_argument("--n-rollouts", default=5,      type=int)
     p.add_argument("--device",     default="cpu",  type=str)
+    p.add_argument("--nn-model",   default="rl/checkpoints/student/student48.onnx", type=str,
+                   help="student ONNX for the search test (-Drl.nnmodel)")
     return p.parse_args()
 
 
@@ -269,6 +339,7 @@ def main() -> None:
 
     test_evaluate_batch(args.jar)
     test_paired_policy(args.jar, args.device)
+    test_search_depth1_matches_flat(args.jar, args.nn_model)
     print("\nDone.")
 
 

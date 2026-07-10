@@ -148,6 +148,66 @@ class MCTSRolloutClient:
         resp = json.loads(line.strip())
         return np.asarray(resp["rewards"], dtype=np.float64)
 
+    def search(
+        self,
+        state: dict,
+        candidate_tiles: List[int],
+        sims: int,
+        c_puct: float = 1.5,
+        temperature: float = 1.0,
+        rollout_tail: str = "inf",
+        n_parallel: int = 1,
+        max_depth: int = 64,
+        rollout_opp: str = "firstfelix",
+        root_dirichlet_frac: float = 0.0,
+        root_dirichlet_alpha: float = 0.3,
+        seed: Optional[int] = None,
+    ) -> dict:
+        """
+        Run a determinized information-set MCTS (PIMC-UCT) rooted at `state`,
+        returning the root statistics. The tree branches on our discard
+        sequence; leaves are evaluated by playing to game end (rollout_tail
+        "inf") or by the net value head (rollout_tail "zero").
+
+        Returns
+        -------
+        dict with keys: tiles, visits, q, prior, value, policy — each list
+        aligned to `candidate_tiles` (policy = visits ** (1/temperature)).
+        """
+        cmd = {
+            "cmd":             "search",
+            "hand":            state["hand"],
+            "my_groups":       state.get("my_groups", {"pongs": [], "kongs": [], "chows": []}),
+            "opp_groups":      state.get("opp_groups", [{}, {}, {}]),
+            "discards":        state["discarded"],
+            "remaining":       state["remaining"],
+            "candidate_tiles": [int(t) for t in candidate_tiles],
+            "sims":            int(sims),
+            "c_puct":          float(c_puct),
+            "temperature":     float(temperature),
+            "rollout_tail":    rollout_tail,
+            "n_parallel":      int(n_parallel),
+            "max_depth":       int(max_depth),
+            "rollout_opp":     rollout_opp,
+            "root_dirichlet_frac":  float(root_dirichlet_frac),
+            "root_dirichlet_alpha": float(root_dirichlet_alpha),
+        }
+        if seed is not None:
+            cmd["seed"] = int(seed)
+        # Real discard history in rollout seat order (0 = us), same remap as
+        # evaluate_batch — NN rollout policies read it.
+        dbp = state.get("discarded_by_player")
+        if dbp is not None:
+            me = int(state["my_id"])
+            cmd["discards_by_player"] = [dbp[(me + i) % 4] for i in range(4)]
+        self._proc.stdin.write(json.dumps(cmd) + "\n")
+        self._proc.stdin.flush()
+        line = self._proc.stdout.readline()
+        if not line:
+            stderr = self._proc.stderr.read()
+            raise RuntimeError(f"MCTSRolloutServer closed unexpectedly.\nstderr:\n{stderr}")
+        return json.loads(line.strip())
+
     def evaluate_discard(self, state: dict, discard_tile: int) -> Tuple[float, float]:
         """
         Estimate the value of discarding `discard_tile` from `state`.
@@ -475,4 +535,148 @@ class PairedMCTSPolicy:
             "mean_gain": 0.0,
             **q_info,
         }
+
+
+# ── IS-MCTS tree-search policy improver ────────────────────────────────────────
+
+class SearchPolicy:
+    """
+    Information-set MCTS policy, a drop-in replacement for PairedMCTSPolicy.
+
+    Discard decisions run a real PUCT tree (MCTSRolloutClient.search) over the
+    top-k NN candidates and act on the visit-count policy π(a) ∝ N(a)^(1/τ).
+    Non-discard decisions use the NN argmax (as PairedMCTSPolicy does).
+
+    Training targets (info dict) are emitted in PairedMCTSPolicy's schema so the
+    existing datagen/distill pipeline needs no change (Phase 1):
+      - mean_diffs = centered log-visits  (so softmax(mean_d / τ_floor) ∝ N^(1/τ_floor))
+      - se_diffs   = const                (drives the per-sample τ to τ_floor)
+    The raw visits/q/prior/value are also attached for analysis and the future
+    outcome-value work.
+
+    Parameters mirror PairedMCTSPolicy plus the search knobs. `deterministic`
+    picks argmax-visits (eval); set False to sample from π (datagen exploration).
+    """
+
+    def __init__(
+        self,
+        net,
+        rollout_client: MCTSRolloutClient,
+        sims: int = 256,
+        top_k: int = 6,
+        c_puct: float = 1.5,
+        temperature: float = 1.0,
+        rollout_tail: str = "inf",
+        n_parallel: int = 1,
+        max_depth: int = 64,
+        rollout_opp: str = "firstfelix",
+        deterministic: bool = True,
+        dirichlet_frac: float = 0.0,
+        dirichlet_alpha: float = 0.3,
+        device: str = "cpu",
+    ) -> None:
+        self.net            = net
+        self.rollout_client = rollout_client
+        self.sims           = sims
+        self.top_k          = top_k
+        self.c_puct         = c_puct
+        self.temperature    = temperature
+        self.rollout_tail   = rollout_tail
+        self.n_parallel     = n_parallel
+        self.max_depth      = max_depth
+        self.rollout_opp    = rollout_opp
+        self.deterministic  = deterministic
+        self.dirichlet_frac = dirichlet_frac
+        self.dirichlet_alpha = dirichlet_alpha
+        self.device         = torch.device(device)
+        # Stats read by the eval harnesses.
+        self.n_discard_decisions = 0
+        self.n_switches          = 0
+
+    def _nn_logits(self, obs, decision, action_mask):
+        obs_t  = torch.tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
+        mask_t = (
+            torch.tensor(action_mask, dtype=torch.bool, device=self.device).unsqueeze(0)
+            if action_mask is not None else None
+        )
+        with torch.no_grad():
+            logits, value_t = self.net.forward(obs_t, decision, mask_t)
+        return logits.squeeze(0).cpu().numpy(), value_t.item()
+
+    def get_action(
+        self,
+        obs: np.ndarray,
+        state: dict,
+        decision: str,
+        context: dict,
+        action_mask: Optional[np.ndarray],
+    ) -> Tuple[int, dict]:
+        logits, _ = self._nn_logits(obs, decision, action_mask)
+        nn_action = int(np.argmax(logits))
+
+        if decision != "discard":
+            return nn_action, {"nn_action": nn_action, "switched": False}
+
+        valid_tiles = [
+            int(t)
+            for t in context.get("valid_tiles", [])
+            if action_mask is None or action_mask[int(t)]
+        ]
+        if len(valid_tiles) <= 1:
+            action = valid_tiles[0] if valid_tiles else nn_action
+            return action, {"nn_action": action, "switched": False}
+
+        self.n_discard_decisions += 1
+
+        # Candidate set: top-k valid tiles by NN logit, NN choice first.
+        order = sorted(valid_tiles, key=lambda t: -logits[t])
+        candidates = order[: self.top_k]
+        if nn_action in valid_tiles and nn_action not in candidates:
+            candidates = [nn_action] + candidates[:-1]
+        base_idx = candidates.index(nn_action) if nn_action in candidates else 0
+
+        resp = self.rollout_client.search(
+            state, candidates, self.sims,
+            c_puct=self.c_puct, temperature=self.temperature,
+            rollout_tail=self.rollout_tail, n_parallel=self.n_parallel,
+            max_depth=self.max_depth, rollout_opp=self.rollout_opp,
+            root_dirichlet_frac=self.dirichlet_frac,
+            root_dirichlet_alpha=self.dirichlet_alpha,
+        )
+        tiles  = [int(t) for t in resp["tiles"]]
+        visits = np.asarray(resp["visits"], dtype=np.float64)
+        qs     = np.asarray(resp["q"],      dtype=np.float64)
+        policy = np.asarray(resp["policy"], dtype=np.float64)
+
+        # Pick the action: argmax visits (eval) or sample from π (datagen).
+        if self.deterministic or policy.sum() <= 0:
+            pick = int(np.argmax(visits))
+        else:
+            pick = int(np.random.choice(len(tiles), p=policy / policy.sum()))
+        action = tiles[pick]
+
+        # Phase-1 targets in PairedMCTSPolicy's schema: centered log-visits play
+        # the role of paired ΔQ, a constant SE forces the distill τ to its floor,
+        # so softmax(mean_d / τ_floor) ∝ N(a)^(1/τ_floor) — the visit-count target.
+        log_v  = np.log(visits + 1.0)
+        mean_d = (log_v - log_v[base_idx]).tolist()
+        se_d   = [1.0] * len(tiles)
+
+        info = {
+            "nn_action":  nn_action,
+            "switched":   action != nn_action,
+            "mean_gain":  float(qs[pick] - qs[base_idx]),
+            "candidates": tiles,
+            "mean_diffs": mean_d,
+            "se_diffs":   se_d,
+            # Raw search stats for analysis / future value-target work.
+            "visits":     visits.tolist(),
+            "q":          qs.tolist(),
+            "prior":      [float(p) for p in resp["prior"]],
+            "value":      float(resp["value"]),
+            "policy":     policy.tolist(),
+        }
+        if action != nn_action:
+            self.n_switches += 1
+        return action, info
 

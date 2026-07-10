@@ -33,28 +33,38 @@ _W = {}
 
 
 def _worker_init(jar, checkpoint, nn_model, n_worlds, top_k, z, min_gain,
-                 a_self, a_opp, b_self, b_opp, threads, a_belief, b_belief):
+                 a_self, a_opp, b_self, b_opp, threads, a_belief, b_belief,
+                 a_search, b_search, sims, c_puct, max_depth, search_tail, n_parallel):
     import torch
     torch.set_num_threads(1)
     from env import MahjongEnv
     from model import MahjongAgent
-    from mcts import MCTSRolloutClient, PairedMCTSPolicy
+    from mcts import MCTSRolloutClient, PairedMCTSPolicy, SearchPolicy
 
     agent = MahjongAgent.load(checkpoint, device="cpu")
 
-    def make_policy(self_pol, opp_pol, belief):
+    def make_policy(self_pol, opp_pol, belief, search):
+        # IS-MCTS always needs the net loaded server-side; flat only when a seat
+        # uses the "nn" rollout policy.
+        needs_nn = search == "ismcts" or "nn" in (self_pol, opp_pol)
         client = MCTSRolloutClient(
             jar_path=jar, rollout_opp=opp_pol,
-            nn_model=nn_model if "nn" in (self_pol, opp_pol) else None,
+            nn_model=nn_model if needs_nn else None,
             belief_model=belief,
             rollout_threads=threads)
+        if search == "ismcts":
+            return SearchPolicy(
+                net=agent.net, rollout_client=client,
+                sims=sims, top_k=top_k, c_puct=c_puct, max_depth=max_depth,
+                rollout_tail=search_tail, n_parallel=n_parallel,
+                rollout_opp=opp_pol, deterministic=True, device="cpu")
         return PairedMCTSPolicy(
             net=agent.net, rollout_client=client,
             n_worlds=n_worlds, top_k=top_k, z_threshold=z,
             min_gain=min_gain, device="cpu", self_policy=self_pol)
 
-    _W["policies"] = {"A": make_policy(a_self, a_opp, a_belief),
-                      "B": make_policy(b_self, b_opp, b_belief)}
+    _W["policies"] = {"A": make_policy(a_self, a_opp, a_belief, a_search),
+                      "B": make_policy(b_self, b_opp, b_belief, b_search)}
     _W["env"] = MahjongEnv(jar, opponent="firstfelix", obs_version=3)
 
 
@@ -91,6 +101,15 @@ def main():
                    help="belief ONNX for arm A's determinization (default: uniform)")
     p.add_argument("--b-belief", default=None,
                    help="belief ONNX for arm B's determinization (default: uniform)")
+    p.add_argument("--a-search", default="flat", choices=["flat", "ismcts"],
+                   help="arm A search type (flat PIMC or IS-MCTS tree)")
+    p.add_argument("--b-search", default="flat", choices=["flat", "ismcts"],
+                   help="arm B search type; set 'ismcts' for the tree-vs-flat gate")
+    p.add_argument("--sims", type=int, default=256, help="IS-MCTS simulations/decision")
+    p.add_argument("--c-puct", type=float, default=1.5)
+    p.add_argument("--max-depth", type=int, default=64)
+    p.add_argument("--search-tail", default="inf", choices=["inf", "zero"])
+    p.add_argument("--n-parallel", type=int, default=3, help="concurrent IS-MCTS sims")
     p.add_argument("--n-games", type=int, default=400)
     p.add_argument("--n-workers", type=int, default=5)
     p.add_argument("--n-worlds", type=int, default=64)
@@ -109,7 +128,9 @@ def main():
         initargs=(args.jar, args.checkpoint, args.nn_model, args.n_worlds,
                   args.top_k, args.z_threshold, args.min_gain,
                   args.a_self, args.a_opp, args.b_self, args.b_opp,
-                  args.rollout_threads, args.a_belief, args.b_belief),
+                  args.rollout_threads, args.a_belief, args.b_belief,
+                  args.a_search, args.b_search, args.sims, args.c_puct,
+                  args.max_depth, args.search_tail, args.n_parallel),
     ) as pool:
         for res in pool.map(_play_seed, seeds, chunksize=2):
             results.append(res)
@@ -126,9 +147,9 @@ def main():
     a = np.array([r["A"] for r in results])
     b = np.array([r["B"] for r in results])
     d = b - a
-    print(f"\narm A ({args.a_self}/{args.a_opp}): {a.mean():+.3f}/game  "
+    print(f"\narm A [{args.a_search}] ({args.a_self}/{args.a_opp}): {a.mean():+.3f}/game  "
           f"win {np.mean(a > 0):.1%}")
-    print(f"arm B ({args.b_self}/{args.b_opp}): {b.mean():+.3f}/game  "
+    print(f"arm B [{args.b_search}] ({args.b_self}/{args.b_opp}): {b.mean():+.3f}/game  "
           f"win {np.mean(b > 0):.1%}")
     print(f"paired delta (B−A): {d.mean():+.3f} ± {d.std()/np.sqrt(len(d)):.3f}")
 

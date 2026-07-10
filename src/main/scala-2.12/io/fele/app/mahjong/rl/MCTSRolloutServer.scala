@@ -349,6 +349,77 @@ object MCTSRolloutServer extends App {
       beliefService.query(feat, avail)
     }.toArray
 
+  // ── Determinized information-set MCTS (the "search" command) ─────────────────
+
+  private def softmax34(logits: Array[Float]): Array[Float] = {
+    val mx  = logits.max
+    val exp = logits.map(l => math.exp(l - mx))
+    val sum = exp.sum
+    exp.map(e => (e / sum).toFloat)
+  }
+
+  /** Seat-0 terminal balance of a finished game (0.0 for a draw/no winner). */
+  private def seat0Balance(result: GameResult): Double =
+    result.winnersInfo
+      .flatMap(_.winnersBalance.find(_.id == 0).map(_.amount.toDouble))
+      .getOrElse(0.0)
+
+  private def backup(path: Seq[(SearchNode, Int)], value: Double, stats: MinMaxStats): Unit =
+    path.foreach { case (node, a) =>
+      node.synchronized {
+        val e = node.edgeOf(a)
+        e.n += 1
+        e.w += value
+        e.vloss = math.max(0, e.vloss - 1)
+        node.totalN += 1
+        stats.update(e.w / e.n)
+      }
+    }
+
+  /** Run one simulation and return (path, value) for backup by the caller. */
+  private def simulate(
+    st: ParsedState, root: SearchNode, candidates: List[Int],
+    beliefProbs: Array[Array[Float]], preDiscards: List[DiscardInfo],
+    oppPolicy: String, cPuct: Double, stats: MinMaxStats,
+    maxDepth: Int, rolloutTailZero: Boolean, seed: Long
+  ): (Seq[(SearchNode, Int)], Double) = {
+    val wr = new Random(seed)
+    val (oppDynamic, drawPile) =
+      if (beliefEnabled) determinizeBelief(st, st.actualRemaining, beliefProbs, wr)
+      else               determinizeUniform(st, st.actualRemaining, wr)
+
+    val rootTile = root.synchronized {
+      val t = root.puctSelect(candidates, cPuct, stats)
+      root.edgeOf(t).vloss += 1
+      t
+    }
+
+    val myDynamic = st.dynamicAfterDiscard(rootTile)
+    val handsOk = myDynamic.size + st.myGroups.size * 3 == 13 &&
+      (0 until 3).forall(i => oppDynamic(i).size + st.oppGroups(i).size * 3 == 13)
+
+    if (!handsOk) {
+      root.synchronized { val e = root.edgeOf(rootTile); e.vloss = math.max(0, e.vloss - 1) }
+      return (Nil, 0.0)
+    }
+
+    val us = new TreePlayer(0, myDynamic, st.myGroups, nnService, root, rootTile,
+      cPuct, stats, maxDepth, rolloutTailZero)
+    val opps = (0 until 3)
+      .map(i => makePlayer(oppPolicy, i + 1, oppDynamic(i), st.oppGroups(i))).toList
+    val drawer = new FixedDrawer(drawPile)
+    val state  = GameState(us :: opps, None, preDiscards, 0, drawer)
+    val flow   = new FlowImpl(state)
+
+    val value: Double =
+      try seat0Balance(flow.resume(Some(Tile.fromValue(rootTile))))
+      catch {
+        case LeafReached(v) => v.toDouble
+        case _: Throwable   => 0.0
+      }
+    (us.path.toList, value)
+  }
+
   // ── Main server loop ─────────────────────────────────────────────────────────
 
   while (true) {
@@ -461,6 +532,93 @@ object MCTSRolloutServer extends App {
           asInt(cmd("remaining")), asInt(cmd("my_id")),
           asInt(cmd("cur_player_id")), contextTile)
         println(write(Map("obs" -> obs.toList)))
+        System.out.flush()
+
+      // ── Information-set MCTS: a real PUCT tree over our discard sequence ─────
+      case "search" =>
+        val st          = parseState(cmd)
+        val preDiscards = parsePreDiscards(cmd)
+        val discByPlayer = parseDiscByPlayer(cmd)
+        val remaining    = asInt(cmd.getOrElse("remaining", st.actualRemaining))
+
+        // Root candidate discards: an explicit list, or all distinct tiles held.
+        val candidates: List[Int] = cmd.get("candidate_tiles") match {
+          case Some(raw) => asList(raw).map(asInt)
+          case None      => st.handCounts.zipWithIndex.filter(_._1 > 0).map(_._2)
+        }
+
+        val sims       = asInt(cmd.getOrElse("sims", 256))
+        val cPuct      = cmd.get("c_puct").map(_.toString.toDouble).getOrElse(1.5)
+        val tau        = cmd.get("temperature").map(_.toString.toDouble).getOrElse(1.0)
+        val maxDepth   = asInt(cmd.getOrElse("max_depth", 64))
+        val nParallel  = math.max(1, asInt(cmd.getOrElse("n_parallel", 1)))
+        val oppPolicy  = cmd.getOrElse("rollout_opp", "firstfelix").toString
+        val rolloutTailZero = cmd.getOrElse("rollout_tail", "inf").toString == "zero"
+        val dirFrac    = cmd.get("root_dirichlet_frac").map(_.toString.toDouble).getOrElse(0.0)
+        val dirAlpha   = cmd.get("root_dirichlet_alpha").map(_.toString.toDouble).getOrElse(0.3)
+
+        val beliefProbs =
+          if (beliefEnabled) beliefProbsPerOpp(st, discByPlayer, st.actualRemaining) else null
+
+        // Expand the root once from the pre-discard (14-tile) observation.
+        val root = new SearchNode()
+        val rootObs = V3Obs.encode(st.handCounts.toArray, st.myGroups, st.oppGroups,
+          discByPlayer, remaining, 0, 0, None)
+        val rootOut = nnService.query(rootObs)
+        root.expand(softmax34(rootOut.discard), rootOut.value)
+
+        val baseRng = cmd.get("seed").map(v => new Random(asInt(v).toLong)).getOrElse(rng)
+
+        // Optional AlphaZero root exploration noise (datagen only).
+        if (dirFrac > 0.0 && candidates.nonEmpty) {
+          val noise = Dirichlet.sample(candidates.size, dirAlpha, baseRng)
+          candidates.zipWithIndex.foreach { case (t, i) =>
+            root.priors(t) = ((1.0 - dirFrac) * root.priors(t) + dirFrac * noise(i)).toFloat
+          }
+        }
+
+        val seeds   = (0 until sims).map(_ => baseRng.nextLong())
+        val stats   = new MinMaxStats()
+
+        // Run sims in batches of nParallel on the shared rollout pool; virtual
+        // loss decorrelates concurrent descents. Backup is serialized per node.
+        seeds.grouped(nParallel).foreach { batch =>
+          val tasks = new java.util.ArrayList[java.util.concurrent.Callable[(Seq[(SearchNode, Int)], Double)]]()
+          batch.foreach { s =>
+            tasks.add(new java.util.concurrent.Callable[(Seq[(SearchNode, Int)], Double)] {
+              override def call(): (Seq[(SearchNode, Int)], Double) =
+                simulate(st, root, candidates, beliefProbs, preDiscards, oppPolicy,
+                  cPuct, stats, maxDepth, rolloutTailZero, s)
+            })
+          }
+          val futures = rolloutPool.invokeAll(tasks)
+          (0 until batch.size).foreach { i =>
+            val (path, value) = futures.get(i).get()
+            backup(path, value, stats)
+          }
+        }
+
+        // Read the root edges over the candidate set for the response.
+        val visits = candidates.map(t => root.children.get(t).map(_.n).getOrElse(0))
+        val qs     = candidates.map { t =>
+          root.children.get(t) match {
+            case Some(e) if e.n > 0 => e.w / e.n
+            case _                  => 0.0
+          }
+        }
+        val priors = candidates.map(t => root.priors(t).toDouble)
+        val powed  = visits.map(v => math.pow(v.toDouble, 1.0 / math.max(1e-6, tau)))
+        val pSum   = powed.sum
+        val policy = if (pSum > 0) powed.map(_ / pSum) else visits.map(_ => 1.0 / candidates.size)
+
+        println(write(Map(
+          "tiles"  -> candidates,
+          "visits" -> visits,
+          "q"      -> qs,
+          "prior"  -> priors,
+          "value"  -> root.value.toDouble,
+          "policy" -> policy
+        )))
         System.out.flush()
 
       case _ => // ignore unknown commands
