@@ -567,6 +567,13 @@ object MCTSRolloutServer extends App {
         val rootOut = nnService.query(rootObs)
         root.expand(softmax34(rootOut.discard), rootOut.value)
 
+        // Override root priors with the decision net's prior over candidates (the
+        // student prior loaded here is only for the rollout tail / deeper nodes).
+        cmd.get("candidate_priors").foreach { raw =>
+          val cp = asList(raw).map(_.toString.toDouble)
+          candidates.zip(cp).foreach { case (t, p) => root.priors(t) = p.toFloat }
+        }
+
         val baseRng = cmd.get("seed").map(v => new Random(asInt(v).toLong)).getOrElse(rng)
 
         // Optional AlphaZero root exploration noise (datagen only).

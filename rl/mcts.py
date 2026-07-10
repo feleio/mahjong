@@ -161,6 +161,7 @@ class MCTSRolloutClient:
         rollout_opp: str = "firstfelix",
         root_dirichlet_frac: float = 0.0,
         root_dirichlet_alpha: float = 0.3,
+        candidate_priors: Optional[List[float]] = None,
         seed: Optional[int] = None,
     ) -> dict:
         """
@@ -192,6 +193,11 @@ class MCTSRolloutClient:
             "root_dirichlet_frac":  float(root_dirichlet_frac),
             "root_dirichlet_alpha": float(root_dirichlet_alpha),
         }
+        if candidate_priors is not None:
+            # Root PUCT prior over the candidates from the *decision* net, so the
+            # tree searches around the strong net's beliefs rather than the
+            # student rollout net's (which the server loads for the tail).
+            cmd["candidate_priors"] = [float(p) for p in candidate_priors]
         if seed is not None:
             cmd["seed"] = int(seed)
         # Real discard history in rollout seat order (0 = us), same remap as
@@ -571,6 +577,7 @@ class SearchPolicy:
         max_depth: int = 64,
         rollout_opp: str = "firstfelix",
         deterministic: bool = True,
+        switch_margin: float = 0.5,
         dirichlet_frac: float = 0.0,
         dirichlet_alpha: float = 0.3,
         device: str = "cpu",
@@ -586,6 +593,7 @@ class SearchPolicy:
         self.max_depth      = max_depth
         self.rollout_opp    = rollout_opp
         self.deterministic  = deterministic
+        self.switch_margin  = switch_margin
         self.dirichlet_frac = dirichlet_frac
         self.dirichlet_alpha = dirichlet_alpha
         self.device         = torch.device(device)
@@ -635,6 +643,13 @@ class SearchPolicy:
             candidates = [nn_action] + candidates[:-1]
         base_idx = candidates.index(nn_action) if nn_action in candidates else 0
 
+        # Root PUCT prior from THIS net (the strong decision net), so the tree
+        # searches around its beliefs — not the student rollout net's.
+        cand_logits = np.array([logits[t] for t in candidates], dtype=np.float64)
+        cand_logits -= cand_logits.max()
+        cand_priors = np.exp(cand_logits)
+        cand_priors /= cand_priors.sum()
+
         resp = self.rollout_client.search(
             state, candidates, self.sims,
             c_puct=self.c_puct, temperature=self.temperature,
@@ -642,17 +657,27 @@ class SearchPolicy:
             max_depth=self.max_depth, rollout_opp=self.rollout_opp,
             root_dirichlet_frac=self.dirichlet_frac,
             root_dirichlet_alpha=self.dirichlet_alpha,
+            candidate_priors=cand_priors.tolist(),
         )
         tiles  = [int(t) for t in resp["tiles"]]
         visits = np.asarray(resp["visits"], dtype=np.float64)
         qs     = np.asarray(resp["q"],      dtype=np.float64)
         policy = np.asarray(resp["policy"], dtype=np.float64)
 
-        # Pick the action: argmax visits (eval) or sample from π (datagen).
-        if self.deterministic or policy.sum() <= 0:
-            pick = int(np.argmax(visits))
-        else:
+        if not self.deterministic and policy.sum() > 0:
+            # Datagen: sample from the visit policy for exploration.
             pick = int(np.random.choice(len(tiles), p=policy / policy.sum()))
+        else:
+            # Eval: conservative override — keep the net's move unless another
+            # well-visited candidate's tree-Q beats it by a clear margin (mirrors
+            # PairedMCTSPolicy's significance gate, using lookahead-backed Q). Raw
+            # argmax-visits over noisy money Q makes too many bad switches.
+            min_v = max(4.0, self.sims / (3.0 * len(tiles)))
+            elig = [i for i in range(len(tiles)) if visits[i] >= min_v]
+            if base_idx not in elig:
+                elig.append(base_idx)
+            best_i = max(elig, key=lambda i: qs[i])
+            pick = best_i if (qs[best_i] - qs[base_idx] > self.switch_margin) else base_idx
         action = tiles[pick]
 
         # Phase-1 targets in PairedMCTSPolicy's schema: centered log-visits play
