@@ -76,12 +76,17 @@ class MCTSRolloutClient:
         java_bin: str = "java",
         nn_model: Optional[str] = None,
         rollout_threads: int = 1,
+        belief_model: Optional[str] = None,
     ) -> None:
         self.n_rollouts  = n_rollouts
         self.rollout_opp = rollout_opp
         extra = []
         if nn_model is not None:
             extra.append(f"-Drl.nnmodel={nn_model}")
+        if belief_model is not None:
+            # Opt in to belief-weighted opponent-hand determinization; without
+            # this flag the server falls back to the uniform shuffle-and-deal.
+            extra.append(f"-Drl.belief={belief_model}")
         if rollout_threads > 1:
             extra.append(f"-Drl.rolloutThreads={rollout_threads}")
         self._proc = subprocess.Popen(

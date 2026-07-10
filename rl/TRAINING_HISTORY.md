@@ -790,3 +790,56 @@ benchmarks and by ladder rating the three are peers. Distillation-of-search has
 saturated. The ladder (rl/checkpoints/elo.md) is now the promotion gate. Next
 real lever = stronger teacher (belief-state determinization + IS-MCTS, #13),
 not more distill rounds.
+
+### Belief-state determinization (#13 lever 1) — GO signal (2026-07-09)
+Started the "stronger teacher" work. The search deals opponents' hidden tiles
+UNIFORMLY from the unseen pool; this tests whether a learned opponent model
+does better.
+- `BeliefDataGen.scala`: GameLogger hooks every discard, dumps (player's public
+  trail: own discards/melds/hand-size/wall → their TRUE 13-tile hand). 15k FF
+  games → 1.22M rows (`rl/data/belief_ff.jsonl`).
+- `belief_train.py`: small MLP (public trail → per-tile hold prob), vs the
+  uniform baseline the search uses today.
+
+**Result:** model recall@6 **55.3% vs uniform 24.1%** (+31pts), recall@10
+67.4% vs 31.1%, CE 2.836 vs 3.469. Opponent hands are strongly predictable from
+public discards — determinization is throwing away real signal. **GO to build
+belief-weighted world sampling into MCTSRolloutServer**, then A/B (belief vs
+uniform determinization) on net+search, then distil & ladder. (Necessary but
+not sufficient: payoff depends on whether better worlds change the search's
+picks and distil into a stronger net.)
+
+### Belief determinization wired into the search (#17) — built, A/B pending (2026-07-09)
+Implemented the belief-weighted world sampling (issue #17, lever 1 of #13):
+- `export_belief_onnx.py`: `ff.pt` → `rl/checkpoints/belief/ff.onnx`, graph
+  `feat(138)+avail(34)→probs(34)` with the avail mask baked in (parity 1.9e-6,
+  ~0.02ms/call).
+- `MCTSRolloutServer.scala`: opt-in `-Drl.belief=<onnx>`. `BeliefService` loads
+  the model; `beliefProbsPerOpp` builds each opponent's public-trail features
+  EXACTLY as `belief_train.load` (disc/4, meld planes, hand-size/13, wall/136;
+  avail = clip(4−disc−3·pong−4·kong−chow,0,4)) and queries once per decision
+  (fixed across worlds). `determinizeBelief` samples each opponent's hidden
+  tiles WITHOUT replacement from the unseen pool, weighting each type by
+  belief·copies-left; leftover → draw pile. Uniform stays the default/fallback;
+  determinization is computed once per world so CRN (paired candidates) holds.
+- Python: `MCTSRolloutClient(belief_model=…)`; `eval_mcts_ab.py --a-belief/--b-belief`.
+- Verified: `sbt assembly` clean; `test_mcts.py` (uniform path) all-pass; 8-game
+  A/B (FF/FF, belief arm B) runs end-to-end and arm B's discards diverge from
+  arm A → belief genuinely changes the search.
+
+**A/B GATE (FF/FF, 64 worlds, uniform vs belief determinization):**
+| batch | n | delta B−A |
+|-------|---|-----------|
+| run 1 | 400 | +2.49 ± 1.56 |
+| run 2 | 600 | +0.62 ± 1.21 |
+| **pooled** | **1000** | **+1.37 ± 0.96 (1.43σ), 95% CI [−0.50, +3.24]** |
+
+**VERDICT: gate NOT cleared.** The bigger second batch regressed the delta from
++2.49 → pooled +1.37/game; the CI still includes zero at 1000 paired games. The
+belief model reads hands far better (recall@6 55% vs 24%) but that converts to
+only a small, marginal money gain in the FF/FF search — the "necessary but not
+sufficient" caveat. Reaching 2σ at this effect needs ~1970 games (≈2× more
+compute) and would repeat the #15 mistake of promoting on noisy money numbers.
+**Did NOT proceed to ExIt-regen/distil/ladder.** Machinery (`-Drl.belief`,
+`ff.onnx`, A/B `--*-belief`) is committed and available if a future stronger
+belief model or a defense-specific test revives the lever.

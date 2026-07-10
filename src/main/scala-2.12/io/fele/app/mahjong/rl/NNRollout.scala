@@ -200,6 +200,35 @@ class OnnxPolicyService(modelPath: String, maxBatch: Int = 256) {
   }
 }
 
+/**
+ * Opponent hand-belief model (see rl/belief_train.py / export_belief_onnx.py).
+ *
+ * Given an opponent's public trail it returns a 34-length probability
+ * distribution over the tile types they are likely still holding. The search
+ * uses these to weight determinization of hidden hands, replacing the uniform
+ * shuffle-and-deal. Inference is cheap (~0.02ms) and each opponent's belief is
+ * fixed for a decision, so it is queried once per opponent per batch.
+ */
+class BeliefService(modelPath: String) {
+  private val env = OrtEnvironment.getEnvironment
+  private val opts = new OrtSession.SessionOptions()
+  opts.setIntraOpNumThreads(1)
+  private val session = env.createSession(modelPath, opts)
+
+  /** feat: 138 public-trail features, avail: 34 holdable-copy counts → 34 probs. */
+  def query(feat: Array[Float], avail: Array[Float]): Array[Float] = synchronized {
+    val ft = OnnxTensor.createTensor(
+      env, java.nio.FloatBuffer.wrap(feat), Array(1L, feat.length.toLong))
+    val at = OnnxTensor.createTensor(
+      env, java.nio.FloatBuffer.wrap(avail), Array(1L, avail.length.toLong))
+    val inputs = new java.util.HashMap[String, OnnxTensor]()
+    inputs.put("feat", ft); inputs.put("avail", at)
+    val out = session.run(inputs)
+    try out.get(0).getValue.asInstanceOf[Array[Array[Float]]](0).clone()
+    finally { out.close(); ft.close(); at.close() }
+  }
+}
+
 /** Rollout player driven by greedy masked argmax over the network heads. */
 class NNPlayer(id: Int, tiles: List[Tile], tileGroups: List[TileGroup],
                svc: OnnxPolicyService)(implicit c: Config)
