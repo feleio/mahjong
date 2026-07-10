@@ -33,7 +33,7 @@ _W = {}
 
 
 def _worker_init(jar, checkpoint, nn_model, n_worlds, top_k, z, min_gain,
-                 a_self, a_opp, b_self, b_opp, threads):
+                 a_self, a_opp, b_self, b_opp, threads, a_belief, b_belief):
     import torch
     torch.set_num_threads(1)
     from env import MahjongEnv
@@ -42,18 +42,19 @@ def _worker_init(jar, checkpoint, nn_model, n_worlds, top_k, z, min_gain,
 
     agent = MahjongAgent.load(checkpoint, device="cpu")
 
-    def make_policy(self_pol, opp_pol):
+    def make_policy(self_pol, opp_pol, belief):
         client = MCTSRolloutClient(
             jar_path=jar, rollout_opp=opp_pol,
             nn_model=nn_model if "nn" in (self_pol, opp_pol) else None,
+            belief_model=belief,
             rollout_threads=threads)
         return PairedMCTSPolicy(
             net=agent.net, rollout_client=client,
             n_worlds=n_worlds, top_k=top_k, z_threshold=z,
             min_gain=min_gain, device="cpu", self_policy=self_pol)
 
-    _W["policies"] = {"A": make_policy(a_self, a_opp),
-                      "B": make_policy(b_self, b_opp)}
+    _W["policies"] = {"A": make_policy(a_self, a_opp, a_belief),
+                      "B": make_policy(b_self, b_opp, b_belief)}
     _W["env"] = MahjongEnv(jar, opponent="firstfelix", obs_version=3)
 
 
@@ -86,6 +87,10 @@ def main():
     p.add_argument("--a-opp", default="firstfelix")
     p.add_argument("--b-self", default="nn")
     p.add_argument("--b-opp", default="firstfelix")
+    p.add_argument("--a-belief", default=None,
+                   help="belief ONNX for arm A's determinization (default: uniform)")
+    p.add_argument("--b-belief", default=None,
+                   help="belief ONNX for arm B's determinization (default: uniform)")
     p.add_argument("--n-games", type=int, default=400)
     p.add_argument("--n-workers", type=int, default=5)
     p.add_argument("--n-worlds", type=int, default=64)
@@ -104,7 +109,7 @@ def main():
         initargs=(args.jar, args.checkpoint, args.nn_model, args.n_worlds,
                   args.top_k, args.z_threshold, args.min_gain,
                   args.a_self, args.a_opp, args.b_self, args.b_opp,
-                  args.rollout_threads),
+                  args.rollout_threads, args.a_belief, args.b_belief),
     ) as pool:
         for res in pool.map(_play_seed, seeds, chunksize=2):
             results.append(res)

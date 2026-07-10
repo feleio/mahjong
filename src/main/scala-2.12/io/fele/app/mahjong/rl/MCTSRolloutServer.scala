@@ -50,6 +50,13 @@ object MCTSRolloutServer extends App {
     new OnnxPolicyService(path)
   }
 
+  // Opponent hand-belief model (opt-in via -Drl.belief=<path.onnx>). When set,
+  // opponents' hidden hands are determinized by belief-weighted sampling from
+  // the unseen pool instead of a uniform shuffle. Uniform stays the fallback.
+  private val beliefPath = System.getProperty("rl.belief")
+  private lazy val beliefService: BeliefService = new BeliefService(beliefPath)
+  private def beliefEnabled: Boolean = beliefPath != null
+
   // Parallel world evaluation (-Drl.rolloutThreads=N)
   private lazy val rolloutPool = java.util.concurrent.Executors.newFixedThreadPool(
     Integer.getInteger("rl.rolloutThreads", 1))
@@ -113,29 +120,82 @@ object MCTSRolloutServer extends App {
     case _            => new Chicken(seat, dyn, grps)
   }
 
-  private def runRollout(
-    myDynamic:   List[Tile],
-    myGroups:    List[TileGroup],
-    oppGroups:   List[List[TileGroup]],  // 3 opponents (relative seats 1-3)
-    discardTile: Tile,
-    unknown:     Seq[Tile],              // shuffled pool to split
-    remaining:   Int,                   // tiles to assign to draw pile
-    oppPolicy:   String,                // "chicken" | "firstfelix" | "nn"
-    selfPolicy:  String,                // "chicken" | "firstfelix" | "nn"
-    preDiscards: List[DiscardInfo] = Nil // real discard history (NN policies read it)
-  ): Double = {
-
-    // --- Distribute unknown tiles ---
-    // First `remaining` tiles → draw pile; rest → opponents' dynamic hands
-    val drawPile  = unknown.take(remaining)
-    var oppHidden = unknown.drop(remaining).toList
-
-    val oppDynamic: List[List[Tile]] = oppGroups.map { grps =>
+  /** Uniform determinization: split a shuffled unseen pool into draw pile +
+    * opponents' hidden hands (the search's default behaviour). */
+  private def determinizeUniform(
+    st: ParsedState, remaining: Int, rng: Random
+  ): (List[List[Tile]], Seq[Tile]) = {
+    val shuffled  = rng.shuffle(st.unknownBase)
+    val drawPile  = shuffled.take(remaining)
+    var oppHidden = shuffled.drop(remaining).toList
+    val oppDynamic = st.oppGroups.map { grps =>
       val nDynamic = Math.max(0, 13 - 3 * grps.size)
       val chunk    = oppHidden.take(nDynamic)
       oppHidden    = oppHidden.drop(nDynamic)
       chunk
     }
+    (oppDynamic, drawPile)
+  }
+
+  /** Belief-weighted determinization: for each opponent, sample their hidden
+    * tiles from the unseen pool WITHOUT replacement, weighting each remaining
+    * tile type by beliefProbs(i)(type) × copies-left. Leftover pool → draw pile. */
+  private def determinizeBelief(
+    st: ParsedState, remaining: Int, beliefProbs: Array[Array[Float]], rng: Random
+  ): (List[List[Tile]], Seq[Tile]) = {
+    val pool = Array.fill[Int](34)(0)
+    st.unknownBase.foreach(t => pool(t.toTileValue) += 1)
+
+    val oppDynamic = st.oppGroups.zipWithIndex.map { case (grps, i) =>
+      val nDynamic = Math.max(0, 13 - 3 * grps.size)
+      val probs    = beliefProbs(i)
+      val buf      = new scala.collection.mutable.ListBuffer[Tile]
+      var drawn    = 0
+      while (drawn < nDynamic) {
+        var total = 0.0
+        var t = 0
+        val w = new Array[Double](34)
+        while (t < 34) {
+          w(t)   = pool(t).toDouble * math.max(1e-6, probs(t).toDouble)
+          total += w(t)
+          t += 1
+        }
+        if (total <= 0.0) drawn = nDynamic          // pool exhausted; bail out
+        else {
+          var r = rng.nextDouble() * total
+          var chosen = -1
+          t = 0
+          while (t < 34 && chosen < 0) {
+            r -= w(t)
+            if (r <= 0.0 && pool(t) > 0) chosen = t
+            t += 1
+          }
+          if (chosen < 0) {                           // numerical guard: last non-empty
+            t = 33; while (t >= 0 && chosen < 0) { if (pool(t) > 0) chosen = t; t -= 1 }
+          }
+          pool(chosen) -= 1
+          buf += Tile.fromValue(chosen)
+          drawn += 1
+        }
+      }
+      buf.toList
+    }
+
+    val leftover = (0 until 34).flatMap(id => List.fill(pool(id))(Tile.fromValue(id)))
+    (oppDynamic, rng.shuffle(leftover))
+  }
+
+  private def runRollout(
+    myDynamic:   List[Tile],
+    myGroups:    List[TileGroup],
+    oppGroups:   List[List[TileGroup]],  // 3 opponents (relative seats 1-3)
+    discardTile: Tile,
+    oppDynamic:  List[List[Tile]],       // determinized opponent hidden hands
+    drawPile:    Seq[Tile],              // determinized draw pile
+    oppPolicy:   String,                // "chicken" | "firstfelix" | "nn"
+    selfPolicy:  String,                // "chicken" | "firstfelix" | "nn"
+    preDiscards: List[DiscardInfo] = Nil // real discard history (NN policies read it)
+  ): Double = {
 
     // Verify hand sizes are valid; skip rollout if not
     val handsOk = (0 until 3).forall { i =>
@@ -236,6 +296,59 @@ object MCTSRolloutServer extends App {
         }
     }
 
+  /** Raw 4×34 per-player discard counts in rollout seat order (0 = us). */
+  private def parseDiscByPlayer(cmd: Map[String, Any]): Array[Array[Int]] =
+    cmd.get("discards_by_player") match {
+      case Some(raw) => asList(raw).map(row => asList(row).map(asInt).toArray).toArray
+      case None      => Array.fill(4)(new Array[Int](34))
+    }
+
+  /** 0/1 meld planes for one opponent's fixed groups (matches BeliefDataGen). */
+  private def meldPlanes(groups: List[TileGroup]): (Array[Float], Array[Float], Array[Float]) = {
+    val pong = new Array[Float](34); val kong = new Array[Float](34); val chow = new Array[Float](34)
+    groups.foreach {
+      case PongGroup(t)  => pong(t.toTileValue) = 1f
+      case KongGroup(t)  => kong(t.toTileValue) = 1f
+      case ChowGroup(ts) => ts.foreach(t => chow(t.toTileValue) = 1f)
+    }
+    (pong, kong, chow)
+  }
+
+  /** Per-opponent belief distribution over held tile types, computed once for a
+    * decision (the public trail is fixed across worlds). Features/masking mirror
+    * belief_train.load exactly: feat = concat(disc/4, pong, kong, chow,
+    * [hand_size/13, remaining/136]); avail = clip(4 - disc - 3*pong - 4*kong - chow, 0, 4).
+    * `discByPlayer` is 4×34 in rollout seat order (0 = us, 1-3 = opp_groups order). */
+  private def beliefProbsPerOpp(
+    st: ParsedState, discByPlayer: Array[Array[Int]], remaining: Int
+  ): Array[Array[Float]] =
+    st.oppGroups.zipWithIndex.map { case (grps, i) =>
+      val disc = if (i + 1 < discByPlayer.length) discByPlayer(i + 1) else new Array[Int](34)
+      val (pong, kong, chow) = meldPlanes(grps)
+      val handSize = Math.max(0, 13 - 3 * grps.size)
+
+      val feat = new Array[Float](138)
+      var t = 0
+      while (t < 34) {
+        feat(t)        = disc(t) / 4f
+        feat(34 + t)   = pong(t)
+        feat(68 + t)   = kong(t)
+        feat(102 + t)  = chow(t)
+        t += 1
+      }
+      feat(136) = handSize / 13f
+      feat(137) = remaining / 136f
+
+      val avail = new Array[Float](34)
+      t = 0
+      while (t < 34) {
+        val a = 4f - disc(t) - 3f * pong(t) - 4f * kong(t) - chow(t)
+        avail(t) = math.max(0f, math.min(4f, a))
+        t += 1
+      }
+      beliefService.query(feat, avail)
+    }.toArray
+
   // ── Main server loop ─────────────────────────────────────────────────────────
 
   while (true) {
@@ -255,10 +368,15 @@ object MCTSRolloutServer extends App {
         val discardTile = Tile.fromValue(discardTileId)
         val myDynamic   = st.dynamicAfterDiscard(discardTileId)
 
+        val beliefProbs =
+          if (beliefEnabled) beliefProbsPerOpp(st, parseDiscByPlayer(cmd), st.actualRemaining)
+          else null
         val rewards = (0 until nRollouts).map { _ =>
-          val shuffled = rng.shuffle(st.unknownBase)
-          runRollout(myDynamic, st.myGroups, st.oppGroups, discardTile, shuffled,
-                     st.actualRemaining, oppPolicy, selfPolicy, preDiscards)
+          val (oppDynamic, drawPile) =
+            if (beliefEnabled) determinizeBelief(st, st.actualRemaining, beliefProbs, rng)
+            else determinizeUniform(st, st.actualRemaining, rng)
+          runRollout(myDynamic, st.myGroups, st.oppGroups, discardTile, oppDynamic, drawPile,
+                     oppPolicy, selfPolicy, preDiscards)
         }.toList
 
         val n    = rewards.size.toDouble
@@ -290,15 +408,25 @@ object MCTSRolloutServer extends App {
         // rewards(k)(c) = reward of candidate c in world k.
         // Worlds run in parallel (-Drl.rolloutThreads=N); the shuffles are
         // drawn sequentially up front so results don't depend on scheduling.
+        // Belief distributions are fixed for this decision (public trail doesn't
+        // vary across worlds) → compute once, reuse in every world's sampling.
+        val beliefProbs =
+          if (beliefEnabled) beliefProbsPerOpp(st, parseDiscByPlayer(cmd), st.actualRemaining)
+          else null
+
         val worldSeeds = (0 until nWorlds).map(_ => rng.nextLong())
         val tasks = new java.util.ArrayList[java.util.concurrent.Callable[List[Double]]]()
         worldSeeds.foreach { seed =>
           tasks.add(new java.util.concurrent.Callable[List[Double]] {
             override def call(): List[Double] = {
-              val shuffled = new Random(seed).shuffle(st.unknownBase)
+              // One determinization per world, shared by all candidates (CRN).
+              val wr = new Random(seed)
+              val (oppDynamic, drawPile) =
+                if (beliefEnabled) determinizeBelief(st, st.actualRemaining, beliefProbs, wr)
+                else determinizeUniform(st, st.actualRemaining, wr)
               candTiles.zip(candDynamic).map { case (tile, dyn) =>
-                runRollout(dyn, st.myGroups, st.oppGroups, tile, shuffled,
-                           st.actualRemaining, oppPolicy, selfPolicy, preDiscards)
+                runRollout(dyn, st.myGroups, st.oppGroups, tile, oppDynamic, drawPile,
+                           oppPolicy, selfPolicy, preDiscards)
               }
             }
           })
