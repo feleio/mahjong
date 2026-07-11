@@ -93,6 +93,9 @@ class RLPlayer(id: Int, tiles: List[Tile],
       "opp_groups"          -> curState.otherInfos.map(info => tileGroupsToMap(info.tileGroups)),
       "discarded"           -> discardCounts.toList,
       "discarded_by_player" -> perPlayerDiscards.map(_.toList).toList,
+      // chronological [playerId, tileValue] pairs, oldest first (curState.discards
+      // is most-recent-first) — the discard-ORDER signal for obs v4 (issue #21)
+      "discard_seq"         -> curState.discards.reverse.map(d => List(d.playerId, d.tile.toTileValue)),
       "remaining"           -> curState.remainTileNum,
       "my_id"               -> id,
       "cur_player_id"       -> curState.curPlayerId

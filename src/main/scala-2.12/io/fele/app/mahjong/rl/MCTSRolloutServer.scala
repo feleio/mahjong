@@ -550,6 +550,26 @@ object MCTSRolloutServer extends App {
         println(write(Map("obs" -> obs.toList)))
         System.out.flush()
 
+      // ── Parity test: v4 = v3 + discard-order planes (issue #21) ─────────────
+      case "encode_v4" =>
+        val handCounts = asList(cmd("hand")).map(asInt).toArray
+        val myGroups   = parseGroups(cmd("my_groups").asInstanceOf[Map[String, Any]])
+        val oppGroups  = asList(cmd("opp_groups"))
+          .map(g => parseGroups(g.asInstanceOf[Map[String, Any]]))
+        val discByPlayer = asList(cmd("discarded_by_player"))
+          .map(row => asList(row).map(asInt).toArray).toArray
+        val contextTile = cmd.get("context_tile").map(asInt)
+        val discardSeq = asList(cmd.getOrElse("discard_seq", List.empty[Any])).map { row =>
+          val pair = asList(row).map(asInt)
+          (pair(0), pair(1))
+        }
+        val obs = V4Obs.encode(
+          handCounts, myGroups, oppGroups, discByPlayer,
+          asInt(cmd("remaining")), asInt(cmd("my_id")),
+          asInt(cmd("cur_player_id")), contextTile, discardSeq)
+        println(write(Map("obs" -> obs.toList)))
+        System.out.flush()
+
       // ── Information-set MCTS: a real PUCT tree over our discard sequence ─────
       case "search" =>
         val st          = parseState(cmd)

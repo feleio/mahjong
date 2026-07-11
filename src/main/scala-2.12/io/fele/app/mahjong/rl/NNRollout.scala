@@ -136,6 +136,93 @@ object V3Obs {
   }
 }
 
+/**
+ * V4Obs — v3 plus discard-ORDER planes (issue #21, #13 lever 3). v3 feeds
+ * per-player discard counts only; the sequence and timing of discards is the
+ * primary danger read in mahjong, and the tenpai/wait auxiliary heads need it.
+ *
+ * Appended after the 759 v3 dims, all indexed by ABSOLUTE seat id like the
+ * v3 discard planes:
+ *
+ *   recency  [4][34] — DECAY^age of each player's LAST discard of each tile,
+ *                      age in global discard events (0 = most recent overall);
+ *                      0 if that player never discarded that tile
+ *   last-K [4][K][34] — one-hot of each player's k-th most recent discard
+ *                      (k = 0 newest); all-zero rows once their history is
+ *                      shorter than K
+ *   count      [4]   — discards made by each player / 21, clipped to 1
+ *
+ * Decay powers are built by repeated float32 multiplication (NOT math.pow) so
+ * Python and Scala are bit-exact — libm pow may differ across runtimes.
+ * MUST stay consistent with encode_state(version=4) (see encode_v4 parity
+ * command / test_v4obs.py).
+ */
+object V4Obs {
+  val K = 4
+  val DECAY = 0.9f
+  val MAX_PLAYER_DISCARDS = 21f
+  val DIM: Int = V3Obs.DIM + 34 * 4 + 34 * 4 * K + 4   // = 1443
+
+  /** discardSeq: chronological (playerId, tileValue) pairs, OLDEST first. */
+  def encode(handCounts: Array[Int],
+             myGroups: List[TileGroup],
+             oppGroups: List[List[TileGroup]],
+             discByPlayer: Array[Array[Int]],
+             remaining: Int,
+             myId: Int,
+             curPlayerId: Int,
+             contextTile: Option[Int],
+             discardSeq: Seq[(Int, Int)]): Array[Float] = {
+    val obs = new Array[Float](DIM)
+    System.arraycopy(
+      V3Obs.encode(handCounts, myGroups, oppGroups, discByPlayer,
+                   remaining, myId, curPlayerId, contextTile),
+      0, obs, 0, V3Obs.DIM)
+    var ptr = V3Obs.DIM
+
+    val n = discardSeq.length
+    val decayPow = new Array[Float](math.max(n, 1))
+    decayPow(0) = 1f
+    (1 until n).foreach(a => decayPow(a) = decayPow(a - 1) * DECAY)
+
+    // recency: chronological iteration, later (more recent) writes overwrite
+    discardSeq.zipWithIndex.foreach { case ((p, t), i) =>
+      obs(ptr + p * 34 + t) = decayPow(n - 1 - i)
+    }
+    ptr += 4 * 34
+
+    // per-player discard stacks, most recent first
+    val byPlayer = Array.fill(4)(List.empty[Int])
+    discardSeq.foreach { case (p, t) => byPlayer(p) = t :: byPlayer(p) }
+
+    (0 until 4).foreach { p =>
+      byPlayer(p).take(K).zipWithIndex.foreach { case (t, k) =>
+        obs(ptr + p * K * 34 + k * 34 + t) = 1f
+      }
+    }
+    ptr += 4 * K * 34
+
+    (0 until 4).foreach(p =>
+      obs(ptr + p) = math.min(1f, byPlayer(p).length / MAX_PLAYER_DISCARDS))
+    ptr += 4
+
+    require(ptr == DIM, s"V4Obs dim mismatch: $ptr != $DIM")
+    obs
+  }
+
+  /** Build the observation from a live CurState (rollout-side). */
+  def fromCurState(myId: Int, cs: CurState, contextTile: Option[Int]): Array[Float] = {
+    val handCounts = new Array[Int](34)
+    cs.myInfo.tiles.foreach(t => handCounts(t.toTileValue) += 1)
+    val discByPlayer = Array.fill(4)(new Array[Int](34))
+    cs.discards.foreach(d => discByPlayer(d.playerId)(d.tile.toTileValue) += 1)
+    // cs.discards is most-recent-first (GameState prepends) → reverse
+    val seq = cs.discards.reverse.map(d => (d.playerId, d.tile.toTileValue))
+    encode(handCounts, cs.myInfo.tileGroups, cs.otherInfos.map(_.tileGroups),
+           discByPlayer, cs.remainTileNum, myId, cs.curPlayerId, contextTile, seq)
+  }
+}
+
 case class PolicyOut(discard: Array[Float], win: Array[Float],
                      selfWin: Array[Float], pong: Array[Float],
                      kong: Array[Float], chow: Array[Float],
@@ -145,7 +232,8 @@ case class PolicyOut(discard: Array[Float], win: Array[Float],
  * Batched ONNX inference: rollout threads enqueue observations and block;
  * one daemon thread drains the queue and runs a single batched forward.
  */
-class OnnxPolicyService(modelPath: String, maxBatch: Int = 256) {
+class OnnxPolicyService(modelPath: String, maxBatch: Int = 256,
+                        obsDim: Int = V3Obs.DIM) {
   private val env = OrtEnvironment.getEnvironment
   private val opts = new OrtSession.SessionOptions()
   opts.setIntraOpNumThreads(Integer.getInteger("rl.onnxthreads", 2))
@@ -173,11 +261,11 @@ class OnnxPolicyService(modelPath: String, maxBatch: Int = 256) {
     queue.drainTo(reqs, maxBatch - 1)
     val b = reqs.size
     try {
-      val flat = new Array[Float](b * V3Obs.DIM)
+      val flat = new Array[Float](b * obsDim)
       (0 until b).foreach(i =>
-        System.arraycopy(reqs.get(i).obs, 0, flat, i * V3Obs.DIM, V3Obs.DIM))
+        System.arraycopy(reqs.get(i).obs, 0, flat, i * obsDim, obsDim))
       val tensor = OnnxTensor.createTensor(
-        env, java.nio.FloatBuffer.wrap(flat), Array(b.toLong, V3Obs.DIM.toLong))
+        env, java.nio.FloatBuffer.wrap(flat), Array(b.toLong, obsDim.toLong))
       val out = session.run(java.util.Collections.singletonMap("obs", tensor))
       try {
         def mat(i: Int): Array[Array[Float]] =
