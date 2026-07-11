@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type {
   Decision,
   GameEvent,
@@ -62,6 +63,22 @@ export function GameTable({
   const isYourTurn = view.curSeat === you;
   const canDiscard = decision?.decision === "discard";
 
+  // AI-coach mode: show the model's probabilities on your decisions.
+  // Off by default (hints spoil the game unless asked for); persisted.
+  // Initialised in an effect, not the useState initialiser, to avoid an
+  // SSR/client hydration mismatch on the toggle label.
+  const [showCoach, setShowCoach] = useState(false);
+  useEffect(() => {
+    setShowCoach(localStorage.getItem("mj-coach") === "1");
+  }, []);
+  const toggleCoach = () => {
+    setShowCoach((v) => {
+      localStorage.setItem("mj-coach", v ? "0" : "1");
+      return !v;
+    });
+  };
+  const coachProbs = showCoach ? (decision?.coach?.probs ?? null) : null;
+
   const opponent = (seat: Seat, compact: boolean) => (
     <OpponentPanel
       seatInfo={room?.seats[seat]}
@@ -105,6 +122,17 @@ export function GameTable({
         <span className="hidden tabular-nums sm:inline">
           Game #{(room?.gamesPlayed ?? 0) + 1}
         </span>
+        <button
+          onClick={toggleCoach}
+          title="Show the AI model's suggested action probabilities on your decisions"
+          className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors ${
+            showCoach
+              ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-200"
+              : "border-white/15 bg-black/30 text-emerald-100/50 hover:text-emerald-100/80"
+          }`}
+        >
+          🎓 Coach {showCoach ? "ON" : "OFF"}
+        </button>
       </div>
 
       {/* ===== desktop layout ===== */}
@@ -158,6 +186,7 @@ export function GameTable({
               decision={decision}
               receivedTs={decisionReceivedTs}
               onAct={onAction}
+              coach={decision.decision !== "discard" ? coachProbs : null}
             />
           ) : waiting && waiting.seat !== you ? (
             <WaitingIndicator waiting={waiting} room={room} />
@@ -188,6 +217,7 @@ export function GameTable({
             lastDrawnTile={view.lastDrawnTile}
             canDiscard={canDiscard}
             onDiscard={(tile) => onAction(tile)}
+            coach={canDiscard ? coachProbs : null}
           />
         </div>
       </div>

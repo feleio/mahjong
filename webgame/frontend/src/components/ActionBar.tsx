@@ -33,20 +33,39 @@ const BTN =
 const BTN_GOLD = `${BTN} bg-amber-400 text-emerald-950 hover:bg-amber-300`;
 const BTN_DARK = `${BTN} bg-white/10 text-emerald-50 hover:bg-white/20`;
 
+/** AI-coach percentage badge next to an action label. */
+function CoachPct({ p }: { p: number | undefined }) {
+  if (p === undefined) return null;
+  const strong = p >= 0.5;
+  return (
+    <span
+      className={`ml-1 rounded px-1 text-[10px] font-bold tabular-nums ${
+        strong ? "bg-emerald-500/30 text-emerald-200" : "bg-black/30 text-emerald-100/60"
+      }`}
+    >
+      {Math.round(p * 100)}%
+    </span>
+  );
+}
+
 /**
  * Renders the buttons for the current Decision. `onAct` emits game:action
- * and clears the decision in the store.
+ * and clears the decision in the store. When `coach` is set, buttons carry
+ * the model's probability for that action.
  */
 export function ActionBar({
   decision,
   receivedTs,
   onAct,
+  coach,
 }: {
   decision: Decision;
   receivedTs: number;
   onAct: (action: boolean | number | null) => void;
+  coach?: Record<string, number> | null;
 }) {
   const { decision: kind, context } = decision;
+  const cp = (key: string): number | undefined => coach?.[key];
 
   let body: React.ReactNode;
   switch (kind) {
@@ -70,9 +89,11 @@ export function ActionBar({
           </span>
           <button className={BTN_GOLD} onClick={() => onAct(true)}>
             食糊 Win
+            <CoachPct p={cp("accept")} />
           </button>
           <button className={BTN_DARK} onClick={() => onAct(false)}>
             過 Pass
+            <CoachPct p={cp("pass")} />
           </button>
         </div>
       );
@@ -85,9 +106,11 @@ export function ActionBar({
           {context.tile !== undefined && <Tile tile={context.tile} size="sm" />}
           <button className={BTN_GOLD} onClick={() => onAct(true)}>
             {kind === "pong" ? "碰 Pong" : "槓 Kong"}
+            <CoachPct p={cp("accept")} />
           </button>
           <button className={BTN_DARK} onClick={() => onAct(false)}>
             過 Pass
+            <CoachPct p={cp("pass")} />
           </button>
         </div>
       );
@@ -109,10 +132,12 @@ export function ActionBar({
                 {chowRun(tile, p).map((t, i) => (
                   <Tile key={i} tile={t} size="sm" highlighted={t === tile} />
                 ))}
+                <CoachPct p={cp(String(p))} />
               </button>
             ))}
           <button className={BTN_DARK} onClick={() => onAct(null)}>
             過 Pass
+            <CoachPct p={cp("pass")} />
           </button>
         </div>
       );
@@ -131,10 +156,12 @@ export function ActionBar({
               className="rounded-lg bg-white/10 p-1.5 ring-1 ring-white/20 transition-colors hover:bg-amber-400/20 hover:ring-amber-400"
             >
               <Tile tile={t} size="sm" />
+              <CoachPct p={cp(String(t))} />
             </button>
           ))}
           <button className={BTN_DARK} onClick={() => onAct(null)}>
             過 Pass
+            <CoachPct p={cp("pass")} />
           </button>
         </div>
       );

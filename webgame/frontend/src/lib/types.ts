@@ -60,6 +60,17 @@ export type DecisionKind =
   | "pong"
   | "chow";
 
+/**
+ * AI-coach hint: the strongest model's probability over this decision's
+ * actions. Keys: discard → tile value; win/pong/kong → "pass"/"accept";
+ * chow → "pass"/position id; self_kong → "pass"/tile value.
+ * Present only when the server runs with a coach model.
+ */
+export interface CoachHint {
+  probs: Record<string, number>;
+  value?: number; // net's $-scale estimate of the current position
+}
+
 export interface Decision {
   requestId: number;
   decision: DecisionKind;
@@ -72,6 +83,7 @@ export interface Decision {
   };
   deadlineTs: number; // epoch ms; server auto-acts after this
   view: GameView;
+  coach?: CoachHint;
 }
 
 export interface WinnersInfo {

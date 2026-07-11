@@ -108,6 +108,18 @@ interface Decision {
   };
   deadlineTs: number;      // epoch ms; server auto-acts after this
   view: GameView;
+  coach?: CoachHint;       // AI-coach hint; present only when the engine runs
+                           // with -Dweb.coachmodel (backend env COACH_MODEL)
+}
+
+// The strongest model's probability over this decision's actions.
+// Keys: discard → tile value ("0".."33", over validTiles);
+// win/self_win/pong/kong → "pass" / "accept";
+// chow → "pass" / position id ("0"|"1"|"2");
+// self_kong → "pass" / tile value.
+interface CoachHint {
+  probs: { [key: string]: number }; // sums to 1 over the legal actions
+  value?: number;                   // net's $-scale estimate of the position
 }
 
 interface WinnersInfo {

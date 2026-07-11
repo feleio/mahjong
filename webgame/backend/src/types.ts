@@ -66,12 +66,25 @@ export interface DecisionContext {
   positions?: (0 | 1 | 2)[];
 }
 
+/**
+ * AI-coach hint attached by the engine (web.coachmodel): the strongest net's
+ * probability over this decision's actions. Keys: discard → tile value;
+ * binary decisions → "pass"/"accept"; chow → "pass"/position id;
+ * self_kong → "pass"/tile value. `value` is the net's $-scale estimate of
+ * the current position.
+ */
+export interface CoachHint {
+  probs: Record<string, number>;
+  value?: number;
+}
+
 export interface Decision {
   requestId: number;
   decision: DecisionKind;
   context: DecisionContext;
   deadlineTs: number;
   view: GameView;
+  coach?: CoachHint;
 }
 
 export interface WinnersInfo {
@@ -108,6 +121,7 @@ export type EngineMessage =
       decision: DecisionKind;
       context: DecisionContext;
       snapshot: EngineSnapshot;
+      coach?: CoachHint;
     }
   | {
       type: 'game_over';

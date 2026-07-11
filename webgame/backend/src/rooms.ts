@@ -3,6 +3,7 @@ import type { Server } from 'socket.io';
 import type { PrismaClient } from '@prisma/client';
 import type { Engine } from './engine.js';
 import type {
+  CoachHint,
   Decision,
   DecisionContext,
   DecisionKind,
@@ -34,6 +35,7 @@ interface PendingDecision {
   seat: Seat;
   decision: DecisionKind;
   context: DecisionContext;
+  coach?: CoachHint;
   deadlineTs: number;
   timer: NodeJS.Timeout;
 }
@@ -438,6 +440,7 @@ export class RoomManager {
           seat: msg.seat,
           decision: msg.decision,
           context: msg.context,
+          coach: msg.coach,
           deadlineTs,
           timer,
         };
@@ -447,6 +450,7 @@ export class RoomManager {
           context: msg.context,
           deadlineTs,
           view: this.buildView(room, game, msg.seat),
+          coach: msg.coach,
         };
         this.emitToSeat(room, msg.seat, 'game:decision', decision);
         for (let seat = 0; seat < 4; seat++) {
@@ -650,6 +654,7 @@ export class RoomManager {
             context: p.context,
             deadlineTs: p.deadlineTs,
             view,
+            coach: p.coach,
           }
         : null;
     return { room: state, game: view, decision };

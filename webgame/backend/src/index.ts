@@ -1,4 +1,5 @@
 import http from 'node:http';
+import fs from 'node:fs';
 import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
@@ -10,6 +11,9 @@ import type { EngineAction } from './types.js';
 const PORT = Number(process.env.PORT ?? 4000);
 const ENGINE_JAR = process.env.ENGINE_JAR ?? '../../target/scala-2.12/mahjong-assembly-0.1.0.jar';
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? 'http://localhost:3000';
+// Optional AI-coach model (ONNX student). When set, decision prompts include
+// the model's action probabilities so players can learn from the strongest net.
+const COACH_MODEL = process.env.COACH_MODEL ?? '../../rl/checkpoints/student/student48_sp1b.onnx';
 
 const prisma = new PrismaClient();
 const app = express();
@@ -18,7 +22,10 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: CORS_ORIGIN } });
-const engine = new Engine(ENGINE_JAR);
+// Missing model file ⇒ coach silently off (a bad path must not crashloop the engine).
+const coachModel = fs.existsSync(COACH_MODEL) ? COACH_MODEL : undefined;
+if (COACH_MODEL && !coachModel) console.warn(`[coach] model not found at ${COACH_MODEL} — coach disabled`);
+const engine = new Engine(ENGINE_JAR, coachModel);
 const roomManager = new RoomManager(io, prisma, engine);
 
 io.use(async (socket, next) => {
