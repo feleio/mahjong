@@ -550,6 +550,25 @@ object MCTSRolloutServer extends App {
         println(write(Map("obs" -> obs.toList)))
         System.out.flush()
 
+      // ── What would FirstFelix discard from this exact seat? ─────────────────
+      // Champion-vs-FF analysis (rl/compare_vs_ff.py): a fresh FirstFelix is
+      // dropped into our seat — it re-decides its target from this hand + the
+      // discard history, then picks its discard. Deterministic.
+      case "ff_decide" =>
+        val st = parseState(cmd)
+        val preDiscards = parsePreDiscards(cmd)
+        val handTiles = st.handCounts.zipWithIndex.flatMap { case (cnt, id) =>
+          List.fill(cnt)(Tile.fromValue(id))
+        }.toList
+        // Player's ctor wants a 13-tile hand (incl. groups); the 14th (drawn)
+        // tile is added afterwards, mirroring runRollout's construction.
+        val ff = new FirstFelix(0, handTiles.tail, 5, st.myGroups)
+        ff.hand.add(handTiles.head)
+        val cs = CurState(ff.privateInfo, st.oppGroups.map(PublicState),
+          preDiscards, 0, st.actualRemaining)
+        println(write(Map("tile" -> ff.decideDiscard(cs).toTileValue)))
+        System.out.flush()
+
       // ── Parity test: v4 = v3 + discard-order planes (issue #21) ─────────────
       case "encode_v4" =>
         val handCounts = asList(cmd("hand")).map(asInt).toArray

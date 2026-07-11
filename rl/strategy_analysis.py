@@ -39,6 +39,10 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch
 
+# Single-decision inference: extra torch/OMP threads only spin-wait and, on a
+# busy box, burn cores without adding throughput.
+torch.set_num_threads(1)
+
 sys.path.insert(0, str(Path(__file__).parent))
 
 from env import MahjongEnv, DECISION_SPACES, encode_state, get_action_mask

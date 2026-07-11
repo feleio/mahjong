@@ -163,6 +163,33 @@ class MCTSRolloutClient:
         resp = json.loads(line.strip())
         return np.asarray(resp["rewards"], dtype=np.float64)
 
+    def ff_decide(self, state: dict) -> int:
+        """
+        What FirstFelix would discard from this exact seat: a fresh FF
+        re-decides its target from this hand + discard history, then picks
+        its discard (deterministic). For champion-vs-FF analysis
+        (rl/compare_vs_ff.py).
+        """
+        cmd = {
+            "cmd":        "ff_decide",
+            "hand":       state["hand"],
+            "my_groups":  state.get("my_groups", {"pongs": [], "kongs": [], "chows": []}),
+            "opp_groups": state.get("opp_groups", [{}, {}, {}]),
+            "discards":   state["discarded"],
+            "remaining":  state["remaining"],
+        }
+        dbp = state.get("discarded_by_player")
+        if dbp is not None:
+            me = int(state["my_id"])
+            cmd["discards_by_player"] = [dbp[(me + i) % 4] for i in range(4)]
+        self._proc.stdin.write(json.dumps(cmd) + "\n")
+        self._proc.stdin.flush()
+        line = self._proc.stdout.readline()
+        if not line:
+            stderr = self._proc.stderr.read()
+            raise RuntimeError(f"MCTSRolloutServer closed unexpectedly.\nstderr:\n{stderr}")
+        return int(json.loads(line.strip())["tile"])
+
     def search(
         self,
         state: dict,
