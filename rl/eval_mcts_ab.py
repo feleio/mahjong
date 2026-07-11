@@ -34,7 +34,8 @@ _W = {}
 
 def _worker_init(jar, checkpoint, nn_model, n_worlds, top_k, z, min_gain,
                  a_self, a_opp, b_self, b_opp, threads, a_belief, b_belief,
-                 a_search, b_search, sims, c_puct, max_depth, search_tail, n_parallel):
+                 a_search, b_search, sims, c_puct, max_depth, search_tail, n_parallel,
+                 value_model):
     import torch
     torch.set_num_threads(1)
     from env import MahjongEnv
@@ -51,6 +52,7 @@ def _worker_init(jar, checkpoint, nn_model, n_worlds, top_k, z, min_gain,
             jar_path=jar, rollout_opp=opp_pol,
             nn_model=nn_model if needs_nn else None,
             belief_model=belief,
+            value_model=value_model if search == "ismcts" else None,
             rollout_threads=threads)
         if search == "ismcts":
             return SearchPolicy(
@@ -110,6 +112,8 @@ def main():
     p.add_argument("--max-depth", type=int, default=64)
     p.add_argument("--search-tail", default="inf", choices=["inf", "zero"])
     p.add_argument("--n-parallel", type=int, default=3, help="concurrent IS-MCTS sims")
+    p.add_argument("--value-model", default=None,
+                   help="outcome-trained value ONNX for IS-MCTS leaf bootstrap (search-tail=zero)")
     p.add_argument("--n-games", type=int, default=400)
     p.add_argument("--n-workers", type=int, default=5)
     p.add_argument("--n-worlds", type=int, default=64)
@@ -130,7 +134,8 @@ def main():
                   args.a_self, args.a_opp, args.b_self, args.b_opp,
                   args.rollout_threads, args.a_belief, args.b_belief,
                   args.a_search, args.b_search, args.sims, args.c_puct,
-                  args.max_depth, args.search_tail, args.n_parallel),
+                  args.max_depth, args.search_tail, args.n_parallel,
+                  args.value_model),
     ) as pool:
         for res in pool.map(_play_seed, seeds, chunksize=2):
             results.append(res)

@@ -77,6 +77,7 @@ class MCTSRolloutClient:
         nn_model: Optional[str] = None,
         rollout_threads: int = 1,
         belief_model: Optional[str] = None,
+        value_model: Optional[str] = None,
     ) -> None:
         self.n_rollouts  = n_rollouts
         self.rollout_opp = rollout_opp
@@ -87,6 +88,10 @@ class MCTSRolloutClient:
             # Opt in to belief-weighted opponent-hand determinization; without
             # this flag the server falls back to the uniform shuffle-and-deal.
             extra.append(f"-Drl.belief={belief_model}")
+        if value_model is not None:
+            # Dedicated outcome-trained value net for IS-MCTS leaf bootstrap
+            # (rollout_tail="zero"); without it leaves use the policy net's value.
+            extra.append(f"-Drl.valuemodel={value_model}")
         if rollout_threads > 1:
             extra.append(f"-Drl.rolloutThreads={rollout_threads}")
         self._proc = subprocess.Popen(

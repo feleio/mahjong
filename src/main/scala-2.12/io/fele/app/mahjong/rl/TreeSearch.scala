@@ -177,6 +177,7 @@ final class TreePlayer(
   tiles: List[Tile],
   tileGroups: List[TileGroup],
   svc: OnnxPolicyService,
+  valueSvc: OnnxPolicyService,   // dedicated value net for leaf bootstrap (may be null)
   root: SearchNode,
   rootTile: Int,
   cPuct: Double,
@@ -202,9 +203,13 @@ final class TreePlayer(
     val node = currentNode
     node.synchronized {
       if (!node.expanded) {
-        val out = svc.query(V3Obs.fromCurState(id, cs, None))
-        node.expand(softmax(out.discard), out.value)
-        if (rolloutTailZero) throw LeafReached(out.value)
+        val obs = V3Obs.fromCurState(id, cs, None)
+        val out = svc.query(obs)
+        // Leaf value: the dedicated value net if provided, else the policy net's
+        // (untrained) value head. Priors always come from the policy net.
+        val leafV = if (valueSvc != null) valueSvc.query(obs).value else out.value
+        node.expand(softmax(out.discard), leafV)
+        if (rolloutTailZero) throw LeafReached(leafV)
         // Expand-one-node-per-simulation: select once here, then roll out.
         inRolloutTail = true
       }

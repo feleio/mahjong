@@ -50,6 +50,13 @@ object MCTSRolloutServer extends App {
     new OnnxPolicyService(path)
   }
 
+  // Dedicated value net for IS-MCTS leaf bootstrap (opt-in via
+  // -Drl.valuemodel=<path.onnx>). Its value head is outcome-trained; the policy
+  // net's own value head is untrained, so leaves fall back to it only if unset.
+  private val valuePath = System.getProperty("rl.valuemodel")
+  private lazy val valueService: OnnxPolicyService = new OnnxPolicyService(valuePath)
+  private def valueNet: OnnxPolicyService = if (valuePath != null) valueService else null
+
   // Opponent hand-belief model (opt-in via -Drl.belief=<path.onnx>). When set,
   // opponents' hidden hands are determinized by belief-weighted sampling from
   // the unseen pool instead of a uniform shuffle. Uniform stays the fallback.
@@ -403,7 +410,7 @@ object MCTSRolloutServer extends App {
       return (Nil, 0.0)
     }
 
-    val us = new TreePlayer(0, myDynamic, st.myGroups, nnService, root, rootTile,
+    val us = new TreePlayer(0, myDynamic, st.myGroups, nnService, valueNet, root, rootTile,
       cPuct, stats, maxDepth, rolloutTailZero)
     val opps = (0 until 3)
       .map(i => makePlayer(oppPolicy, i + 1, oppDynamic(i), st.oppGroups(i))).toList
