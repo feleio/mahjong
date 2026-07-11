@@ -42,11 +42,43 @@ tile* (shanten/ukeire computed from the obs feature planes):
 | slower | champion's tile leaves **worse** shanten — deliberate slowdown | 16.0% | **+$3.40 ± 0.96** |
 
 Read that bottom row again: the champion's single most valuable behaviour
-against FirstFelix is **choosing to be slower**. FF races its turn-one target
-unconditionally; the champion knows when the race is wrong — when the pair is
-worth more than the tempo, when the payable hand matters more than the fast
-one. Raw speed (`tempo`) is its *smallest* per-decision edge: FF's rigid
-flush/all-pong targeting is actually competitive on pace.
+against FirstFelix is **choosing to be slower**. Raw speed (`tempo`) is its
+*smallest* per-decision edge: FF's rigid flush/all-pong targeting is actually
+competitive on pace.
+
+### Why "slower" wins: shanten is a step-counter, not a value meter
+
+"Slower" here means one specific thing: after the champion's discard the hand
+is *more tile-exchanges away from tenpai* than it would be after FF's discard.
+On the shanten meter, the champion moved backwards. But nothing rewards being
+few steps away — the game pays when you **complete a payable hand and don't
+deal in**, and the pricing reflects exactly that: both choices were played
+out to the *end of the game* on the same 32 worlds, and the +$3.40 is the
+difference in **final money**, not in progress. The label "slower" only
+describes how the choice looks at that instant.
+
+Three things the step-counter cannot see, all visible in the slower-bucket
+rows:
+
+1. **Structure beats steps.** In 44% of these cases FF's "faster" tile comes
+   out of a **pair or triplet** — it buys one step now by cannibalising a
+   piece that does triple duty later (eye candidate, pong candidate, backup).
+   Meanwhile **95% of the champion's slower discards are lone tiles**: it
+   gives back a step on the meter but keeps the hand's skeleton intact. The
+   step FF gains now often costs two steps (and all flexibility) later.
+2. **Live outs beat map distance.** A hand one step from tenpai through
+   mostly-dead tiles takes *more expected draws* to finish than a hand two
+   steps away through live ones. Shanten counts kilometres; the wall pays
+   travel time.
+3. **Payability and safety.** Under the 3-faan minimum, the fastest tenpai is
+   often worth $0 — a mirage that can't legally win — and the slower tile is
+   frequently also the safer one. This is why the slower bucket explodes late
+   game: **+$7.68 per decision** when the wall is under 30, vs +$2.03 early.
+
+FF optimises the step-counter with perfect discipline. The champion optimises
+the thing the step-counter is a proxy *for* — and the $10-to-1 gap between
+`slower` (+$3.40) and `tempo` (+$0.33) is the measured price of confusing
+the proxy with the goal.
 
 ## The edge triples in the endgame
 
