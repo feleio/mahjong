@@ -26,7 +26,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
 
-from env import OBS_DIM, OBS_DIM_V3, DECISION_SPACES
+from env import OBS_DIM, OBS_DIM_V3, OBS_DIM_V4, DECISION_SPACES
 
 # ── Network ───────────────────────────────────────────────────────────────────
 
@@ -190,35 +190,48 @@ class _ResBlock1d(nn.Module):
 
 class MahjongConvNet(nn.Module):
     """
-    Residual 1D CNN over the 34-tile axis for obs v3 (725 dims).
+    Residual 1D CNN over the 34-tile axis for obs v3 (759 dims) or v4 (1443).
 
-    The flat observation is reorganised into 21 tile-planes (17 original +
-    4 shanten/ukeire feature planes) plus 11 scalars broadcast as constant
-    planes → 32 input channels of length 34. Convolution over the tile axis
-    gives the suit-run/adjacency inductive bias an MLP lacks.
+    The flat observation is reorganised into tile-planes plus scalars
+    broadcast as constant planes: v3 → 22 planes + 11 scalars = 33 input
+    channels; v4 adds 20 discard-order planes (4 recency + 16 last-K
+    one-hots) + 4 discard-count scalars = 57 channels. Convolution over the
+    tile axis gives the suit-run/adjacency inductive bias an MLP lacks.
 
     Heads:
       discard   : 1×1 conv → per-tile logit (spatially aligned with the input)
       self_kong : per-tile logits (1×1 conv) + pooled pass-logit → 35
       binary / chow / value : mean+max pooled features → MLP
+      danger (v4 only, issue #21) : per-opponent tenpai logits (pooled) and
+        per-opponent wait logits (3-channel 1×1 conv, spatially aligned) —
+        trained supervised from simulator ground truth via forward_danger();
+        never part of forward(), so play-time APIs and ONNX export of the
+        decision heads are unchanged.
     """
 
     N_PLANES_V2 = 17   # hand, my 3 groups, 3×3 opp groups, 4 discard planes
     N_SCAL_V2   = 9    # remaining + my seat one-hot + cur player one-hot
     N_PLANES_V3 = 5    # shanten_after, ukeire_after, improve_tiles, unseen, context_tile
     N_SCAL_V3   = 2    # cur_shanten, is_discard_state
+    N_PLANES_V4 = 20   # 4 recency + 4×K(=4) last-K discard one-hots
+    N_SCAL_V4   = 4    # per-player discard counts
 
     def __init__(self, obs_dim: int = OBS_DIM_V3, channels: int = 128,
                  n_blocks: int = 6) -> None:
         super().__init__()
-        assert obs_dim == OBS_DIM_V3, "MahjongConvNet requires obs v3"
+        assert obs_dim in (OBS_DIM_V3, OBS_DIM_V4), \
+            "MahjongConvNet requires obs v3 or v4"
         self.obs_dim  = obs_dim
         self.channels = channels
         self.n_blocks = n_blocks
+        self.is_v4    = obs_dim == OBS_DIM_V4
 
-        n_planes  = self.N_PLANES_V2 + self.N_PLANES_V3          # 21
+        n_planes  = self.N_PLANES_V2 + self.N_PLANES_V3          # 22
         n_scalars = self.N_SCAL_V2 + self.N_SCAL_V3              # 11
-        in_ch     = n_planes + n_scalars                          # 32
+        if self.is_v4:
+            n_planes  += self.N_PLANES_V4                         # 42
+            n_scalars += self.N_SCAL_V4                           # 15
+        in_ch = n_planes + n_scalars                              # 33 / 57
 
         self.stem   = nn.Sequential(
             nn.Conv1d(in_ch, channels, kernel_size=3, padding=1),
@@ -244,22 +257,42 @@ class MahjongConvNet(nn.Module):
         self.chow_head   = nn.Linear(256, DECISION_SPACES["chow"])  # 4
         self.self_kong_pass = nn.Linear(256, 1)
 
+        # Danger auxiliary heads (issue #21) — only exist on v4 nets so v3
+        # checkpoints keep their exact module set (strict state_dict loads).
+        if self.is_v4:
+            self.danger_wait_conv = nn.Conv1d(channels, 3, kernel_size=1)
+            self.danger_tenpai_head = nn.Linear(256, 3)
+
     # ── Input reorganisation ──────────────────────────────────────────────────
 
     def _to_planes(self, obs: torch.Tensor) -> torch.Tensor:
         B = obs.shape[0]
         p2 = self.N_PLANES_V2 * 34                       # 578
         s2 = p2 + self.N_SCAL_V2                          # 587
-        p3 = s2 + self.N_PLANES_V3 * 34                   # 723
-        planes = torch.cat([
+        p3 = s2 + self.N_PLANES_V3 * 34                   # 757
+        s3 = p3 + self.N_SCAL_V3                          # 759 = OBS_DIM_V3
+        plane_parts = [
             obs[:, :p2].view(B, self.N_PLANES_V2, 34),
             obs[:, s2:p3].view(B, self.N_PLANES_V3, 34),
-        ], dim=1)                                         # (B, 21, 34)
-        scalars = torch.cat([obs[:, p2:s2], obs[:, p3:]], dim=1)  # (B, 11)
-        scal_planes = scalars.unsqueeze(-1).expand(-1, -1, 34)     # (B, 11, 34)
-        return torch.cat([planes, scal_planes], dim=1)             # (B, 32, 34)
+        ]
+        scalar_parts = [obs[:, p2:s2], obs[:, p3:s3]]
+        if self.is_v4:
+            p4 = s3 + self.N_PLANES_V4 * 34               # 1439
+            plane_parts.append(obs[:, s3:p4].view(B, self.N_PLANES_V4, 34))
+            scalar_parts.append(obs[:, p4:])              # (B, 4) counts
+        planes = torch.cat(plane_parts, dim=1)            # (B, 22|42, 34)
+        scalars = torch.cat(scalar_parts, dim=1)          # (B, 11|15)
+        scal_planes = scalars.unsqueeze(-1).expand(-1, -1, 34)
+        return torch.cat([planes, scal_planes], dim=1)    # (B, 33|57, 34)
 
     # ── Forward ───────────────────────────────────────────────────────────────
+
+    def _trunk(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        x = self.stem(self._to_planes(obs))
+        x = self.blocks(x)                                          # (B, C, 34)
+        pooled = torch.cat([x.mean(dim=2), x.amax(dim=2)], dim=1)   # (B, 2C)
+        feat   = self.pool_fc(pooled)                                # (B, 256)
+        return x, feat
 
     def forward(
         self,
@@ -267,12 +300,8 @@ class MahjongConvNet(nn.Module):
         decision: str,
         action_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        x = self.stem(self._to_planes(obs))
-        x = self.blocks(x)                                # (B, C, 34)
-
-        pooled = torch.cat([x.mean(dim=2), x.amax(dim=2)], dim=1)  # (B, 2C)
-        feat   = self.pool_fc(pooled)                                # (B, 256)
-        value  = self.value_head(feat).squeeze(-1)
+        x, feat = self._trunk(obs)
+        value = self.value_head(feat).squeeze(-1)
 
         if decision == "discard":
             logits = self.discard_conv(x).squeeze(1)                 # (B, 34)
@@ -292,9 +321,97 @@ class MahjongConvNet(nn.Module):
             logits = logits.masked_fill(~action_mask, float("-inf"))
         return logits, value
 
+    # ── Danger auxiliary forward (v4 only, issue #21) ─────────────────────────
+
+    def forward_danger(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Ground-truth-supervised opponent danger predictions.
+
+        Returns (tenpai_logits (B, 3), wait_logits (B, 3, 34)), opponents in
+        seat-relative order (my_id+1 .. my_id+3) matching the opp_groups
+        planes and the opp_tenpai/opp_waits labels.
+        """
+        assert self.is_v4, "danger heads require a v4 net"
+        x, feat = self._trunk(obs)
+        return self.danger_tenpai_head(feat), self.danger_wait_conv(x)
+
+    def forward_with_danger(
+        self,
+        obs: torch.Tensor,
+        decision: str,
+        action_mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """forward() + danger heads off a SINGLE trunk pass (training only).
+
+        Returns (logits, value, tenpai_logits (B,3), wait_logits (B,3,34)).
+        """
+        assert self.is_v4, "danger heads require a v4 net"
+        x, feat = self._trunk(obs)
+        value = self.value_head(feat).squeeze(-1)
+
+        if decision == "discard":
+            logits = self.discard_conv(x).squeeze(1)
+        elif decision in ("win", "self_win", "pong", "kong"):
+            head = {"win": self.win_head, "self_win": self.self_win_head,
+                    "pong": self.pong_head, "kong": self.kong_head}[decision]
+            logits = head(feat)
+        elif decision == "chow":
+            logits = self.chow_head(feat)
+        elif decision == "self_kong":
+            per_tile = self.self_kong_conv(x).squeeze(1)
+            logits = torch.cat([self.self_kong_pass(feat), per_tile], dim=1)
+        else:
+            raise ValueError(f"Unknown decision: {decision!r}")
+
+        if action_mask is not None:
+            logits = logits.masked_fill(~action_mask, float("-inf"))
+        return logits, value, self.danger_tenpai_head(feat), self.danger_wait_conv(x)
+
     # Same sampling/evaluation API as MahjongNet
     act              = MahjongNet.act
     evaluate_actions = MahjongNet.evaluate_actions
+
+
+def warm_start_v4_from_v3(v4_net: MahjongConvNet, v3_ckpt_path: str) -> None:
+    """
+    Initialise a v4 MahjongConvNet from a trained v3 conv checkpoint so the
+    retrain starts from the champion's function instead of scratch.
+
+    Every layer except the stem's first conv has identical shapes and is
+    copied verbatim. The stem conv's input channels are remapped to the v4
+    channel order (planes first, then broadcast scalars):
+
+        v3 channel   0..21  (22 planes)   → v4 channel  0..21
+        v3 channel  22..32  (11 scalars)  → v4 channel 42..52
+        v4 channels 22..41 (order planes) and 53..56 (count scalars) → zero
+
+    Zero weights on the new channels make the v4 net EXACTLY reproduce the
+    v3 net's outputs at init (new inputs are ignored until training moves
+    them). Danger heads keep their fresh init — they have no v3 ancestor.
+    """
+    assert v4_net.is_v4
+    ckpt = torch.load(v3_ckpt_path, map_location="cpu", weights_only=False)
+    assert ckpt.get("arch") == "conv" and ckpt.get("obs_dim") == OBS_DIM_V3, \
+        "warm start requires a v3 conv checkpoint"
+    v3_state = ckpt["net_state"]
+
+    n_p3 = MahjongConvNet.N_PLANES_V2 + MahjongConvNet.N_PLANES_V3   # 22
+    n_s3 = MahjongConvNet.N_SCAL_V2 + MahjongConvNet.N_SCAL_V3       # 11
+    n_p4 = n_p3 + MahjongConvNet.N_PLANES_V4                          # 42
+
+    own = v4_net.state_dict()
+    stem_key = "stem.0.weight"
+    for k, v in v3_state.items():
+        if k == stem_key:
+            assert v.shape[1] == n_p3 + n_s3, f"unexpected v3 stem in_ch {v.shape}"
+            w = torch.zeros_like(own[k])                       # (C_out, 57, 3)
+            w[:, :n_p3, :] = v[:, :n_p3, :]                    # planes
+            w[:, n_p4:n_p4 + n_s3, :] = v[:, n_p3:, :]         # broadcast scalars
+            own[k] = w
+        else:
+            assert own[k].shape == v.shape, f"shape mismatch at {k}"
+            own[k] = v
+    v4_net.load_state_dict(own)
 
 
 def load_net(path: str, device: str = "cpu"):
