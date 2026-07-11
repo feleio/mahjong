@@ -115,12 +115,20 @@ class MCTSRolloutClient:
         candidate_tiles: List[int],
         n_worlds: int,
         self_policy: str = "firstfelix",
+        value_leaf_plies: int = 0,
     ) -> np.ndarray:
         """
         Evaluate all candidate discard tiles on the SAME set of determinized
         worlds (common random numbers). Paired evaluation makes the variance
         of Q-value *differences* between tiles far smaller than independent
         rollouts, so far fewer worlds are needed for reliable ranking.
+
+        value_leaf_plies > 0 selects the CRN-preserving flat + value-leaf
+        hybrid (issue #20): each rollout stops at our Nth discard decision
+        after the root discard and returns the value net's estimate there
+        (real outcome if the game ends earlier). Needs the client constructed
+        with value_model= (and nn_model= for the pre-leaf policy); our seat's
+        self_policy is effectively "nn" in this mode.
 
         Returns
         -------
@@ -138,6 +146,8 @@ class MCTSRolloutClient:
             "rollout_opp":     self.rollout_opp,
             "self_policy":     self_policy,
         }
+        if value_leaf_plies > 0:
+            cmd["value_leaf_plies"] = int(value_leaf_plies)
         # Real discard history in rollout seat order (0 = us, then opponents
         # in opp_groups order). NN rollout policies read it; heuristics don't.
         dbp = state.get("discarded_by_player")
@@ -436,6 +446,12 @@ class PairedMCTSPolicy:
     deviate from the 99.5%-accurate imitation policy when the evidence that
     the deviation is better survives a paired significance test.
 
+    value_leaf_plies > 0 switches the rollouts to the CRN-preserving flat +
+    value-leaf hybrid (issue #20): same paired-worlds estimator, but each
+    rollout stops at our Nth discard decision and bootstraps the value net
+    (client needs value_model= and nn_model=; self_policy is ignored for our
+    seat in this mode).
+
     Non-discard decisions: NN argmax (deterministic).
     """
 
@@ -449,6 +465,7 @@ class PairedMCTSPolicy:
         min_gain: float = 0.25,
         device: str = "cpu",
         self_policy: str = "firstfelix",
+        value_leaf_plies: int = 0,
     ) -> None:
         self.net            = net
         self.rollout_client = rollout_client
@@ -458,6 +475,7 @@ class PairedMCTSPolicy:
         self.min_gain       = min_gain
         self.device         = torch.device(device)
         self.self_policy    = self_policy
+        self.value_leaf_plies = value_leaf_plies
         # Stats
         self.n_discard_decisions = 0
         self.n_switches          = 0
@@ -514,7 +532,8 @@ class PairedMCTSPolicy:
         base_idx = candidates.index(nn_action) if nn_action in candidates else 0
 
         rewards = self.rollout_client.evaluate_batch(
-            state, candidates, self.n_worlds, self_policy=self.self_policy
+            state, candidates, self.n_worlds, self_policy=self.self_policy,
+            value_leaf_plies=self.value_leaf_plies,
         )  # (K, C)
 
         diffs = rewards - rewards[:, base_idx:base_idx + 1]     # paired diffs vs NN choice

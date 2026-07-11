@@ -157,6 +157,41 @@ final class SearchNode {
 }
 
 /**
+ * Seat-0 player for the CRN-preserving flat + value-leaf hybrid (issue #20).
+ *
+ * Plays the default NN policy, but at its `plies`-th own discard decision
+ * (counting from just after the root forced discard) it aborts the playout
+ * with the dedicated value net's estimate of the current information set,
+ * via LeafReached. plies = 1 ⇒ bootstrap at our first decision after the
+ * root discard, so the rollout sees the opponents' responses and our draw
+ * (a genuine 1-ply lookahead) but never lets a deep playout compound value
+ * -net error. If the game ends before the leaf (someone wins, wall empty),
+ * the real terminal balance is used instead — LeafReached is never thrown.
+ *
+ * Used by evaluate_batch (value_leaf_plies > 0): all candidates share the
+ * same determinized world, and the value net is deterministic, so paired
+ * Q-differences keep evaluate_batch's low-variance CRN structure.
+ */
+final class ValueLeafPlayer(
+  id: Int,
+  tiles: List[Tile],
+  tileGroups: List[TileGroup],
+  svc: OnnxPolicyService,
+  valueSvc: OnnxPolicyService,
+  plies: Int
+)(implicit c: Config) extends NNPlayer(id, tiles, tileGroups, svc)(c) {
+
+  private var decisions = 0
+
+  override def decideDiscard(cs: CurState): Tile = {
+    decisions += 1
+    if (decisions >= plies)
+      throw LeafReached(valueSvc.query(V3Obs.fromCurState(id, cs, None)).value)
+    super.decideDiscard(cs)
+  }
+}
+
+/**
  * Seat-0 player for a single simulation. Constructed fresh per playout (like
  * the players in runRollout) with references to the shared tree; carries the
  * per-simulation descended `path` used for backup.

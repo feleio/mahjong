@@ -307,6 +307,55 @@ def test_search_depth1_matches_flat(jar: str, nn_model: str) -> None:
         client.close()
 
 
+def test_value_leaf_batch(jar: str, nn_model: str, value_model: str) -> None:
+    print("\n[Test 9] evaluate_batch value-leaf hybrid (CRN + 1-ply value bootstrap)")
+    if not nn_model or not Path(nn_model).exists() or \
+       not value_model or not Path(value_model).exists():
+        check(False, f"skipped: needs --nn-model and --value-model; got "
+                     f"{nn_model!r}, {value_model!r}")
+        return
+
+    client = MCTSRolloutClient(jar_path=jar, rollout_opp="firstfelix",
+                               nn_model=nn_model, value_model=value_model,
+                               rollout_threads=3)
+    try:
+        state      = make_synthetic_state()
+        candidates = [0, 1, 5, 13, 9, 12]
+        n_worlds   = 32
+
+        t0 = time.time()
+        rv = client.evaluate_batch(state, candidates, n_worlds,
+                                   self_policy="nn", value_leaf_plies=1)
+        t_value = time.time() - t0
+        t0 = time.time()
+        rf = client.evaluate_batch(state, candidates, n_worlds, self_policy="nn")
+        t_full = time.time() - t0
+
+        check(rv.shape == (n_worlds, len(candidates)),
+              f"rewards shape {rv.shape} == ({n_worlds}, {len(candidates)})")
+        check(np.isfinite(rv).all(), "all rewards finite")
+        # The 1-ply infoset depends on the sampled world (opponent responses,
+        # our draw), so the value estimates must vary across worlds — this is
+        # the "0-ply degenerates to greedy-on-the-value-net" guard.
+        check(rv.std(axis=0).max() > 1e-6,
+              f"leaf values vary across worlds (max per-tile SD={rv.std(axis=0).max():.3f})")
+        means = rv.mean(axis=0)
+        check(not all(abs(m - means[0]) < 1e-9 for m in means),
+              "per-candidate means differ (hybrid discriminates)")
+
+        # CRN payoff: paired diffs vs candidate 0 should be tighter than the
+        # full-rollout ones (value net is deterministic per infoset). Reported,
+        # asserted loosely (<=) since both are already small on synthetic hands.
+        dv = (rv - rv[:, :1]).std()
+        df = (rf - rf[:, :1]).std()
+        check(dv <= df + 1e-9, f"paired diff SD: value-leaf {dv:.2f} <= full {df:.2f}")
+        check(t_value < t_full * 1.5,
+              f"value-leaf batch not slower than full rollouts ({t_value:.2f}s vs {t_full:.2f}s)")
+        print(f"          means: " + ", ".join(f"{t}:{m:+.2f}" for t, m in zip(candidates, means)))
+    finally:
+        client.close()
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def parse_args() -> argparse.Namespace:
@@ -317,6 +366,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--device",     default="cpu",  type=str)
     p.add_argument("--nn-model",   default="rl/checkpoints/student/student48.onnx", type=str,
                    help="student ONNX for the search test (-Drl.nnmodel)")
+    p.add_argument("--value-model", default="rl/checkpoints/student/student48_valuenet.onnx",
+                   type=str, help="value ONNX for the value-leaf test (-Drl.valuemodel)")
     return p.parse_args()
 
 
@@ -340,6 +391,7 @@ def main() -> None:
     test_evaluate_batch(args.jar)
     test_paired_policy(args.jar, args.device)
     test_search_depth1_matches_flat(args.jar, args.nn_model)
+    test_value_leaf_batch(args.jar, args.nn_model, args.value_model)
     print("\nDone.")
 
 

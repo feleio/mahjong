@@ -7,7 +7,7 @@ import org.json4s.native.JsonMethods._
 import org.json4s.native.Serialization
 import org.json4s.native.Serialization.write
 
-import scala.util.{Random, Try}
+import scala.util.Random
 
 /**
  * MCTSRolloutServer — Monte Carlo rollout evaluator for imperfect-information MCTS.
@@ -201,7 +201,8 @@ object MCTSRolloutServer extends App {
     drawPile:    Seq[Tile],              // determinized draw pile
     oppPolicy:   String,                // "chicken" | "firstfelix" | "nn"
     selfPolicy:  String,                // "chicken" | "firstfelix" | "nn"
-    preDiscards: List[DiscardInfo] = Nil // real discard history (NN policies read it)
+    preDiscards: List[DiscardInfo] = Nil, // real discard history (NN policies read it)
+    valueLeafPlies: Int = 0             // > 0 ⇒ value-net bootstrap at our Nth decision
   ): Double = {
 
     // Verify hand sizes are valid; skip rollout if not
@@ -214,7 +215,13 @@ object MCTSRolloutServer extends App {
     if (!handsOk) return 0.0
 
     // --- Build players ---
-    val us: Player = makePlayer(selfPolicy, 0, myDynamic, myGroups)
+    // With valueLeafPlies > 0 our seat is the value-leaf player (NN policy up to
+    // the leaf, then LeafReached with the value net's estimate); selfPolicy is
+    // effectively "nn" for the few moves before the bootstrap.
+    val us: Player =
+      if (valueLeafPlies > 0)
+        new ValueLeafPlayer(0, myDynamic, myGroups, nnService, valueNet, valueLeafPlies)
+      else makePlayer(selfPolicy, 0, myDynamic, myGroups)
     val opps: List[Player] = (0 until 3)
       .map(i => makePlayer(oppPolicy, i + 1, oppDynamic(i), oppGroups(i))).toList
     val players: List[Player] = us :: opps
@@ -223,14 +230,10 @@ object MCTSRolloutServer extends App {
     val state  = GameState(players, None, preDiscards, 0, drawer)
     val flow   = new FlowImpl(state)
 
-    Try(flow.resume(Some(discardTile))).toOption match {
-      case None         => 0.0
-      case Some(result) =>
-        result.winnersInfo match {
-          case None       => 0.0
-          case Some(info) =>
-            info.winnersBalance.find(_.id == 0).map(_.amount.toDouble).getOrElse(0.0)
-        }
+    try seat0Balance(flow.resume(Some(discardTile)))
+    catch {
+      case LeafReached(v) => v.toDouble
+      case _: Throwable   => 0.0
     }
   }
 
@@ -472,6 +475,9 @@ object MCTSRolloutServer extends App {
       // ── Paired batch: all candidates evaluated on the SAME K worlds ─────────
       // Common-random-numbers massively reduces the variance of Q-value
       // *differences* between candidate tiles, which is what ranking needs.
+      // value_leaf_plies > 0 (issue #20) keeps the CRN structure but stops each
+      // rollout at our Nth discard decision after the root and bootstraps the
+      // value net there instead of playing to game end (needs -Drl.valuemodel).
       case "evaluate_batch" =>
         val st         = parseState(cmd)
         val candidates = asList(cmd("candidate_tiles")).map(asInt)
@@ -479,6 +485,9 @@ object MCTSRolloutServer extends App {
         val oppPolicy  = cmd.getOrElse("rollout_opp", "chicken").toString
         val selfPolicy = cmd.getOrElse("self_policy", "firstfelix").toString
         val preDiscards = parsePreDiscards(cmd)
+        val valueLeafPlies = asInt(cmd.getOrElse("value_leaf_plies", 0))
+        require(valueLeafPlies == 0 || valuePath != null,
+          "value_leaf_plies > 0 needs -Drl.valuemodel=<path.onnx>")
 
         val candTiles   = candidates.map(Tile.fromValue)
         val candDynamic = candidates.map(st.dynamicAfterDiscard)
@@ -504,7 +513,7 @@ object MCTSRolloutServer extends App {
                 else determinizeUniform(st, st.actualRemaining, wr)
               candTiles.zip(candDynamic).map { case (tile, dyn) =>
                 runRollout(dyn, st.myGroups, st.oppGroups, tile, oppDynamic, drawPile,
-                           oppPolicy, selfPolicy, preDiscards)
+                           oppPolicy, selfPolicy, preDiscards, valueLeafPlies)
               }
             }
           })
