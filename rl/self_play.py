@@ -71,12 +71,16 @@ class TrueSelfPlayEnv:
     ``game_over`` message with a ``rewards`` dict keyed by seat id string.
     """
 
-    def __init__(self, jar_path: str, java_bin: str = "java") -> None:
+    def __init__(self, jar_path: str, java_bin: str = "java",
+                 danger_labels: bool = False) -> None:
+        # danger_labels: every observation's state gains ground-truth
+        # opp_tenpai[3] / opp_waits[3][34] (issue #21 aux-head datagen).
         self._proc = subprocess.Popen(
             [
                 java_bin,
                 "-Dlogback.statusListenerClass=ch.qos.logback.core.status.NopStatusListener",
                 "-Drl.selfplay=true",
+                f"-Drl.dangerlabels={'true' if danger_labels else 'false'}",
                 "-cp", jar_path,
                 "io.fele.app.mahjong.rl.RLGymServer",
             ],

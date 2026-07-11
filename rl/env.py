@@ -276,12 +276,17 @@ class MahjongEnv:
     decision_spaces = DECISION_SPACES
 
     def __init__(self, jar_path: str, java_bin: str = "java", opponent: str = "chicken",
-                 obs_version: int = 2) -> None:
+                 obs_version: int = 2, danger_labels: bool = False) -> None:
         self.jar_path = jar_path
         self.java_bin = java_bin
         self.opponent = opponent
         self.obs_version = obs_version
         self.obs_dim = OBS_DIM_V3 if obs_version >= 3 else OBS_DIM
+        # Ground-truth opponent danger labels (issue #21 aux heads): every
+        # observation's info["state"] gains opp_tenpai[3] / opp_waits[3][34].
+        # Labels only — encode_state never reads them (that would leak hidden
+        # state into the policy input).
+        self.danger_labels = danger_labels
         self._proc: Optional[subprocess.Popen] = None
         self._pending_decision: Optional[str] = None
 
@@ -294,6 +299,7 @@ class MahjongEnv:
             [self.java_bin,
              "-Dlogback.statusListenerClass=ch.qos.logback.core.status.NopStatusListener",
              f"-Drl.opponent={self.opponent}",
+             f"-Drl.dangerlabels={'true' if self.danger_labels else 'false'}",
              "-cp", self.jar_path,
              "io.fele.app.mahjong.rl.RLGymServer"],
             stdin=subprocess.PIPE,

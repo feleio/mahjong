@@ -115,6 +115,11 @@ object RLGymServer extends App {
 
   val selfPlay     = System.getProperty("rl.selfplay",  "false").toLowerCase == "true"
   val opponentType = System.getProperty("rl.opponent",  "chicken").toLowerCase
+  // Append ground-truth opponent danger labels (DangerLabels) to every
+  // observation's state map — datagen for the #21 auxiliary heads. Off by
+  // default: 3×34 canWin calls per observation, and labels leak hidden
+  // state, so they must never reach a play-time consumer.
+  val dangerLabels = System.getProperty("rl.dangerlabels", "false").toLowerCase == "true"
   val rng          = new scala.util.Random()
 
   var gameCount = 0
@@ -135,20 +140,27 @@ object RLGymServer extends App {
       // Build game
       val drawer: TileDrawer = new RandomTileDrawer(seed.orElse(Some(gameCount.toLong)))
 
+      // Probes close over this var so RLPlayers can be constructed before the
+      // full table exists; it is assigned before the first decision is made.
+      var table: List[Player] = null
+      def probe(pid: Int): Option[() => Map[String, Any]] =
+        if (dangerLabels) Some(() => DangerLabels.compute(table, pid)) else None
+
       val players: List[Player] = if (selfPlay) {
         // True self-play: all 4 seats are RL agents sharing the same Python model
-        (0 to 3).map(i => new RLPlayer(i, drawer.popHand())).toList
+        (0 to 3).map(i => new RLPlayer(i, drawer.popHand(), probe(i))).toList
       } else {
         // Single RL agent (seat 0) vs Chicken / FirstFelix opponents
         val useFirstFelix = opponentType == "firstfelix" ||
           (opponentType == "mixed" && rng.nextBoolean())
-        val rlPlayer  = new RLPlayer(0, drawer.popHand())
+        val rlPlayer  = new RLPlayer(0, drawer.popHand(), probe(0))
         val opponents = (1 to 3).map(i =>
           if (useFirstFelix) new FirstFelix(i, drawer.popHand(), 5)
           else new Chicken(i, drawer.popHand())
         ).toList
         rlPlayer :: opponents
       }
+      table = players
 
       val initPlayerId = seed.map(s => (s % 4).toInt).getOrElse(gameCount % 4)
       val state = GameState(players, None, Nil, initPlayerId.toInt, drawer)
