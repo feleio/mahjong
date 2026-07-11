@@ -20,6 +20,7 @@ export interface RoomState {
   youSeat: Seat | null; // your seat in this room
   youUserId: string;
   gamesPlayed: number;
+  coachModels: string[]; // available AI-coach models, strongest first ([] = coach off)
 }
 
 export interface MeldGroup {
@@ -83,7 +84,7 @@ export interface Decision {
   };
   deadlineTs: number; // epoch ms; server auto-acts after this
   view: GameView;
-  coach?: CoachHint;
+  coach?: Record<string, CoachHint>; // keyed by model name (see RoomState.coachModels)
 }
 
 export interface WinnersInfo {

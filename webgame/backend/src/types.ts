@@ -20,6 +20,7 @@ export interface RoomState {
   youSeat: Seat | null;
   youUserId: string;
   gamesPlayed: number;
+  coachModels: string[]; // available AI-coach models, strongest first ([] = coach off)
 }
 
 export interface MeldGroup {
@@ -84,7 +85,7 @@ export interface Decision {
   context: DecisionContext;
   deadlineTs: number;
   view: GameView;
-  coach?: CoachHint;
+  coach?: Record<string, CoachHint>; // keyed by model name
 }
 
 export interface WinnersInfo {
@@ -121,7 +122,7 @@ export type EngineMessage =
       decision: DecisionKind;
       context: DecisionContext;
       snapshot: EngineSnapshot;
-      coach?: CoachHint;
+      coach?: Record<string, CoachHint>;
     }
   | {
       type: 'game_over';

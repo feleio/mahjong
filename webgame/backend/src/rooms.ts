@@ -35,7 +35,7 @@ interface PendingDecision {
   seat: Seat;
   decision: DecisionKind;
   context: DecisionContext;
-  coach?: CoachHint;
+  coach?: Record<string, CoachHint>;
   deadlineTs: number;
   timer: NodeJS.Timeout;
 }
@@ -83,6 +83,7 @@ export class RoomManager {
     private io: Server,
     private prisma: PrismaClient,
     private engine: Engine,
+    private coachModels: string[] = [],
   ) {
     setInterval(() => this.sweepEmptyRooms(), 30_000).unref();
   }
@@ -164,6 +165,7 @@ export class RoomManager {
       youSeat: youSeat >= 0 ? (youSeat as Seat) : null,
       youUserId: forUserId,
       gamesPlayed: room.gamesPlayed,
+      coachModels: this.coachModels,
     };
   }
 

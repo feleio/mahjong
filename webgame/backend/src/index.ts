@@ -11,9 +11,17 @@ import type { EngineAction } from './types.js';
 const PORT = Number(process.env.PORT ?? 4000);
 const ENGINE_JAR = process.env.ENGINE_JAR ?? '../../target/scala-2.12/mahjong-assembly-0.1.0.jar';
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? 'http://localhost:3000';
-// Optional AI-coach model (ONNX student). When set, decision prompts include
-// the model's action probabilities so players can learn from the strongest net.
-const COACH_MODEL = process.env.COACH_MODEL ?? '../../rl/checkpoints/student/student48_sp1b.onnx';
+// Optional AI-coach models (ONNX, "name=path,name=path", strongest first —
+// the first entry is the UI default). Decision prompts carry every model's
+// action probabilities so players can compare how each trained net plays.
+const COACH_MODELS =
+  process.env.COACH_MODELS ??
+  [
+    'Champion=../../rl/checkpoints/exit_sp1b_soft/exit_final.onnx',
+    'ExIt r3=../../rl/checkpoints/exit_v3_r3_soft/exit_final.onnx',
+    'Imitation=../../rl/checkpoints/imitation_v3d/imitation_epoch10.onnx',
+    'Student (fast)=../../rl/checkpoints/student/student48_sp1b.onnx',
+  ].join(',');
 
 const prisma = new PrismaClient();
 const app = express();
@@ -22,11 +30,24 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: CORS_ORIGIN } });
-// Missing model file ⇒ coach silently off (a bad path must not crashloop the engine).
-const coachModel = fs.existsSync(COACH_MODEL) ? COACH_MODEL : undefined;
-if (COACH_MODEL && !coachModel) console.warn(`[coach] model not found at ${COACH_MODEL} — coach disabled`);
-const engine = new Engine(ENGINE_JAR, coachModel);
-const roomManager = new RoomManager(io, prisma, engine);
+// Missing model files ⇒ dropped with a warning (a bad path must not crashloop
+// the engine); order is preserved so the first surviving entry is the default.
+const coachModels = COACH_MODELS.split(',')
+  .map((spec) => {
+    const eq = spec.indexOf('=');
+    return eq > 0 ? { name: spec.slice(0, eq).trim(), path: spec.slice(eq + 1).trim() } : null;
+  })
+  .filter((m): m is { name: string; path: string } => {
+    if (!m) return false;
+    if (!fs.existsSync(m.path)) {
+      console.warn(`[coach] model not found: ${m.name} = ${m.path} — skipped`);
+      return false;
+    }
+    return true;
+  });
+console.log(`[coach] models: ${coachModels.map((m) => m.name).join(', ') || '(none)'}`);
+const engine = new Engine(ENGINE_JAR, coachModels);
+const roomManager = new RoomManager(io, prisma, engine, coachModels.map((m) => m.name));
 
 io.use(async (socket, next) => {
   try {

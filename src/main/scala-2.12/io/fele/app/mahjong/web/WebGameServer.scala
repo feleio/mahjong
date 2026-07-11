@@ -53,14 +53,36 @@ object WebGameServer extends App {
   implicit val formats: Formats = Serialization.formats(NoTypeHints)
   implicit val config: Config = new Config()
 
-  // Optional coach model: -Dweb.coachmodel=<student ONNX path> attaches the
-  // net's decision probabilities (+ value estimate) to every remote seat's
-  // decision_request, so the UI can show how the strongest model would play.
-  // ~0.1ms/decision; absent property ⇒ no coach field, feature off.
-  private val coachSvc: Option[OnnxPolicyService] =
-    Option(System.getProperty("web.coachmodel")).map(new OnnxPolicyService(_))
-  coachSvc.foreach(_ => System.err.println(
-    s"coach model loaded: ${System.getProperty("web.coachmodel")}"))
+  // Optional coach models: attach each net's decision probabilities (+ value
+  // estimate) to every remote seat's decision_request, so the UI can show how
+  // trained models would play. Hints for ALL loaded models ride on every
+  // request (~1ms each) — the client picks which to display, so switching
+  // needs no server state.
+  //   -Dweb.coachmodels=name=path,name=path   (ordered; first = UI default)
+  //   -Dweb.coachmodel=path                   (legacy single, named "coach")
+  // Absent properties ⇒ no coach field, feature off. A model that fails to
+  // load is skipped with a warning rather than killing the server.
+  private val coachSvcs: List[(String, OnnxPolicyService)] = {
+    val multi = Option(System.getProperty("web.coachmodels")).toList
+      .flatMap(_.split(',').toList).flatMap { spec =>
+        spec.split('=') match {
+          case Array(name, path) => Some(name.trim -> path.trim)
+          case _ =>
+            System.err.println(s"coach: bad spec '$spec' (want name=path)"); None
+        }
+      }
+    val single = Option(System.getProperty("web.coachmodel")).map("coach" -> _)
+    (multi ++ single).flatMap { case (name, path) =>
+      Try(new OnnxPolicyService(path)) match {
+        case Success(svc) =>
+          System.err.println(s"coach model loaded: $name = $path")
+          Some(name -> svc)
+        case Failure(ex) =>
+          System.err.println(s"coach model FAILED to load: $name = $path (${ex.getMessage})")
+          None
+      }
+    }
+  }
 
   private val out = new Object // stdout write lock
   private def send(msg: Map[String, Any]): Unit = out.synchronized {
@@ -227,19 +249,24 @@ object WebGameServer extends App {
       exps.map { case (k, e) => k -> e / sum }.toMap
     }
 
-    /** probs over `keys` (label → logit index of the decision's head) plus the
-      * net's value estimate. Never throws — a coach failure must not touch the
-      * game; it just omits the hint. */
+    /** Per-model probs over `keys` (label → logit index of the decision's
+      * head) plus each net's value estimate, keyed by model name. Never
+      * throws — a coach failure must not touch the game; a failing model
+      * just omits its hint, and an empty result omits the field. */
     private def coach(cs: CurState, contextTile: Option[Int],
                       head: PolicyOut => Array[Float],
-                      keys: List[(String, Int)]): Option[Map[String, Any]] =
-      coachSvc.flatMap { svc =>
+                      keys: List[(String, Int)]): Option[Map[String, Any]] = {
+      if (coachSvcs.isEmpty) return None
+      val obs = Try(V3Obs.fromCurState(id, cs, contextTile)).getOrElse(return None)
+      val hints: Map[String, Any] = coachSvcs.flatMap { case (name, svc) =>
         Try {
-          val nnOut = svc.query(V3Obs.fromCurState(id, cs, contextTile))
-          Map[String, Any]("probs" -> softmaxOver(head(nnOut), keys),
-                           "value" -> nnOut.value.toDouble)
+          val nnOut = svc.query(obs)
+          name -> Map[String, Any]("probs" -> softmaxOver(head(nnOut), keys),
+                                   "value" -> nnOut.value.toDouble)
         }.toOption
-      }
+      }.toMap
+      if (hints.isEmpty) None else Some(hints)
+    }
 
     private val binaryKeys = List("pass" -> 0, "accept" -> 1)
 
