@@ -63,6 +63,18 @@ export function GameTable({
   const isYourTurn = view.curSeat === you;
   const canDiscard = decision?.decision === "discard";
 
+  // ≈ how many more draws YOU get before the wall empties. Public info (the
+  // wall count is on the table), just arithmetic: tiles are consumed one per
+  // turn around from the current seat. Approximate — pong/chow skip players
+  // and kong draws extra — hence the ≈.
+  const turnsUntilYou = (you - view.curSeat + 4) % 4;
+  const drawsLeft =
+    turnsUntilYou === 0
+      ? Math.floor(view.remaining / 4)
+      : view.remaining >= turnsUntilYou
+        ? 1 + Math.floor((view.remaining - turnsUntilYou) / 4)
+        : 0;
+
   // AI-coach mode: show a model's probabilities on your decisions.
   // Off by default (hints spoil the game unless asked for); toggle + chosen
   // model persisted. Initialised in an effect, not the useState initialiser,
@@ -110,6 +122,12 @@ export function GameTable({
       <span className="rounded-full border border-white/15 bg-black/30 px-2.5 py-1">
         牆 Wall: <span className="font-semibold tabular-nums text-emerald-50">{view.remaining}</span>
       </span>
+      <span
+        className="rounded-full border border-white/15 bg-black/30 px-2.5 py-1"
+        title="Approximate — claims skip players and kongs draw extra"
+      >
+        摸 Your draws: <span className="font-semibold tabular-nums text-emerald-50">≈{drawsLeft}</span>
+      </span>
       <span className="rounded-full border border-white/15 bg-black/30 px-2.5 py-1">
         莊 Dealer: {WIND_CHARS[0]} {seatName(view.dealerSeat)}
       </span>
@@ -130,7 +148,9 @@ export function GameTable({
             {seatWindEn(view.curSeat, view.dealerSeat)} · {seatName(view.curSeat)}
           </span>
         </span>
-        <span className="tabular-nums">牆 {view.remaining}</span>
+        <span className="tabular-nums" title="Wall tiles left · ≈ your remaining draws">
+          牆 {view.remaining} · 摸 ≈{drawsLeft}
+        </span>
         <span className="hidden tabular-nums sm:inline">
           Game #{(room?.gamesPlayed ?? 0) + 1}
         </span>
