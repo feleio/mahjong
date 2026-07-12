@@ -120,6 +120,13 @@ io.on('connection', (socket) => {
   );
 
   socket.on(
+    'room:setTimeLimit',
+    withAck((payload) => ({
+      room: roomManager.setTimeLimit(userId, Boolean(payload?.enabled)),
+    })),
+  );
+
+  socket.on(
     'room:start',
     withAck(async () => {
       await roomManager.startGame(userId);

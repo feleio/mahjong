@@ -5,13 +5,17 @@ import type { Decision } from "@/lib/types";
 import { chowRun, tileLabel } from "@/lib/tiles";
 import { Tile } from "./Tile";
 
-function Countdown({ deadlineTs, receivedTs }: { deadlineTs: number; receivedTs: number }) {
+function Countdown({ deadlineTs, receivedTs }: { deadlineTs: number | null; receivedTs: number }) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
+    if (deadlineTs === null) return;
     const id = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(id);
   }, [deadlineTs]);
+
+  // Untimed decision (no time limit): render nothing.
+  if (deadlineTs === null) return null;
 
   const total = Math.max(deadlineTs - receivedTs, 1);
   const left = Math.max(deadlineTs - now, 0);

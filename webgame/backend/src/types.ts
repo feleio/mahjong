@@ -21,6 +21,7 @@ export interface RoomState {
   youUserId: string;
   gamesPlayed: number;
   coachModels: string[]; // available AI-coach models, strongest first ([] = coach off)
+  enforceTimeLimit: boolean; // false = no decision countdown (default)
 }
 
 export interface MeldGroup {
@@ -83,7 +84,7 @@ export interface Decision {
   requestId: number;
   decision: DecisionKind;
   context: DecisionContext;
-  deadlineTs: number;
+  deadlineTs: number | null; // null = untimed (no countdown)
   view: GameView;
   coach?: Record<string, CoachHint>; // keyed by model name
 }

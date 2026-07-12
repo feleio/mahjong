@@ -171,6 +171,7 @@ export default function RoomPage() {
           starting={starting}
           onAddBot={() => void hostAction("room:addBot")}
           onRemoveBot={(seat) => void hostAction("room:removeBot", { seat })}
+          onSetTimeLimit={(enabled) => void hostAction("room:setTimeLimit", { enabled })}
           onStart={() => void startGame()}
         />
       )}

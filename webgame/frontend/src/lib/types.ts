@@ -21,6 +21,7 @@ export interface RoomState {
   youUserId: string;
   gamesPlayed: number;
   coachModels: string[]; // available AI-coach models, strongest first ([] = coach off)
+  enforceTimeLimit: boolean; // false = no decision countdown (default)
 }
 
 export interface MeldGroup {
@@ -82,7 +83,7 @@ export interface Decision {
     validTiles?: number[]; // discard: your hand; self_kong: kongable tiles
     positions?: (0 | 1 | 2)[]; // chow options
   };
-  deadlineTs: number; // epoch ms; server auto-acts after this
+  deadlineTs: number | null; // epoch ms; server auto-acts after this. null = untimed
   view: GameView;
   coach?: Record<string, CoachHint>; // keyed by model name (see RoomState.coachModels)
 }
