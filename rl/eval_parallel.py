@@ -28,15 +28,17 @@ _W = {}
 def _worker_init(jar, checkpoints, opponent):
     import torch
     torch.set_num_threads(1)
-    from env import MahjongEnv, OBS_DIM_V3
+    from env import MahjongEnv, OBS_DIM_V3, OBS_DIM_V4
     from model import MahjongAgent
 
     _W["agents"] = {c: MahjongAgent.load(c, device="cpu") for c in checkpoints}
     # obs version per checkpoint, inferred from its input dim
-    _W["versions"] = {c: (3 if a.net.obs_dim == OBS_DIM_V3 else 2)
+    _W["versions"] = {c: (4 if a.net.obs_dim == OBS_DIM_V4
+                          else 3 if a.net.obs_dim == OBS_DIM_V3 else 2)
                       for c, a in _W["agents"].items()}
-    # env always runs at v3 (superset); per-agent obs re-encoded from raw state
-    _W["env"] = MahjongEnv(jar, opponent=opponent, obs_version=3)
+    # env runs at v4 (superset — state carries discard_seq); per-agent obs
+    # re-encoded from raw state at each net's own version.
+    _W["env"] = MahjongEnv(jar, opponent=opponent, obs_version=4)
 
 
 def _play_seed(seed):
