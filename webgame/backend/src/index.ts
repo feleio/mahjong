@@ -17,6 +17,9 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN ?? 'http://localhost:3000';
 const COACH_MODELS =
   process.env.COACH_MODELS ??
   [
+    // Danger v4 first (UI default): champion-strength play PLUS opponent
+    // tenpai/deal-in warnings from its danger heads (tenpai AUC 0.86).
+    'Danger v4=../../rl/checkpoints/exit_v4/exit_final.onnx',
     'Champion=../../rl/checkpoints/exit_sp1b_soft/exit_final.onnx',
     'ExIt r3=../../rl/checkpoints/exit_v3_r3_soft/exit_final.onnx',
     'Imitation=../../rl/checkpoints/imitation_v3d/imitation_epoch10.onnx',

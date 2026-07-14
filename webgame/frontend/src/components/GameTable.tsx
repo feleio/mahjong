@@ -88,8 +88,12 @@ export function GameTable({
   // (fall back to the first = strongest when the stored pick is unavailable).
   const activeModel =
     coachModel && coachModels.includes(coachModel) ? coachModel : (coachModels[0] ?? null);
-  const coachProbs =
-    showCoach && activeModel ? (decision?.coach?.[activeModel]?.probs ?? null) : null;
+  const activeHint =
+    showCoach && activeModel ? (decision?.coach?.[activeModel] ?? null) : null;
+  const coachProbs = activeHint?.probs ?? null;
+  // v4 danger models only: per-opponent tenpai warnings + per-tile deal-in heat.
+  const coachTenpai = activeHint?.oppTenpai ?? null;
+  const coachDanger = activeHint?.dangerByTile ?? null;
 
   const opponent = (seat: Seat, compact: boolean) => (
     <OpponentPanel
@@ -102,6 +106,7 @@ export function GameTable({
       lastEvent={lastEvent}
       lastEventId={lastEventId}
       compact={compact}
+      tenpaiP={coachTenpai?.find((o) => o.seat === seat)?.p ?? null}
     />
   );
 
@@ -248,6 +253,7 @@ export function GameTable({
             canDiscard={canDiscard}
             onDiscard={(tile) => onAction(tile)}
             coach={canDiscard ? coachProbs : null}
+            danger={canDiscard ? coachDanger : null}
           />
         </div>
       </div>

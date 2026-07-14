@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import io.fele.app.mahjong._
 import io.fele.app.mahjong.ChowPosition.ChowPosition
 import io.fele.app.mahjong.player.{Chicken, Player}
-import io.fele.app.mahjong.rl.{OnnxPolicyService, PolicyOut, V3Obs}
+import io.fele.app.mahjong.rl.{OnnxPolicyService, PolicyOut, V3Obs, V4Obs}
 import org.json4s._
 import org.json4s.native.JsonMethods._
 import org.json4s.native.Serialization
@@ -250,19 +250,36 @@ object WebGameServer extends App {
     }
 
     /** Per-model probs over `keys` (label → logit index of the decision's
-      * head) plus each net's value estimate, keyed by model name. Never
-      * throws — a coach failure must not touch the game; a failing model
-      * just omits its hint, and an empty result omits the field. */
+      * head) plus each net's value estimate, keyed by model name. v4 models
+      * (input dim 1443) get v4 obs and additionally report their danger
+      * heads: per-opponent tenpai probability (absolute seats) and a
+      * per-tile deal-in risk, max over opponents of p(tenpai)·p(waits on
+      * tile). Never throws — a coach failure must not touch the game; a
+      * failing model just omits its hint, and an empty result omits the
+      * field. */
     private def coach(cs: CurState, contextTile: Option[Int],
                       head: PolicyOut => Array[Float],
                       keys: List[(String, Int)]): Option[Map[String, Any]] = {
       if (coachSvcs.isEmpty) return None
-      val obs = Try(V3Obs.fromCurState(id, cs, contextTile)).getOrElse(return None)
+      lazy val obsV3 = Try(V3Obs.fromCurState(id, cs, contextTile))
+      lazy val obsV4 = Try(V4Obs.fromCurState(id, cs, contextTile))
       val hints: Map[String, Any] = coachSvcs.flatMap { case (name, svc) =>
         Try {
+          val obs = (if (svc.inputDim == V4Obs.DIM) obsV4 else obsV3).get
           val nnOut = svc.query(obs)
-          name -> Map[String, Any]("probs" -> softmaxOver(head(nnOut), keys),
-                                   "value" -> nnOut.value.toDouble)
+          val danger: Map[String, Any] = (nnOut.oppTenpai, nnOut.oppWaits) match {
+            case (Some(tp), Some(wt)) =>
+              // DangerLabels order: opponent i = seat (id + 1 + i) % 4
+              val oppTenpai = (0 until 3).map(i => Map(
+                "seat" -> (id + 1 + i) % 4, "p" -> tp(i).toDouble)).toList
+              val dangerByTile = (0 until 34).map(t =>
+                t.toString -> (0 until 3).map(i => tp(i) * wt(i)(t)).max.toDouble
+              ).toMap
+              Map("oppTenpai" -> oppTenpai, "dangerByTile" -> dangerByTile)
+            case _ => Map.empty[String, Any]
+          }
+          name -> (Map[String, Any]("probs" -> softmaxOver(head(nnOut), keys),
+                                    "value" -> nnOut.value.toDouble) ++ danger)
         }.toOption
       }.toMap
       if (hints.isEmpty) None else Some(hints)

@@ -226,7 +226,11 @@ object V4Obs {
 case class PolicyOut(discard: Array[Float], win: Array[Float],
                      selfWin: Array[Float], pong: Array[Float],
                      kong: Array[Float], chow: Array[Float],
-                     selfKong: Array[Float], value: Float)
+                     selfKong: Array[Float], value: Float,
+                     // v4 danger heads (probabilities, opponent order =
+                     // seat-relative myId+1..+3); None on v3 models.
+                     oppTenpai: Option[Array[Float]] = None,
+                     oppWaits: Option[Array[Array[Float]]] = None)
 
 /**
  * Batched ONNX inference: rollout threads enqueue observations and block;
@@ -238,6 +242,17 @@ class OnnxPolicyService(modelPath: String, maxBatch: Int = 256,
   private val opts = new OrtSession.SessionOptions()
   opts.setIntraOpNumThreads(Integer.getInteger("rl.onnxthreads", 2))
   private val session = env.createSession(modelPath, opts)
+
+  /** Obs dim read from the model's own input shape (falls back to the
+    * constructor param when the graph declares it dynamic). Lets callers
+    * mix v3 (759) and v4 (1443) models without per-model wiring. */
+  val inputDim: Int = {
+    val shape = session.getInputInfo.values().iterator().next()
+      .getInfo.asInstanceOf[ai.onnxruntime.TensorInfo].getShape
+    if (shape.length == 2 && shape(1) > 0) shape(1).toInt else obsDim
+  }
+  // v4 exports append opp_tenpai (B,3) + opp_waits (B,3,34) after value
+  private val hasDanger = session.getNumOutputs > 8
 
   private case class Req(obs: Array[Float], promise: CompletableFuture[PolicyOut])
   private val queue = new LinkedBlockingQueue[Req]()
@@ -261,11 +276,11 @@ class OnnxPolicyService(modelPath: String, maxBatch: Int = 256,
     queue.drainTo(reqs, maxBatch - 1)
     val b = reqs.size
     try {
-      val flat = new Array[Float](b * obsDim)
+      val flat = new Array[Float](b * inputDim)
       (0 until b).foreach(i =>
-        System.arraycopy(reqs.get(i).obs, 0, flat, i * obsDim, obsDim))
+        System.arraycopy(reqs.get(i).obs, 0, flat, i * inputDim, inputDim))
       val tensor = OnnxTensor.createTensor(
-        env, java.nio.FloatBuffer.wrap(flat), Array(b.toLong, obsDim.toLong))
+        env, java.nio.FloatBuffer.wrap(flat), Array(b.toLong, inputDim.toLong))
       val out = session.run(java.util.Collections.singletonMap("obs", tensor))
       try {
         def mat(i: Int): Array[Array[Float]] =
@@ -273,9 +288,14 @@ class OnnxPolicyService(modelPath: String, maxBatch: Int = 256,
         val (d, w, sw, po, ko, ch, sk) =
           (mat(0), mat(1), mat(2), mat(3), mat(4), mat(5), mat(6))
         val v = out.get(7).getValue.asInstanceOf[Array[Float]]
+        val tp = if (hasDanger) Some(mat(8)) else None
+        val wt = if (hasDanger)
+          Some(out.get(9).getValue.asInstanceOf[Array[Array[Array[Float]]]])
+        else None
         (0 until b).foreach { i =>
           reqs.get(i).promise.complete(
-            PolicyOut(d(i), w(i), sw(i), po(i), ko(i), ch(i), sk(i), v(i)))
+            PolicyOut(d(i), w(i), sw(i), po(i), ko(i), ch(i), sk(i), v(i),
+                      tp.map(_(i)), wt.map(_(i))))
         }
       } finally {
         out.close()

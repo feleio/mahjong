@@ -11,6 +11,11 @@ import { Tile } from "./Tile";
  * When `coach` is set (AI-coach mode, discard decisions only) each tile shows
  * the model's discard probability as a heat-colored percentage badge; the
  * model's top pick gets a matching ring.
+ *
+ * When `danger` is set (v4 danger coach models) each tile additionally gets
+ * a red bar above it whose intensity is the RELATIVE deal-in risk (max over
+ * opponents of p(tenpai)·p(waits on tile)) — a second, visually distinct
+ * channel from the green/red discard heat below.
  */
 export function Hand({
   tiles,
@@ -18,12 +23,14 @@ export function Hand({
   canDiscard,
   onDiscard,
   coach,
+  danger,
 }: {
   tiles: number[];
   lastDrawnTile: number | null;
   canDiscard: boolean;
   onDiscard: (tile: number) => void;
   coach?: Record<string, number> | null;
+  danger?: Record<string, number> | null;
 }) {
   const [selected, setSelected] = useState<number | null>(null); // index into render list
 
@@ -56,12 +63,27 @@ export function Hand({
     return `hsl(${Math.round(10 + 125 * s)}, 85%, ${Math.round(42 + 18 * s)}%)`;
   };
 
+  // Danger channel: relative deal-in risk across the tiles in hand.
+  const showDanger = canDiscard && danger && Object.keys(danger).length > 0;
+  const maxDanger = showDanger
+    ? Math.max(...tiles.map((t) => danger[String(t)] ?? 0), 1e-9)
+    : 1;
+
   const render = (tile: number, key: number, isDrawn: boolean) => {
     const isSelected = selected === key;
     const prob = showCoach ? (coach[String(tile)] ?? 0) : null;
     const isTopPick = prob !== null && maxProb > 0 && prob === maxProb;
+    const risk = showDanger ? (danger[String(tile)] ?? 0) : null;
+    const riskRel = risk !== null ? risk / maxDanger : 0;
     return (
       <div key={key} className="relative pt-3 pb-1">
+        {risk !== null && riskRel > 0.1 && (
+          <span
+            title={`Coach: deal-in risk ~${(risk * 100).toFixed(1)}% (relative heat — an opponent may be waiting on this tile)`}
+            className="absolute inset-x-1 top-1 h-1 rounded-full bg-red-500"
+            style={{ opacity: 0.25 + 0.75 * riskRel }}
+          />
+        )}
         <div
           className="rounded-lg"
           style={isTopPick ? { boxShadow: `0 0 0 2px ${heat(prob!)}` } : undefined}

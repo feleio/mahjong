@@ -78,6 +78,12 @@ export interface DecisionContext {
 export interface CoachHint {
   probs: Record<string, number>;
   value?: number;
+  /** v4 danger models only: per-opponent tenpai probability (absolute seat). */
+  oppTenpai?: { seat: number; p: number }[];
+  /** v4 danger models only: per-tile deal-in risk, keyed by tile value —
+   * max over opponents of p(tenpai)·p(waits on tile). Relative heat, not
+   * a calibrated deal-in probability. */
+  dangerByTile?: Record<string, number>;
 }
 
 export interface Decision {

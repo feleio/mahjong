@@ -71,6 +71,11 @@ export type DecisionKind =
 export interface CoachHint {
   probs: Record<string, number>;
   value?: number; // net's $-scale estimate of the current position
+  /** v4 danger models only: per-opponent tenpai probability (absolute seat). */
+  oppTenpai?: { seat: Seat; p: number }[];
+  /** v4 danger models only: per-tile deal-in risk keyed by tile value —
+   * max over opponents of p(tenpai)·p(waits). Relative heat, not calibrated. */
+  dangerByTile?: Record<string, number>;
 }
 
 export interface Decision {
