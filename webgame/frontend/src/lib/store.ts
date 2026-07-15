@@ -151,8 +151,11 @@ export function bindSocketToStore(): void {
   s.on("game:event", (payload: GameEventPayload) => {
     // The view fully replaces the previous one. A stale decision whose
     // deadline has passed is dropped (server already auto-acted).
+    // Untimed decisions (deadlineTs null) never go stale.
     const staleDecision =
-      state.decision !== null && Date.now() > state.decision.deadlineTs;
+      state.decision !== null &&
+      state.decision.deadlineTs !== null &&
+      Date.now() > state.decision.deadlineTs;
     setState({
       view: payload.view,
       lastEvent: payload.event,

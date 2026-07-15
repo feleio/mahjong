@@ -15,6 +15,7 @@ export function OpponentPanel({
   lastEvent,
   lastEventId,
   compact = false,
+  tenpaiP = null,
 }: {
   seatInfo: SeatInfo | undefined;
   seat: number;
@@ -25,6 +26,8 @@ export function OpponentPanel({
   lastEvent: GameEvent | null;
   lastEventId: number;
   compact?: boolean;
+  /** Coach danger model's p(this opponent is tenpai), 0..1; null = hidden. */
+  tenpaiP?: number | null;
 }) {
   const isDealer = seat === dealerSeat;
   const name = seatInfo?.name ?? `Seat ${seat}`;
@@ -63,6 +66,18 @@ export function OpponentPanel({
             className={`h-2 w-2 shrink-0 rounded-full ${seatInfo.connected ? "bg-emerald-400" : "bg-red-500"}`}
             title={seatInfo.connected ? "connected" : "disconnected"}
           />
+        )}
+        {tenpaiP !== null && tenpaiP >= 0.3 && (
+          <span
+            title={`Coach: ~${Math.round(tenpaiP * 100)}% chance this player is tenpai (one tile from winning)`}
+            className={`ml-auto shrink-0 rounded-full border px-1.5 py-px text-[10px] font-bold tabular-nums ${
+              tenpaiP >= 0.6
+                ? "border-red-400/70 bg-red-500/25 text-red-200"
+                : "border-amber-400/60 bg-amber-500/20 text-amber-200"
+            }`}
+          >
+            ⚠ 聽 {Math.round(tenpaiP * 100)}%
+          </span>
         )}
       </div>
 

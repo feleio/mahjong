@@ -54,6 +54,16 @@ OBS_DIM = (
 # v3 observation: v2 + shanten/ukeire feature planes + context-tile plane
 OBS_DIM_V3 = OBS_DIM + NUM_TILE_TYPES * 5 + 2  # = 759
 
+# v4 observation: v3 + discard-ORDER planes (issue #21, #13 lever 3) —
+# recency[4×34] + last-K one-hots[4×K×34] + per-player discard counts[4]
+DISCARD_SEQ_K = 4          # per-player most-recent discards kept as one-hots
+RECENCY_DECAY = np.float32(0.9)
+MAX_PLAYER_DISCARDS = 21.0  # ~84-tile wall / 4 seats, normalises the counts
+OBS_DIM_V4 = (OBS_DIM_V3
+              + NUM_TILE_TYPES * 4                   # recency planes
+              + NUM_TILE_TYPES * 4 * DISCARD_SEQ_K   # last-K one-hots
+              + 4)                                    # discard counts  = 1443
+
 DECISION_SPACES: Dict[str, int] = {
     "discard":   34,   # tile ID 0–33
     "win":        2,   # 0=pass, 1=win
@@ -85,8 +95,21 @@ def encode_state(state: Dict[str, Any], version: int = 2,
                              win/pong/kong/chow/self_win decisions (from context)
         cur_shanten[1]     – (9 − current shanten)/10
         is_discard_state[1]
+    version=4 : 1443-dim — appends discard-ORDER planes (issue #21), all
+        indexed by ABSOLUTE seat id like the discard-count planes:
+        recency[4×34]      – RECENCY_DECAY^age of each player's LAST discard
+                             of each tile, age in global discard events;
+                             0 if never discarded. Decay powers built by
+                             repeated float32 multiplication for bit-exact
+                             Scala parity (V4Obs / test_v4obs.py).
+        last_k[4×K×34]     – one-hot of each player's k-th most recent
+                             discard (k=0 newest), K=DISCARD_SEQ_K
+        disc_count[4]      – discards made by each player /21, clipped
+        Requires state["discard_seq"] (chronological [pid, tile] pairs).
     """
-    obs = np.zeros(OBS_DIM_V3 if version >= 3 else OBS_DIM, dtype=np.float32)
+    obs = np.zeros(
+        OBS_DIM_V4 if version >= 4 else OBS_DIM_V3 if version >= 3 else OBS_DIM,
+        dtype=np.float32)
     ptr = 0
 
     def write_segment(arr: np.ndarray) -> None:
@@ -210,7 +233,45 @@ def encode_state(state: Dict[str, Any], version: int = 2,
         write_segment(np.array([(9.0 - cur_sh) / 10.0, is_discard],
                                dtype=np.float32))
 
-    expected = OBS_DIM_V3 if version >= 3 else OBS_DIM
+    if version >= 4:
+        seq = state.get("discard_seq")
+        if seq is None:
+            # Explicit failure: silently zeroed order-planes would corrupt any
+            # v4 training run fed from pre-v4 shards that lack the sequence.
+            raise KeyError("obs v4 requires state['discard_seq'] "
+                           "(chronological [playerId, tileValue] pairs)")
+        n = len(seq)
+
+        # Decay powers by repeated float32 multiplication — bit-exact vs Scala.
+        decay_pow = np.empty(max(n, 1), dtype=np.float32)
+        decay_pow[0] = 1.0
+        for a in range(1, n):
+            decay_pow[a] = decay_pow[a - 1] * RECENCY_DECAY
+
+        # Recency planes: later (more recent) entries overwrite earlier ones.
+        recency = np.zeros((4, NUM_TILE_TYPES), dtype=np.float32)
+        for i, (p, t) in enumerate(seq):
+            recency[int(p)][int(t)] = decay_pow[n - 1 - i]
+        for p in range(4):
+            write_segment(recency[p])
+
+        # Per-player discard stacks, most recent first.
+        by_player: List[List[int]] = [[], [], [], []]
+        for p, t in reversed(seq):
+            by_player[int(p)].append(int(t))
+        for p in range(4):
+            for k in range(DISCARD_SEQ_K):
+                oh = np.zeros(NUM_TILE_TYPES, dtype=np.float32)
+                if k < len(by_player[p]):
+                    oh[by_player[p][k]] = 1.0
+                write_segment(oh)
+
+        write_segment(np.array(
+            [min(1.0, len(by_player[p]) / MAX_PLAYER_DISCARDS) for p in range(4)],
+            dtype=np.float32))
+
+    expected = (OBS_DIM_V4 if version >= 4 else
+                OBS_DIM_V3 if version >= 3 else OBS_DIM)
     assert ptr == expected, f"Observation dim mismatch: {ptr} != {expected}"
     return obs
 
@@ -276,12 +337,18 @@ class MahjongEnv:
     decision_spaces = DECISION_SPACES
 
     def __init__(self, jar_path: str, java_bin: str = "java", opponent: str = "chicken",
-                 obs_version: int = 2) -> None:
+                 obs_version: int = 2, danger_labels: bool = False) -> None:
         self.jar_path = jar_path
         self.java_bin = java_bin
         self.opponent = opponent
         self.obs_version = obs_version
-        self.obs_dim = OBS_DIM_V3 if obs_version >= 3 else OBS_DIM
+        self.obs_dim = (OBS_DIM_V4 if obs_version >= 4 else
+                        OBS_DIM_V3 if obs_version >= 3 else OBS_DIM)
+        # Ground-truth opponent danger labels (issue #21 aux heads): every
+        # observation's info["state"] gains opp_tenpai[3] / opp_waits[3][34].
+        # Labels only — encode_state never reads them (that would leak hidden
+        # state into the policy input).
+        self.danger_labels = danger_labels
         self._proc: Optional[subprocess.Popen] = None
         self._pending_decision: Optional[str] = None
 
@@ -294,6 +361,7 @@ class MahjongEnv:
             [self.java_bin,
              "-Dlogback.statusListenerClass=ch.qos.logback.core.status.NopStatusListener",
              f"-Drl.opponent={self.opponent}",
+             f"-Drl.dangerlabels={'true' if self.danger_labels else 'false'}",
              "-cp", self.jar_path,
              "io.fele.app.mahjong.rl.RLGymServer"],
             stdin=subprocess.PIPE,

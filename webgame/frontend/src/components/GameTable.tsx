@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type {
   Decision,
   GameEvent,
@@ -62,6 +63,38 @@ export function GameTable({
   const isYourTurn = view.curSeat === you;
   const canDiscard = decision?.decision === "discard";
 
+  // AI-coach mode: show a model's probabilities on your decisions.
+  // Off by default (hints spoil the game unless asked for); toggle + chosen
+  // model persisted. Initialised in an effect, not the useState initialiser,
+  // to avoid an SSR/client hydration mismatch.
+  const coachModels = room?.coachModels ?? [];
+  const [showCoach, setShowCoach] = useState(false);
+  const [coachModel, setCoachModel] = useState<string | null>(null);
+  useEffect(() => {
+    setShowCoach(localStorage.getItem("mj-coach") === "1");
+    setCoachModel(localStorage.getItem("mj-coach-model"));
+  }, []);
+  const toggleCoach = () => {
+    setShowCoach((v) => {
+      localStorage.setItem("mj-coach", v ? "0" : "1");
+      return !v;
+    });
+  };
+  const pickCoachModel = (m: string) => {
+    setCoachModel(m);
+    localStorage.setItem("mj-coach-model", m);
+  };
+  // Every decision carries hints for ALL models; display the selected one
+  // (fall back to the first = strongest when the stored pick is unavailable).
+  const activeModel =
+    coachModel && coachModels.includes(coachModel) ? coachModel : (coachModels[0] ?? null);
+  const activeHint =
+    showCoach && activeModel ? (decision?.coach?.[activeModel] ?? null) : null;
+  const coachProbs = activeHint?.probs ?? null;
+  // v4 danger models only: per-opponent tenpai warnings + per-tile deal-in heat.
+  const coachTenpai = activeHint?.oppTenpai ?? null;
+  const coachDanger = activeHint?.dangerByTile ?? null;
+
   const opponent = (seat: Seat, compact: boolean) => (
     <OpponentPanel
       seatInfo={room?.seats[seat]}
@@ -73,6 +106,7 @@ export function GameTable({
       lastEvent={lastEvent}
       lastEventId={lastEventId}
       compact={compact}
+      tenpaiP={coachTenpai?.find((o) => o.seat === seat)?.p ?? null}
     />
   );
 
@@ -105,6 +139,35 @@ export function GameTable({
         <span className="hidden tabular-nums sm:inline">
           Game #{(room?.gamesPlayed ?? 0) + 1}
         </span>
+        {coachModels.length > 0 && (
+          <span className="flex items-center gap-1">
+            <button
+              onClick={toggleCoach}
+              title="Show an AI model's suggested action probabilities on your decisions"
+              className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors ${
+                showCoach
+                  ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-200"
+                  : "border-white/15 bg-black/30 text-emerald-100/50 hover:text-emerald-100/80"
+              }`}
+            >
+              🎓 Coach {showCoach ? "ON" : "OFF"}
+            </button>
+            {showCoach && coachModels.length > 1 && (
+              <select
+                value={activeModel ?? ""}
+                onChange={(e) => pickCoachModel(e.target.value)}
+                title="Which trained model's play to show"
+                className="max-w-32 rounded-full border border-white/15 bg-black/30 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-100/80 outline-none"
+              >
+                {coachModels.map((m) => (
+                  <option key={m} value={m} className="bg-emerald-950 text-emerald-50">
+                    {m}
+                  </option>
+                ))}
+              </select>
+            )}
+          </span>
+        )}
       </div>
 
       {/* ===== desktop layout ===== */}
@@ -158,6 +221,7 @@ export function GameTable({
               decision={decision}
               receivedTs={decisionReceivedTs}
               onAct={onAction}
+              coach={decision.decision !== "discard" ? coachProbs : null}
             />
           ) : waiting && waiting.seat !== you ? (
             <WaitingIndicator waiting={waiting} room={room} />
@@ -188,6 +252,8 @@ export function GameTable({
             lastDrawnTile={view.lastDrawnTile}
             canDiscard={canDiscard}
             onDiscard={(tile) => onAction(tile)}
+            coach={canDiscard ? coachProbs : null}
+            danger={canDiscard ? coachDanger : null}
           />
         </div>
       </div>

@@ -10,6 +10,7 @@ export function Lobby({
   starting,
   onAddBot,
   onRemoveBot,
+  onSetTimeLimit,
   onStart,
 }: {
   room: RoomState;
@@ -17,6 +18,7 @@ export function Lobby({
   starting: boolean;
   onAddBot: () => void;
   onRemoveBot: (seat: number) => void;
+  onSetTimeLimit: (enabled: boolean) => void;
   onStart: () => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -129,6 +131,21 @@ export function Lobby({
                 {starting ? "Starting…" : "開局 Start game"}
               </button>
             </div>
+            <label
+              className="flex cursor-pointer items-center gap-2 text-sm text-emerald-100/80"
+              title="Off: think as long as you like (great with the AI coach). On: 45s to discard, 20s to claim."
+            >
+              <input
+                type="checkbox"
+                checked={room.enforceTimeLimit}
+                onChange={(e) => onSetTimeLimit(e.target.checked)}
+                className="h-4 w-4 accent-amber-400"
+              />
+              ⏱ Turn time limit
+              <span className="text-emerald-100/50">
+                {room.enforceTimeLimit ? "(45s / 20s)" : "(off — untimed)"}
+              </span>
+            </label>
             <p className="text-xs text-emerald-100/50">
               Empty seats are auto-filled with bots when the game starts.
             </p>

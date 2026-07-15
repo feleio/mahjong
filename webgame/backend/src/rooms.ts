@@ -3,6 +3,7 @@ import type { Server } from 'socket.io';
 import type { PrismaClient } from '@prisma/client';
 import type { Engine } from './engine.js';
 import type {
+  CoachHint,
   Decision,
   DecisionContext,
   DecisionKind,
@@ -34,8 +35,9 @@ interface PendingDecision {
   seat: Seat;
   decision: DecisionKind;
   context: DecisionContext;
-  deadlineTs: number;
-  timer: NodeJS.Timeout;
+  coach?: Record<string, CoachHint>;
+  deadlineTs: number | null; // null = no time limit (untimed decision)
+  timer: NodeJS.Timeout | null;
 }
 
 interface ActiveGame {
@@ -60,6 +62,10 @@ interface Room {
   gamesPlayed: number;
   game: ActiveGame | null;
   emptySince: number | null;
+  // When false (default), human seats get no decision countdown — good for
+  // practice/coaching. Disconnect-recovery auto-act still fires regardless so
+  // an absent player never wedges the game.
+  enforceTimeLimit: boolean;
 }
 
 const emptySeat = (): RoomSeat => ({ userId: null, name: '', isBot: false, balance: 0 });
@@ -81,6 +87,7 @@ export class RoomManager {
     private io: Server,
     private prisma: PrismaClient,
     private engine: Engine,
+    private coachModels: string[] = [],
   ) {
     setInterval(() => this.sweepEmptyRooms(), 30_000).unref();
   }
@@ -94,14 +101,29 @@ export class RoomManager {
     const room = this.roomOfUser(userId);
     if (room) {
       room.emptySince = null;
-      // If this seat's decision was fast-forwarded to the 3s disconnect timer,
-      // restore the full deadline now that the player is back.
+      // The seat's decision was fast-forwarded to the 3s disconnect timer while
+      // they were gone. Now they're back: restore the normal deadline if the
+      // room enforces a time limit, otherwise cancel the timer (untimed).
       const game = room.game;
       const p = game?.pendingDecision;
       if (game && p && room.seats[p.seat].userId === userId) {
-        clearTimeout(p.timer);
-        const remaining = Math.max(1_000, p.deadlineTs - Date.now());
-        p.timer = setTimeout(() => this.autoAct(room, game, p.requestId), remaining);
+        if (p.timer) clearTimeout(p.timer);
+        if (room.enforceTimeLimit) {
+          const timeoutMs = p.decision === 'discard' ? DISCARD_TIMEOUT_MS : CLAIM_TIMEOUT_MS;
+          p.deadlineTs = Date.now() + timeoutMs;
+          p.timer = setTimeout(() => this.autoAct(room, game, p.requestId), timeoutMs);
+        } else {
+          p.deadlineTs = null;
+          p.timer = null;
+        }
+        this.emitToSeat(room, p.seat, 'game:decision', {
+          requestId: p.requestId,
+          decision: p.decision,
+          context: p.context,
+          deadlineTs: p.deadlineTs,
+          view: this.buildView(room, game, p.seat),
+          coach: p.coach,
+        });
       }
       this.broadcastRoom(room);
     }
@@ -116,6 +138,19 @@ export class RoomManager {
     const room = this.roomOfUser(userId);
     if (room) {
       if (!this.roomHasConnectedHuman(room)) room.emptySince = Date.now();
+      // If this user has an untimed pending decision, arm a 3s recovery timer
+      // now that they're gone, so an untimed game doesn't wedge on their turn.
+      const game = room.game;
+      const p = game?.pendingDecision;
+      if (
+        game &&
+        p &&
+        !p.timer &&
+        room.seats[p.seat].userId === userId &&
+        !this.isConnected(userId)
+      ) {
+        p.timer = setTimeout(() => this.autoAct(room, game, p.requestId), 3_000);
+      }
       this.broadcastRoom(room);
     }
   }
@@ -162,7 +197,20 @@ export class RoomManager {
       youSeat: youSeat >= 0 ? (youSeat as Seat) : null,
       youUserId: forUserId,
       gamesPlayed: room.gamesPlayed,
+      coachModels: this.coachModels,
+      enforceTimeLimit: room.enforceTimeLimit,
     };
+  }
+
+  /** Host toggles the decision time limit (lobby only). */
+  setTimeLimit(userId: string, enabled: boolean): RoomState {
+    const room = this.roomOfUser(userId);
+    if (!room) throw new Error('Not in a room');
+    if (room.hostUserId !== userId) throw new Error('Only the host can change the time limit');
+    if (room.status !== 'lobby') throw new Error('Set the time limit before the game starts');
+    room.enforceTimeLimit = enabled;
+    this.broadcastRoom(room);
+    return this.roomState(room, userId);
   }
 
   private broadcastRoom(room: Room) {
@@ -198,6 +246,7 @@ export class RoomManager {
       gamesPlayed: 0,
       game: null,
       emptySince: null,
+      enforceTimeLimit: false, // no decision timer by default (practice-friendly)
     };
     room.seats[0] = {
       userId,
@@ -276,7 +325,7 @@ export class RoomManager {
   private closeRoom(room: Room, reason: string) {
     if (room.game) {
       const g = room.game;
-      if (g.pendingDecision) clearTimeout(g.pendingDecision.timer);
+      if (g.pendingDecision?.timer) clearTimeout(g.pendingDecision.timer);
       this.engine.abort(g.gameId);
     }
     for (const seat of room.seats) {
@@ -430,14 +479,32 @@ export class RoomManager {
 
       case 'decision_request': {
         game.snapshot = msg.snapshot;
-        const timeoutMs = msg.decision === 'discard' ? DISCARD_TIMEOUT_MS : CLAIM_TIMEOUT_MS;
-        const deadlineTs = Date.now() + timeoutMs;
-        const timer = setTimeout(() => this.autoAct(room, game, msg.requestId), timeoutMs);
+        // Timer policy:
+        //  - human absent (left/disconnected) → 3s recovery, ALWAYS, so the
+        //    game never wedges (independent of the time-limit setting);
+        //  - time limit enforced + human present → normal 45s/20s countdown;
+        //  - otherwise → untimed (no timer, deadlineTs null).
+        const seatInfo = room.seats[msg.seat];
+        const humanAbsent = !!seatInfo.userId && !this.isConnected(seatInfo.userId);
+        let timeoutMs: number | null;
+        if (humanAbsent) {
+          timeoutMs = 3_000;
+        } else if (room.enforceTimeLimit) {
+          timeoutMs = msg.decision === 'discard' ? DISCARD_TIMEOUT_MS : CLAIM_TIMEOUT_MS;
+        } else {
+          timeoutMs = null;
+        }
+        const deadlineTs = timeoutMs === null ? null : Date.now() + timeoutMs;
+        const timer =
+          timeoutMs === null
+            ? null
+            : setTimeout(() => this.autoAct(room, game, msg.requestId), timeoutMs);
         game.pendingDecision = {
           requestId: msg.requestId,
           seat: msg.seat,
           decision: msg.decision,
           context: msg.context,
+          coach: msg.coach,
           deadlineTs,
           timer,
         };
@@ -447,6 +514,7 @@ export class RoomManager {
           context: msg.context,
           deadlineTs,
           view: this.buildView(room, game, msg.seat),
+          coach: msg.coach,
         };
         this.emitToSeat(room, msg.seat, 'game:decision', decision);
         for (let seat = 0; seat < 4; seat++) {
@@ -457,21 +525,12 @@ export class RoomManager {
             });
           }
         }
-        // If the seat's human is gone (left/disconnected), act quickly.
-        const seatInfo = room.seats[msg.seat];
-        if (seatInfo.userId && !this.isConnected(seatInfo.userId)) {
-          clearTimeout(timer);
-          game.pendingDecision.timer = setTimeout(
-            () => this.autoAct(room, game, msg.requestId),
-            3_000,
-          );
-        }
         break;
       }
 
       case 'game_over': {
         game.snapshot = msg.snapshot;
-        if (game.pendingDecision) clearTimeout(game.pendingDecision.timer);
+        if (game.pendingDecision?.timer) clearTimeout(game.pendingDecision.timer);
         game.pendingDecision = null;
         await sleep(PACE_MS); // let the last event land visually
         await this.finishGame(room, game, msg.winnersInfo, msg.balances);
@@ -483,7 +542,7 @@ export class RoomManager {
 
       case 'error': {
         console.error(`[engine] game ${game.gameId} error: ${msg.message}`);
-        if (game.pendingDecision) clearTimeout(game.pendingDecision.timer);
+        if (game.pendingDecision?.timer) clearTimeout(game.pendingDecision.timer);
         room.game = null;
         room.status = 'lobby';
         this.broadcastRoom(room);
@@ -598,7 +657,7 @@ export class RoomManager {
         throw new Error('Invalid kong tile');
     }
 
-    clearTimeout(p.timer);
+    if (p.timer) clearTimeout(p.timer);
     game.pendingDecision = null;
     this.engine.action(game.gameId, requestId, action);
   }
@@ -650,6 +709,7 @@ export class RoomManager {
             context: p.context,
             deadlineTs: p.deadlineTs,
             view,
+            coach: p.coach,
           }
         : null;
     return { room: state, game: view, decision };

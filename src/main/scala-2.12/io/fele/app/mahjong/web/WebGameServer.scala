@@ -6,6 +6,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import io.fele.app.mahjong._
 import io.fele.app.mahjong.ChowPosition.ChowPosition
 import io.fele.app.mahjong.player.{Chicken, Player}
+import io.fele.app.mahjong.rl.{OnnxPolicyService, PolicyOut, V3Obs, V4Obs}
 import org.json4s._
 import org.json4s.native.JsonMethods._
 import org.json4s.native.Serialization
@@ -51,6 +52,37 @@ object WebGameServer extends App {
 
   implicit val formats: Formats = Serialization.formats(NoTypeHints)
   implicit val config: Config = new Config()
+
+  // Optional coach models: attach each net's decision probabilities (+ value
+  // estimate) to every remote seat's decision_request, so the UI can show how
+  // trained models would play. Hints for ALL loaded models ride on every
+  // request (~1ms each) — the client picks which to display, so switching
+  // needs no server state.
+  //   -Dweb.coachmodels=name=path,name=path   (ordered; first = UI default)
+  //   -Dweb.coachmodel=path                   (legacy single, named "coach")
+  // Absent properties ⇒ no coach field, feature off. A model that fails to
+  // load is skipped with a warning rather than killing the server.
+  private val coachSvcs: List[(String, OnnxPolicyService)] = {
+    val multi = Option(System.getProperty("web.coachmodels")).toList
+      .flatMap(_.split(',').toList).flatMap { spec =>
+        spec.split('=') match {
+          case Array(name, path) => Some(name.trim -> path.trim)
+          case _ =>
+            System.err.println(s"coach: bad spec '$spec' (want name=path)"); None
+        }
+      }
+    val single = Option(System.getProperty("web.coachmodel")).map("coach" -> _)
+    (multi ++ single).flatMap { case (name, path) =>
+      Try(new OnnxPolicyService(path)) match {
+        case Success(svc) =>
+          System.err.println(s"coach model loaded: $name = $path")
+          Some(name -> svc)
+        case Failure(ex) =>
+          System.err.println(s"coach model FAILED to load: $name = $path (${ex.getMessage})")
+          None
+      }
+    }
+  }
 
   private val out = new Object // stdout write lock
   private def send(msg: Map[String, Any]): Unit = out.synchronized {
@@ -98,7 +130,8 @@ object WebGameServer extends App {
       send(Map("type" -> "event", "gameId" -> gameId, "event" -> event, "snapshot" -> snapshot()))
 
     // ── decision plumbing (called from the game thread via RemotePlayer) ──
-    def requestDecision(seat: Int, decision: String, context: Map[String, Any]): Any = {
+    def requestDecision(seat: Int, decision: String, context: Map[String, Any],
+                        coach: Option[Map[String, Any]] = None): Any = {
       if (aborted) throw new GameAbortedException
       val requestId = requestCounter.incrementAndGet()
       val queue = new ArrayBlockingQueue[Any](1)
@@ -113,7 +146,7 @@ object WebGameServer extends App {
         "type" -> "decision_request", "gameId" -> gameId, "requestId" -> requestId,
         "seat" -> seat, "decision" -> decision, "context" -> context,
         "snapshot" -> snapshot()
-      ))
+      ) ++ coach.map("coach" -> _))
       val answer = queue.take() // block the game thread until Node answers
       pending.remove(requestId)
       answer match {
@@ -206,41 +239,101 @@ object WebGameServer extends App {
       case _          => None
     }
 
+    // ── coach hint: the net's probabilities over this decision's actions ──
+
+    private def softmaxOver(logits: Array[Float],
+                            keys: List[(String, Int)]): Map[String, Double] = {
+      val mx   = keys.map { case (_, i) => logits(i) }.max
+      val exps = keys.map { case (k, i) => k -> math.exp((logits(i) - mx).toDouble) }
+      val sum  = exps.map(_._2).sum
+      exps.map { case (k, e) => k -> e / sum }.toMap
+    }
+
+    /** Per-model probs over `keys` (label → logit index of the decision's
+      * head) plus each net's value estimate, keyed by model name. v4 models
+      * (input dim 1443) get v4 obs and additionally report their danger
+      * heads: per-opponent tenpai probability (absolute seats) and a
+      * per-tile deal-in risk, max over opponents of p(tenpai)·p(waits on
+      * tile). Never throws — a coach failure must not touch the game; a
+      * failing model just omits its hint, and an empty result omits the
+      * field. */
+    private def coach(cs: CurState, contextTile: Option[Int],
+                      head: PolicyOut => Array[Float],
+                      keys: List[(String, Int)]): Option[Map[String, Any]] = {
+      if (coachSvcs.isEmpty) return None
+      lazy val obsV3 = Try(V3Obs.fromCurState(id, cs, contextTile))
+      lazy val obsV4 = Try(V4Obs.fromCurState(id, cs, contextTile))
+      val hints: Map[String, Any] = coachSvcs.flatMap { case (name, svc) =>
+        Try {
+          val obs = (if (svc.inputDim == V4Obs.DIM) obsV4 else obsV3).get
+          val nnOut = svc.query(obs)
+          val danger: Map[String, Any] = (nnOut.oppTenpai, nnOut.oppWaits) match {
+            case (Some(tp), Some(wt)) =>
+              // DangerLabels order: opponent i = seat (id + 1 + i) % 4
+              val oppTenpai = (0 until 3).map(i => Map(
+                "seat" -> (id + 1 + i) % 4, "p" -> tp(i).toDouble)).toList
+              val dangerByTile = (0 until 34).map(t =>
+                t.toString -> (0 until 3).map(i => tp(i) * wt(i)(t)).max.toDouble
+              ).toMap
+              Map("oppTenpai" -> oppTenpai, "dangerByTile" -> dangerByTile)
+            case _ => Map.empty[String, Any]
+          }
+          name -> (Map[String, Any]("probs" -> softmaxOver(head(nnOut), keys),
+                                    "value" -> nnOut.value.toDouble) ++ danger)
+        }.toOption
+      }.toMap
+      if (hints.isEmpty) None else Some(hints)
+    }
+
+    private val binaryKeys = List("pass" -> 0, "accept" -> 1)
+
     override def decideSelfWin(tile: Tile, score: Int, curState: CurState): Boolean =
       asBool(session.requestDecision(id, "self_win",
-        Map("tile" -> tile.toTileValue, "score" -> score)))
+        Map("tile" -> tile.toTileValue, "score" -> score),
+        coach(curState, Some(tile.toTileValue), _.selfWin, binaryKeys)))
 
     override def decideWin(tile: Tile, score: Int, curState: CurState): Boolean =
       asBool(session.requestDecision(id, "win",
-        Map("tile" -> tile.toTileValue, "score" -> score, "fromSeat" -> curState.curPlayerId)))
+        Map("tile" -> tile.toTileValue, "score" -> score, "fromSeat" -> curState.curPlayerId),
+        coach(curState, Some(tile.toTileValue), _.win, binaryKeys)))
 
     override def decideSelfKong(selfKongTiles: Set[Tile], curState: CurState): Option[Tile] = {
       val valid = selfKongTiles.map(_.toTileValue)
+      // self_kong head: logit 0 = pass, logit t+1 = kong tile t
+      val keys = ("pass" -> 0) :: valid.toList.sorted.map(t => t.toString -> (t + 1))
       asOptInt(session.requestDecision(id, "self_kong",
-        Map("validTiles" -> valid.toList.sorted)))
+        Map("validTiles" -> valid.toList.sorted),
+        coach(curState, None, _.selfKong, keys)))
         .filter(valid.contains).map(Tile.fromValue)
     }
 
     override def decideKong(tile: Tile, curState: CurState): Boolean =
       asBool(session.requestDecision(id, "kong",
-        Map("tile" -> tile.toTileValue, "fromSeat" -> curState.curPlayerId)))
+        Map("tile" -> tile.toTileValue, "fromSeat" -> curState.curPlayerId),
+        coach(curState, Some(tile.toTileValue), _.kong, binaryKeys)))
 
     override def decidePong(tile: Tile, curState: CurState): Boolean =
       asBool(session.requestDecision(id, "pong",
-        Map("tile" -> tile.toTileValue, "fromSeat" -> curState.curPlayerId)))
+        Map("tile" -> tile.toTileValue, "fromSeat" -> curState.curPlayerId),
+        coach(curState, Some(tile.toTileValue), _.pong, binaryKeys)))
 
     override def decideChow(tile: Tile, positions: Set[ChowPosition], curState: CurState): Option[ChowPosition] = {
       val validIds = positions.map(_.id)
+      // chow head: logit 0 = pass, logits 1..3 = LEFT/MIDDLE/RIGHT (id + 1)
+      val keys = ("pass" -> 0) :: validIds.toList.sorted.map(p => p.toString -> (p + 1))
       asOptInt(session.requestDecision(id, "chow",
         Map("tile" -> tile.toTileValue, "positions" -> validIds.toList.sorted,
-          "fromSeat" -> curState.curPlayerId)))
+          "fromSeat" -> curState.curPlayerId),
+        coach(curState, Some(tile.toTileValue), _.chow, keys)))
         .filter(validIds.contains).map(ChowPosition(_))
     }
 
     override def decideDiscard(curState: CurState): Tile = {
       val valid = hand.dynamicTiles.map(_.toTileValue)
+      val keys = valid.distinct.sorted.map(t => t.toString -> t)
       val answer = asOptInt(session.requestDecision(id, "discard",
-        Map("validTiles" -> valid.distinct.sorted)))
+        Map("validTiles" -> valid.distinct.sorted),
+        coach(curState, None, _.discard, keys)))
       answer.filter(valid.contains).map(Tile.fromValue)
         .getOrElse(hand.dynamicTiles.head) // defensive: never crash the game on a bad action
     }

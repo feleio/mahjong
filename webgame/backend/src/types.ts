@@ -20,6 +20,8 @@ export interface RoomState {
   youSeat: Seat | null;
   youUserId: string;
   gamesPlayed: number;
+  coachModels: string[]; // available AI-coach models, strongest first ([] = coach off)
+  enforceTimeLimit: boolean; // false = no decision countdown (default)
 }
 
 export interface MeldGroup {
@@ -66,12 +68,31 @@ export interface DecisionContext {
   positions?: (0 | 1 | 2)[];
 }
 
+/**
+ * AI-coach hint attached by the engine (web.coachmodel): the strongest net's
+ * probability over this decision's actions. Keys: discard → tile value;
+ * binary decisions → "pass"/"accept"; chow → "pass"/position id;
+ * self_kong → "pass"/tile value. `value` is the net's $-scale estimate of
+ * the current position.
+ */
+export interface CoachHint {
+  probs: Record<string, number>;
+  value?: number;
+  /** v4 danger models only: per-opponent tenpai probability (absolute seat). */
+  oppTenpai?: { seat: number; p: number }[];
+  /** v4 danger models only: per-tile deal-in risk, keyed by tile value —
+   * max over opponents of p(tenpai)·p(waits on tile). Relative heat, not
+   * a calibrated deal-in probability. */
+  dangerByTile?: Record<string, number>;
+}
+
 export interface Decision {
   requestId: number;
   decision: DecisionKind;
   context: DecisionContext;
-  deadlineTs: number;
+  deadlineTs: number | null; // null = untimed (no countdown)
   view: GameView;
+  coach?: Record<string, CoachHint>; // keyed by model name
 }
 
 export interface WinnersInfo {
@@ -108,6 +129,7 @@ export type EngineMessage =
       decision: DecisionKind;
       context: DecisionContext;
       snapshot: EngineSnapshot;
+      coach?: Record<string, CoachHint>;
     }
   | {
       type: 'game_over';

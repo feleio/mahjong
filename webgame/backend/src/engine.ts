@@ -16,15 +16,19 @@ export class Engine {
   private proc: ChildProcessWithoutNullStreams | null = null;
   private handlers = new Map<string, EngineHandler>();
   private jarPath: string;
+  private coachModels: { name: string; path: string }[];
   private alive = false;
 
-  constructor(jarPath: string) {
+  constructor(jarPath: string, coachModels: { name: string; path: string }[] = []) {
     this.jarPath = path.resolve(jarPath);
+    this.coachModels = coachModels.map((m) => ({ name: m.name, path: path.resolve(m.path) }));
     this.start();
   }
 
   private start() {
-    this.proc = spawn('java', ['-cp', this.jarPath, MAIN_CLASS], {
+    const spec = this.coachModels.map((m) => `${m.name}=${m.path}`).join(',');
+    const args = spec ? [`-Dweb.coachmodels=${spec}`] : [];
+    this.proc = spawn('java', [...args, '-cp', this.jarPath, MAIN_CLASS], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     this.alive = true;

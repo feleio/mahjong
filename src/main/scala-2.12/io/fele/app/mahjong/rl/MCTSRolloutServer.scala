@@ -550,6 +550,45 @@ object MCTSRolloutServer extends App {
         println(write(Map("obs" -> obs.toList)))
         System.out.flush()
 
+      // ── What would FirstFelix discard from this exact seat? ─────────────────
+      // Champion-vs-FF analysis (rl/compare_vs_ff.py): a fresh FirstFelix is
+      // dropped into our seat — it re-decides its target from this hand + the
+      // discard history, then picks its discard. Deterministic.
+      case "ff_decide" =>
+        val st = parseState(cmd)
+        val preDiscards = parsePreDiscards(cmd)
+        val handTiles = st.handCounts.zipWithIndex.flatMap { case (cnt, id) =>
+          List.fill(cnt)(Tile.fromValue(id))
+        }.toList
+        // Player's ctor wants a 13-tile hand (incl. groups); the 14th (drawn)
+        // tile is added afterwards, mirroring runRollout's construction.
+        val ff = new FirstFelix(0, handTiles.tail, 5, st.myGroups)
+        ff.hand.add(handTiles.head)
+        val cs = CurState(ff.privateInfo, st.oppGroups.map(PublicState),
+          preDiscards, 0, st.actualRemaining)
+        println(write(Map("tile" -> ff.decideDiscard(cs).toTileValue)))
+        System.out.flush()
+
+      // ── Parity test: v4 = v3 + discard-order planes (issue #21) ─────────────
+      case "encode_v4" =>
+        val handCounts = asList(cmd("hand")).map(asInt).toArray
+        val myGroups   = parseGroups(cmd("my_groups").asInstanceOf[Map[String, Any]])
+        val oppGroups  = asList(cmd("opp_groups"))
+          .map(g => parseGroups(g.asInstanceOf[Map[String, Any]]))
+        val discByPlayer = asList(cmd("discarded_by_player"))
+          .map(row => asList(row).map(asInt).toArray).toArray
+        val contextTile = cmd.get("context_tile").map(asInt)
+        val discardSeq = asList(cmd.getOrElse("discard_seq", List.empty[Any])).map { row =>
+          val pair = asList(row).map(asInt)
+          (pair(0), pair(1))
+        }
+        val obs = V4Obs.encode(
+          handCounts, myGroups, oppGroups, discByPlayer,
+          asInt(cmd("remaining")), asInt(cmd("my_id")),
+          asInt(cmd("cur_player_id")), contextTile, discardSeq)
+        println(write(Map("obs" -> obs.toList)))
+        System.out.flush()
+
       // ── Information-set MCTS: a real PUCT tree over our discard sequence ─────
       case "search" =>
         val st          = parseState(cmd)

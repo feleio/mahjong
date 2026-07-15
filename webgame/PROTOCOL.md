@@ -71,6 +71,7 @@ interface RoomState {
   youSeat: Seat | null;      // your seat in this room
   youUserId: string;
   gamesPlayed: number;
+  coachModels: string[];     // available AI-coach models, strongest first ([] = coach off)
 }
 
 interface MeldGroup { kind: "pong" | "kong" | "chow"; tiles: number[] } // tiles are full set, sorted
@@ -108,6 +109,24 @@ interface Decision {
   };
   deadlineTs: number;      // epoch ms; server auto-acts after this
   view: GameView;
+  coach?: { [model: string]: CoachHint };
+                           // AI-coach hints, keyed by model name; present only
+                           // when the engine runs with -Dweb.coachmodels
+                           // (backend env COACH_MODELS, "name=path,..."). Every
+                           // decision carries hints for ALL loaded models — the
+                           // client chooses which to display. Available names
+                           // (ordered, strongest first) are in
+                           // RoomState.coachModels.
+}
+
+// A model's probability over this decision's actions.
+// Keys: discard → tile value ("0".."33", over validTiles);
+// win/self_win/pong/kong → "pass" / "accept";
+// chow → "pass" / position id ("0"|"1"|"2");
+// self_kong → "pass" / tile value.
+interface CoachHint {
+  probs: { [key: string]: number }; // sums to 1 over the legal actions
+  value?: number;                   // net's $-scale estimate of the position
 }
 
 interface WinnersInfo {

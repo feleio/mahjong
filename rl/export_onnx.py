@@ -31,7 +31,11 @@ HEADS = ["discard", "win", "self_win", "pong", "kong", "chow", "self_kong"]
 
 
 class AllHeads(nn.Module):
-    """Wraps MahjongConvNet: one forward pass computing every head."""
+    """Wraps MahjongConvNet: one forward pass computing every head.
+
+    v4 nets additionally emit the danger heads as PROBABILITIES (sigmoid
+    applied in-graph): opp_tenpai (B,3) and opp_waits (B,3,34), opponent
+    order seat-relative (myId+1, +2, +3) as in DangerLabels."""
 
     def __init__(self, net):
         super().__init__()
@@ -47,9 +51,13 @@ class AllHeads(nn.Module):
         discard = n.discard_conv(x).squeeze(1)
         self_kong = torch.cat(
             [n.self_kong_pass(feat), n.self_kong_conv(x).squeeze(1)], dim=1)
-        return (discard, n.win_head(feat), n.self_win_head(feat),
+        base = (discard, n.win_head(feat), n.self_win_head(feat),
                 n.pong_head(feat), n.kong_head(feat), n.chow_head(feat),
                 self_kong, value)
+        if n.is_v4:
+            return base + (torch.sigmoid(n.danger_tenpai_head(feat)),
+                           torch.sigmoid(n.danger_wait_conv(x)))
+        return base
 
 
 def main():
@@ -63,14 +71,16 @@ def main():
     net.eval()
     wrapper = AllHeads(net).eval()
 
+    out_names = HEADS + ["value"]
+    if net.is_v4:
+        out_names += ["opp_tenpai", "opp_waits"]
     dummy = torch.zeros(1, net.obs_dim, dtype=torch.float32)
     torch.onnx.export(
         wrapper, dummy, args.out,
         input_names=["obs"],
-        output_names=HEADS + ["value"],
+        output_names=out_names,
         dynamic_axes={"obs": {0: "batch"},
-                      **{h: {0: "batch"} for h in HEADS},
-                      "value": {0: "batch"}},
+                      **{h: {0: "batch"} for h in out_names}},
         opset_version=17,
     )
 
