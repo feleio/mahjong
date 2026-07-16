@@ -46,7 +46,7 @@ test("host creates a room with 3 AI bots and plays a turn", async ({ page }) => 
   await expect(page.getByText(/your turn — pick a tile to discard/i)).toBeVisible({ timeout: 15_000 });
 
   // Click a tile, capture the screenshot with it highlighted, then submit.
-  const promptTiles = page.locator(".prompt .hand .tile.action");
+  const promptTiles = page.locator(".hand .tile.action");
   await expect(promptTiles.first()).toBeVisible();
   await promptTiles.first().click();
   await page.screenshot({ path: `${shotsDir}/03-game-prompt.png`, fullPage: true });
