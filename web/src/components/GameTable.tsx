@@ -1,0 +1,118 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { ClientAction, GameSnapshot, PlayerView, Prompt, Room } from "@/lib/types";
+import Tile from "./Tile";
+
+interface Props {
+  snap:      GameSnapshot;
+  room:      Room;
+  yourSeat:  number | null;
+  prompt?:   Prompt | null;
+  onAct?:    (a: ClientAction) => void;
+}
+
+export default function GameTable({ snap, room, yourSeat, prompt, onAct }: Props) {
+  const me = yourSeat !== null ? snap.players.find((p) => p.seat === yourSeat) : null;
+  const [picked, setPicked] = useState<string | null>(null);
+  const isDiscardTurn = prompt?.kind === "discard";
+
+  useEffect(() => { setPicked(null); }, [prompt]);
+
+  return (
+    <div className="card">
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <h3>Table</h3>
+        <span className="event">
+          {snap.remainingTiles} tiles left · turn: seat {snap.curPlayer + 1} ({room.seats[snap.curPlayer]?.name})
+        </span>
+      </div>
+      {snap.lastEvent && <div className="event">last: {snap.lastEvent}</div>}
+
+      <div className="row" style={{ alignItems: "stretch", marginTop: 12 }}>
+        {snap.players.filter(p => p.seat !== yourSeat).map((p) => (
+          <SeatBlock
+            key={p.seat}
+            p={p}
+            isTurn={p.seat === snap.curPlayer}
+            isFinished={snap.isFinished}
+          />
+        ))}
+      </div>
+
+      <div className="card" style={{ background: "var(--panel-2)", marginTop: 16 }}>
+        <div className="label">Discards</div>
+        <div className="discards" style={{ marginTop: 6 }}>
+          {snap.discards.map((d, i) => (
+            <Tile key={i} tile={d.tile} small />
+          ))}
+        </div>
+      </div>
+
+      {me && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <div className="label">Your hand</div>
+            {isDiscardTurn && <span className="event">Your turn — pick a tile to discard</span>}
+          </div>
+          <div className="hand" style={{ marginTop: 6 }}>
+            {(me.handTiles ?? []).map((t, i) => (
+              <Tile
+                key={i}
+                tile={t}
+                onClick={isDiscardTurn ? () => setPicked(t) : undefined}
+                highlight={picked === t}
+              />
+            ))}
+          </div>
+          {me.fixedGroups.length > 0 && (
+            <div className="row tight" style={{ marginTop: 8 }}>
+              <span className="event">groups:</span>
+              {me.fixedGroups.flatMap((g, gi) => g.tiles.map((t, ti) => (
+                <Tile key={`${gi}-${ti}`} tile={t} />
+              )))}
+            </div>
+          )}
+          <div className="row" style={{ marginTop: 8 }}>
+            <button
+              disabled={!isDiscardTurn || !picked}
+              onClick={() => picked && onAct?.({ kind: "discard", tile: picked })}
+            >
+              Discard {picked ?? "…"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SeatBlock({ p, isTurn, isFinished }: { p: PlayerView; isTurn: boolean; isFinished: boolean }) {
+  return (
+    <div className={`seat ${isTurn ? "turn" : ""}`} style={{ flex: 1 }}>
+      <div className="label">Seat {p.seat + 1}</div>
+      <div style={{ fontSize: 16, fontWeight: 600 }}>{p.name}</div>
+      <div className="event">{p.kind === "human" ? "Human" : p.kind}</div>
+
+      <div className="row tight" style={{ marginTop: 8 }}>
+        <span className="event">hand:</span>
+        {isFinished && p.handTiles ? (
+          p.handTiles.map((t, i) => <Tile key={i} tile={t} small />)
+        ) : (
+          Array.from({ length: p.handCount }).map((_, i) => (
+            <Tile key={i} tile="?" small faceDown />
+          ))
+        )}
+      </div>
+
+      {p.fixedGroups.length > 0 && (
+        <div className="row tight" style={{ marginTop: 6 }}>
+          <span className="event">groups:</span>
+          {p.fixedGroups.flatMap((g, gi) => g.tiles.map((t, ti) => (
+            <Tile key={`${gi}-${ti}`} tile={t} small />
+          )))}
+        </div>
+      )}
+    </div>
+  );
+}

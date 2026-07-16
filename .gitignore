@@ -45,3 +45,13 @@ rl/checkpoints/
 =*
 rl/data/
 .gstack/
+
+# Next.js / web
+web/node_modules/
+web/.next/
+web/out/
+web/.env.local
+web/.env*.local
+web/tsconfig.tsbuildinfo
+web/test-results/
+web/playwright-report/
