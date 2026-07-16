@@ -39,6 +39,10 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch
 
+# Single-decision inference: extra torch/OMP threads only spin-wait and, on a
+# busy box, burn cores without adding throughput.
+torch.set_num_threads(1)
+
 sys.path.insert(0, str(Path(__file__).parent))
 
 from env import MahjongEnv, DECISION_SPACES, encode_state, get_action_mask
@@ -340,6 +344,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--jar",        type=str, required=True,
                    help="Path to assembled fat-JAR")
     p.add_argument("--java",       type=str, default="java")
+    p.add_argument("--opponent",   type=str, default="chicken",
+                   choices=["chicken", "firstfelix"],
+                   help="opponent bots for the analysis games")
     p.add_argument("--n-games",    type=int, default=500,
                    help="Games to play for analysis")
     p.add_argument("--deterministic", action="store_true",
@@ -356,7 +363,10 @@ def main() -> None:
     agent.net.eval()
 
     print(f"Opening game server …")
-    with MahjongEnv(jar_path=args.jar, java_bin=args.java) as env:
+    # obs version must match the checkpoint (v3 conv nets are 759-dim)
+    obs_version = 3 if agent.net.obs_dim >= 759 else 2
+    with MahjongEnv(jar_path=args.jar, java_bin=args.java,
+                    opponent=args.opponent, obs_version=obs_version) as env:
         print(f"Collecting data from {args.n_games} games …")
         data = collect_game_data(agent, env, args.n_games,
                                  deterministic=args.deterministic)

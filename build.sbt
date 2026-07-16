@@ -4,16 +4,23 @@ ThisBuild / organization := "io.fele"
 
 lazy val core = (project in file("."))
   .settings(
-    name := "mahjong-core",
+    name := "mahjong",
     logLevel := Level.Info,
     libraryDependencies ++= Seq(
-      "org.scala-lang"             %  "scala-reflect"     % "2.12.0",
-      "org.scalatest"              %% "scalatest"         % "3.0.1"  % "test",
-      "com.typesafe"               %  "config"            % "1.3.1",
-      "com.typesafe.scala-logging" %% "scala-logging"     % "3.5.0",
-      "ch.qos.logback"             %  "logback-classic"   % "1.1.7",
-      "org.mockito"                %  "mockito-all"       % "2.0.2-beta",
-      "org.json4s"                 %  "json4s-native_2.12" % "3.5.2"
+      "org.scala-lang"             %  "scala-reflect"      % "2.12.0",
+      "org.scalatest"              %% "scalatest"          % "3.0.1"  % "test",
+      "com.typesafe"               %  "config"             % "1.3.1",
+      "com.typesafe.scala-logging" %% "scala-logging"      % "3.5.0",
+      "ch.qos.logback"             %  "logback-classic"    % "1.1.7",
+      "org.mockito"                %  "mockito-all"        % "2.0.2-beta",
+      "org.json4s"                 %  "json4s-native_2.12" % "3.5.2",
+      "com.microsoft.onnxruntime"  %  "onnxruntime"        % "1.17.1"
+    ),
+    // Old mockito needs reflective access that JDK 17+ blocks by default
+    Test / fork := true,
+    Test / javaOptions ++= Seq(
+      "--add-opens=java.base/java.lang=ALL-UNNAMED",
+      "--add-opens=java.base/java.util=ALL-UNNAMED"
     ),
     assembly / assemblyMergeStrategy := {
       case PathList("META-INF", _*) => MergeStrategy.discard

@@ -9,14 +9,44 @@ import org.json4s.native.Serialization
 import org.json4s.native.Serialization.write
 
 /**
+  * DangerLabels: ground-truth per-opponent danger labels for the auxiliary
+  * tenpai/wait heads (issue #21). Computed from the TRUE hidden hands the
+  * simulator holds — labels only, never observation input.
+  *
+  *   opp_waits [3][34] — 1 if that opponent wins on that tile right now
+  *                       (Hand.canWin, so config.minScore is respected)
+  *   opp_tenpai [3]    — 1 if that opponent has any winning tile
+  *
+  * Opponents are in seat-relative order (myId+1 .. myId+3) — the same order
+  * as CurState.otherInfos and the obs opp_groups planes.
+  */
+object DangerLabels {
+  def compute(players: List[Player], myId: Int): Map[String, Any] = {
+    val waits = (1 to 3).map { off =>
+      val p = players((myId + off) % 4)
+      (0 until 34).map(v => if (p.canWin(Tile.fromValue(v)).canWin) 1 else 0).toList
+    }.toList
+    Map(
+      "opp_waits"  -> waits,
+      "opp_tenpai" -> waits.map(w => if (w.sum > 0) 1 else 0)
+    )
+  }
+}
+
+/**
   * RLPlayer: A mahjong player that delegates all decisions to an external
   * reinforcement learning agent via JSON messages over stdin/stdout.
   *
   * Protocol:
   *   Scala → Python: JSON observation line written to stdout
   *   Python → Scala: JSON action line read from stdin
+  *
+  * @param dangerProbe when set (RLGymServer -Drl.dangerlabels=true), called at
+  *                    every observation to append ground-truth opponent danger
+  *                    labels (DangerLabels) to the state map.
   */
-class RLPlayer(id: Int, tiles: List[Tile])(implicit config: Config)
+class RLPlayer(id: Int, tiles: List[Tile],
+               dangerProbe: Option[() => Map[String, Any]] = None)(implicit config: Config)
     extends Player(id, tiles) {
 
   implicit val formats: Formats = Serialization.formats(NoTypeHints)
@@ -49,18 +79,31 @@ class RLPlayer(id: Int, tiles: List[Tile])(implicit config: Config)
     val handCounts = Array.fill[Int](34)(0)
     curState.myInfo.tiles.foreach(t => handCounts(t.toTileValue) += 1)
 
-    // Count of each tile type in discard pile
+    // Count of each tile type in discard pile (total, for backward compat)
     val discardCounts = Array.fill[Int](34)(0)
     curState.discards.foreach(d => discardCounts(d.tile.toTileValue) += 1)
 
+    // Per-player discard counts (4 players × 34 tile types)
+    val perPlayerDiscards = Array.fill[Array[Int]](4)(Array.fill[Int](34)(0))
+    curState.discards.foreach(d => perPlayerDiscards(d.playerId)(d.tile.toTileValue) += 1)
+
     Map(
-      "hand"           -> handCounts.toList,
-      "my_groups"      -> tileGroupsToMap(curState.myInfo.tileGroups),
-      "opp_groups"     -> curState.otherInfos.map(info => tileGroupsToMap(info.tileGroups)),
-      "discarded"      -> discardCounts.toList,
-      "remaining"      -> curState.remainTileNum,
-      "my_id"          -> id,
-      "cur_player_id"  -> curState.curPlayerId
+      "hand"                -> handCounts.toList,
+      "my_groups"           -> tileGroupsToMap(curState.myInfo.tileGroups),
+      "opp_groups"          -> curState.otherInfos.map(info => tileGroupsToMap(info.tileGroups)),
+      "discarded"           -> discardCounts.toList,
+      "discarded_by_player" -> perPlayerDiscards.map(_.toList).toList,
+      // chronological [playerId, tileValue] pairs, oldest first (curState.discards
+      // is most-recent-first) — the discard-ORDER signal for obs v4 (issue #21)
+      "discard_seq"         -> curState.discards.reverse.map(d => List(d.playerId, d.tile.toTileValue)),
+      "remaining"           -> curState.remainTileNum,
+      "my_id"               -> id,
+      "cur_player_id"       -> curState.curPlayerId
+    ) ++ dangerProbe.map(_()).getOrElse(Map.empty) ++ RLFeatures.featureMap(
+      handCounts,
+      curState.myInfo.tileGroups,
+      curState.otherInfos.map(_.tileGroups),
+      discardCounts
     )
   }
 
@@ -75,6 +118,7 @@ class RLPlayer(id: Int, tiles: List[Tile])(implicit config: Config)
                                context: Map[String, Any]): Unit = {
     val msg = Map(
       "type"          -> "observation",
+      "seat_id"       -> id,
       "decision"      -> decision,
       "state"         -> stateToMap(curState),
       "context"       -> context,

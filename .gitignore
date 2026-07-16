@@ -43,6 +43,8 @@ rl/checkpoints/
 
 # Accidental pip-redirect files (e.g. pip install pkg==1.0 run in wrong dir)
 =*
+rl/data/
+.gstack/
 
 # Next.js / web
 web/node_modules/
