@@ -43,6 +43,15 @@ object BeliefDataGen extends App {
   private val oppType = System.getProperty("rl.beliefopp", "firstfelix").toLowerCase
   private val seed0   = Integer.getInteger("rl.beliefseed", 0).toLong
 
+  // NN opponent policy (loaded lazily from -Drl.beliefnnmodel=<path.onnx>), so the
+  // belief model can be trained against the hand-discard patterns of a strong net
+  // rather than FirstFelix — the regime the league teacher actually faces.
+  private lazy val nnService: OnnxPolicyService = {
+    val path = System.getProperty("rl.beliefnnmodel")
+    require(path != null, "beliefopp 'nn' needs -Drl.beliefnnmodel=<path.onnx>")
+    new OnnxPolicyService(path)
+  }
+
   private def counts(tiles: Seq[Tile]): Array[Int] = {
     val a = Array.fill(34)(0)
     tiles.foreach(t => a(t.toTileValue) += 1)
@@ -93,6 +102,7 @@ object BeliefDataGen extends App {
 
   private def makePlayer(id: Int, tiles: List[Tile]): Player = oppType match {
     case "chicken" => new Chicken(id, tiles)
+    case "nn"      => new NNPlayer(id, tiles, List.empty[TileGroup], nnService)
     case _         => new FirstFelix(id, tiles, 5)
   }
 

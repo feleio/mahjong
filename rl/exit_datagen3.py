@@ -135,6 +135,7 @@ def main():
                 out["discard_cands"] = np.array([s["cands"] for s in samples], dtype=np.int64)
                 out["discard_mean_d"] = np.array([s["mean_d"] for s in samples], dtype=np.float32)
                 out["discard_se_d"] = np.array([s["se_d"] for s in samples], dtype=np.float32)
+                out["discard_balance"] = np.array([s["balance"] for s in samples], dtype=np.float32)
         np.savez_compressed(
             save_dir / f"shard_w{args.worker_id:02d}_{shard_idx:04d}.npz", **out)
         buf = defaultdict(list)
@@ -153,6 +154,7 @@ def main():
             sample["cands"] = pad(ainfo.get("candidates", [action]), -1)
             sample["mean_d"] = pad(ainfo.get("mean_diffs", [0.0]), 0.0)
             sample["se_d"] = pad(ainfo.get("se_diffs", [0.0]), 1e9)
+            sample["balance"] = 0.0  # value target — filled with final game reward below
         buf[decision].append(sample)
         return int(action)
 
@@ -188,6 +190,7 @@ def main():
     for gi, seed in enumerate(my_seeds):
         ttype = table_for(seed)
         type_counts[ttype] += 1
+        d0 = len(buf["discard"])  # value-corpus: mark where this game's discard states start
         if ttype == "mixed":
             r = play_mixed(seed)
         elif ttype == "ff":
@@ -196,6 +199,10 @@ def main():
             r = play_heuristic(ch_env, seed)
         if r is not None:
             game_rewards.append(r)
+            for s in buf["discard"][d0:]:  # tag every discard state with the final game balance
+                s["balance"] = float(r)
+        else:
+            del buf["discard"][d0:]  # drop a failed game's untagged discard states
 
         if (gi + 1) % args.games_per_shard == 0:
             flush()
