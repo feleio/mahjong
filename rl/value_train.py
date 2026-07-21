@@ -61,8 +61,9 @@ def main():
     tr_obs, tr_val = obs[n_val:], val[n_val:]
     va_obs, va_val = obs[:n_val], val[:n_val]
 
+    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     agent = MahjongAgent.load(args.student, device="cpu")
-    net = agent.net
+    net = agent.net.to(dev)
     net.train()
     if args.unfreeze:
         # Ceiling probe: train the whole value path (may disturb the policy — do
@@ -78,8 +79,8 @@ def main():
             prm.requires_grad = True
         opt = torch.optim.Adam(net.value_head.parameters(), lr=args.lr)
 
-    tr_obs_t = torch.tensor(tr_obs); tr_val_t = torch.tensor(tr_val)
-    va_obs_t = torch.tensor(va_obs); va_val_t = torch.tensor(va_val)
+    tr_obs_t = torch.tensor(tr_obs).to(dev); tr_val_t = torch.tensor(tr_val).to(dev)
+    va_obs_t = torch.tensor(va_obs).to(dev); va_val_t = torch.tensor(va_val).to(dev)
 
     def val_pred(obs_t):
         preds = []
@@ -104,7 +105,7 @@ def main():
         # Held-out metrics.
         vp = val_pred(va_obs_t)
         va_mse = float(((vp - va_val_t) ** 2).mean())
-        corr = float(np.corrcoef(vp.numpy(), va_val.astype(np.float64))[0, 1])
+        corr = float(np.corrcoef(vp.cpu().numpy(), va_val.astype(np.float64))[0, 1])
         print(f"epoch {epoch+1:2d}: train_mse={tot/n:7.3f}  "
               f"val_mse={va_mse:7.3f}  (baseline {baseline_mse:7.3f})  "
               f"corr={corr:.3f}", flush=True)
@@ -112,6 +113,7 @@ def main():
     r2 = 1.0 - va_mse / baseline_mse
     print(f"\nACCURACY GATE: val corr={corr:.3f}  R^2={r2:.3f}  "
           f"(val_mse {va_mse:.2f} vs baseline {baseline_mse:.2f})")
+    net.to("cpu")
     agent.save(args.out)
     print(f"saved -> {args.out}")
 

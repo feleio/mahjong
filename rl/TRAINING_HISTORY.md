@@ -843,3 +843,36 @@ compute) and would repeat the #15 mistake of promoting on noisy money numbers.
 **Did NOT proceed to ExIt-regen/distil/ladder.** Machinery (`-Drl.belief`,
 `ff.onnx`, A/B `--*-belief`) is committed and available if a future stronger
 belief model or a defense-specific test revives the lever.
+
+### Lever re-audit + exhaustive off-FF sweep (2026-07-16→20) — CEILING CONFIRMED
+Motivation: every shelved quality lever (belief #17, rollout-realism #25, danger
+#21/#22, deeper search #24) improves DEFENSE / opponent-modeling, and ALL were
+gated only vs 3×FirstFelix — where FF is too weak to punish deal-ins AND
+FF-rollouts are oracle-correct, so defensive value is structurally invisible.
+Hypothesis: the "ceiling" was partly a benchmark artifact; re-test off FF on
+self-play MIXED tables (seat0=champion+search, seats1-3=NN pool). New tooling:
+`eval_teacher_mixed.py` (paired mixed-table A/B, per-arm rollout_opp/nn_model/
+belief), `BeliefDataGen` `-Drl.beliefopp=nn`, value-corpus logging in
+`exit_datagen3.py` (`discard_balance`), GPU `value_train.py`.
+
+Results — the confound was REAL but the levers still don't convert:
+- **Belief (#17) re-powered:** NN-opponent belief model trained (1.07M rows),
+  recall@6 51.0% vs uniform 27.5% — mechanism validated for strong opponents.
+  But belief-on/off A/B on mixed tables: **−1.65±1.44/game (n=600)** — neutral-
+  to-negative. Mechanism-validation-not-sufficient, 3rd time.
+- **Rollout-realism (#25) re-test on mixed tables:** nn vs ff rollout opp
+  converged to **−0.45±2.55 (n=150)** — null (nn-rollout uses one greedy student
+  for all opps, a worse rollout policy than fast consistent FF).
+- **Data-scale/league round:** 13.2k mixed games → `exit_mix2_soft`. Head-to-head
+  vs D +1.91±1.12 BUT fixed anchors refute: vs FF −0.63±0.66 (worse), vs Chicken
+  −0.09 (tied). 3rd head-to-head mislead → NO promotion.
+- **Value-leaf (#20):** 270k on-distribution corpus → value net R² 0.58→**0.788**,
+  but RMS ~$12.5 (vs prior $14, −11%) — nowhere near the ≪$2 sibling-bias bar.
+- **top_k pruning:** top6 vs top12 **+0.68±1.75 (n=400)** — null.
+- **self-tail strength:** student vs champion self-continuation **+0.27±4.06
+  (n=120)** — null.
+
+**CONCLUSION: the distill-from-search agent is at its true ceiling** — not a
+measurement artifact. Champion unchanged since net D (`best_raw_net.pt`,
+2026-07-09). Search/data levers are exhausted; further gains need a different
+paradigm or a different objective (human-facing product = the active track).
