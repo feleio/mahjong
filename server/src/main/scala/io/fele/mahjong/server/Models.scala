@@ -24,9 +24,10 @@ object Models {
     case object AiRandom             extends SeatKind
     case object AiFirstFelix         extends SeatKind
     case object AiThreePointChicken  extends SeatKind
+    case object AiChampion           extends SeatKind   // champion policy net (greedy NNPlayer)
     case object Open                 extends SeatKind   // unfilled human slot waiting for someone
 
-    val all: List[SeatKind] = List(Human, AiChicken, AiRandom, AiFirstFelix, AiThreePointChicken, Open)
+    val all: List[SeatKind] = List(Human, AiChicken, AiRandom, AiFirstFelix, AiThreePointChicken, AiChampion, Open)
 
     def fromString(s: String): Option[SeatKind] = s.toLowerCase match {
       case "human"               => Some(Human)
@@ -35,6 +36,7 @@ object Models {
       case "ai_random"           => Some(AiRandom)
       case "ai_first_felix"      => Some(AiFirstFelix)
       case "ai_3point_chicken"   => Some(AiThreePointChicken)
+      case "ai_champion"         => Some(AiChampion)
       case _                     => None
     }
 
@@ -45,6 +47,7 @@ object Models {
       case AiRandom             => "ai_random"
       case AiFirstFelix         => "ai_first_felix"
       case AiThreePointChicken  => "ai_3point_chicken"
+      case AiChampion           => "ai_champion"
     }
 
     implicit val enc: Encoder[SeatKind] = Encoder.encodeString.contramap(toWire)

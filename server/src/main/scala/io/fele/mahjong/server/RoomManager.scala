@@ -29,6 +29,10 @@ class RoomManager private (
   /** Fresh explicit seed per game so the shuffle is reproducible from the record. */
   private def newSeed(): Option[Long] = Some(scala.util.Random.nextLong())
 
+  /** Reason a game with a champion seat cannot start (model missing/broken), if any. */
+  private def championBlocked(room: Room): Option[String] =
+    if (room.seats.exists(_.kind == SeatKind.AiChampion)) ChampionService.unavailableReason else None
+
   /* --- room CRUD --- */
 
   def create(name: String, hostName: String): IO[(Room, PlayerId)] = {
@@ -86,6 +90,7 @@ class RoomManager private (
     case SeatKind.AiRandom            => "Bot Random"
     case SeatKind.AiFirstFelix        => "Bot Felix"
     case SeatKind.AiThreePointChicken => "Bot 3PChicken"
+    case SeatKind.AiChampion          => "Bot Champion"
     case _                            => s"Seat ${idx + 1}"
   }
 
@@ -133,6 +138,8 @@ class RoomManager private (
           (m, Left("game already started"))
         case Some(live) if !live.room.isFull =>
           (m, Left("room is not full"))
+        case Some(live) if championBlocked(live.room).isDefined =>
+          (m, Left(championBlocked(live.room).get))
         case Some(live) =>
           val runner = GameRunner.create(live.room.id, live.room.seats, newSeed(), live.topic, dispatcher,
             onFinished = autoReadyBots(roomId), recordRepo = gameRepo)
@@ -200,6 +207,8 @@ class RoomManager private (
           (m, IO.pure(Left("game has not finished yet")))
         case Some(live) if live.readySeats.size < 4 =>
           (m, IO.pure(Left("not all seats are ready")))
+        case Some(live) if championBlocked(live.room).isDefined =>
+          (m, IO.pure(Left(championBlocked(live.room).get): Either[String, Room]))
         case Some(live) =>
           val runner  = GameRunner.create(live.room.id, live.room.seats, newSeed(), live.topic, dispatcher,
             onFinished = autoReadyBots(roomId), recordRepo = gameRepo)

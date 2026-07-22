@@ -4,13 +4,15 @@ export type SeatKind =
   | "ai_chicken"
   | "ai_random"
   | "ai_first_felix"
-  | "ai_3point_chicken";
+  | "ai_3point_chicken"
+  | "ai_champion";
 
 export const AI_KINDS: SeatKind[] = [
   "ai_chicken",
   "ai_random",
   "ai_first_felix",
   "ai_3point_chicken",
+  "ai_champion",
 ];
 
 export const seatLabel: Record<SeatKind, string> = {
@@ -20,6 +22,7 @@ export const seatLabel: Record<SeatKind, string> = {
   ai_random: "AI – Random",
   ai_first_felix: "AI – Felix",
   ai_3point_chicken: "AI – 3-point Chicken",
+  ai_champion: "AI – Champion",
 };
 
 export interface Seat {

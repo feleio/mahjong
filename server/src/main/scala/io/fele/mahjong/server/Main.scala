@@ -45,6 +45,10 @@ object Main extends IOApp {
                         IO(println(s"WARN: game-record init failed (${t.getMessage}); games will not be recorded"))
                           .as(None: Option[GameRecordRepo])
                       })
+      _          <- Resource.eval(IO(ChampionService.unavailableReason match {
+                      case None    => println(s"Champion bot enabled (model: ${ChampionService.modelPath})")
+                      case Some(e) => println(s"WARN: champion bot unavailable: $e")
+                    }))
       rm         <- Resource.eval(RoomManager.create(repo, dispatcher, gameRecording))
       _          <- Resource.eval(rm.restoreFromDb.handleErrorWith { t =>
                       IO(println(s"WARN: db restore failed: ${t.getMessage}"))
