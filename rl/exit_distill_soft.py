@@ -77,6 +77,9 @@ def main():
     p.add_argument("--batch-size", type=int,   default=512)
     p.add_argument("--tau-floor",  type=float, default=1.0)
     p.add_argument("--tau-scale",  type=float, default=1.0)
+    p.add_argument("--switched-weight", type=float, default=1.0,
+                   help="loss weight for search-SWITCHED discard samples (the ~14% "
+                        "of data carrying the teacher's edge; 1.0 = original recipe)")
     p.add_argument("--device",     default="cuda")
     args = p.parse_args()
 
@@ -143,7 +146,14 @@ def main():
                     # padded candidates: tgt=0 but logp=-inf → mask to avoid 0*inf=nan
                     contrib = torch.where(tgt_b > 0, tgt_b * logp_c,
                                           torch.zeros_like(logp_c))
-                    loss = -contrib.sum(dim=1).mean()
+                    per_sample = -contrib.sum(dim=1)                 # (B,)
+                    if args.switched_weight != 1.0:
+                        w = torch.where(sw_b,
+                                        torch.full_like(per_sample, args.switched_weight),
+                                        torch.ones_like(per_sample))
+                        loss = (per_sample * w).sum() / w.sum()
+                    else:
+                        loss = per_sample.mean()
                     preds = logits.argmax(dim=-1)
                     agree_nn += (preds == act_b).sum().item()
                     agree_sw += (preds[sw_b] == act_b[sw_b]).sum().item()
