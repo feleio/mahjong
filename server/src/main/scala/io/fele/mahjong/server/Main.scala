@@ -33,11 +33,19 @@ object Main extends IOApp {
       xa         <- HikariTransactor.newHikariTransactor[IO](driver, dbUrl, dbUser, dbPass, ce)
       dispatcher <- Dispatcher.parallel[IO]
       repo        = new RoomRepo(xa)
+      gameRepo    = new GameRecordRepo(xa)
       _          <- Resource.eval(IO(println(s"Connecting to Postgres at $dbUrl")))
       _          <- Resource.eval(repo.init.handleErrorWith { t =>
                       IO(println(s"WARN: db init failed (${t.getMessage}); rooms will not persist"))
                     })
-      rm         <- Resource.eval(RoomManager.create(repo, dispatcher))
+      gameRecording <- Resource.eval(
+                      (gameRepo.init *> gameRepo.abortStale.flatMap { n =>
+                        IO(println(s"Game recording enabled ($n stale in-progress games marked aborted)"))
+                      }).as(Option(gameRepo)).handleErrorWith { t =>
+                        IO(println(s"WARN: game-record init failed (${t.getMessage}); games will not be recorded"))
+                          .as(None: Option[GameRecordRepo])
+                      })
+      rm         <- Resource.eval(RoomManager.create(repo, dispatcher, gameRecording))
       _          <- Resource.eval(rm.restoreFromDb.handleErrorWith { t =>
                       IO(println(s"WARN: db restore failed: ${t.getMessage}"))
                     })

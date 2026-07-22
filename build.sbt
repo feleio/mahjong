@@ -57,6 +57,8 @@ lazy val server = (project in file("server"))
       "ch.qos.logback"  %  "logback-classic"     % "1.4.14",
       "org.scalatest"   %% "scalatest"           % "3.2.18" % Test
     ),
+    // Suites share one Postgres and race on CREATE TABLE IF NOT EXISTS otherwise
+    Test / parallelExecution := false,
     assembly / mainClass := Some("io.fele.mahjong.server.Main"),
     assembly / assemblyMergeStrategy := {
       case PathList("META-INF", "io.netty.versions.properties") => MergeStrategy.first

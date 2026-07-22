@@ -25,7 +25,8 @@ class GameRunner private (
   val players:    List[Player],
   val state:      GameState,
   val webPlayers: Map[Int, WebSocketPlayer],
-  val hooks:      GameHooks
+  val hooks:      GameHooks,
+  val recorder:   Option[GameRecorder]
 )(implicit config: Config) {
 
   /** Subscribe to the live event stream. The most recent snapshot and any
@@ -48,7 +49,10 @@ class GameRunner private (
     val t = new Thread(new Runnable {
       override def run(): Unit = {
         try {
-          implicit val gl: GameLogger = hooks.gameLogger(state, seats)
+          recorder.foreach(_.begin())
+          val liveLogger = hooks.gameLogger(state, seats)
+          implicit val gl: GameLogger =
+            recorder.fold(liveLogger)(r => new TeeGameLogger(r.logger, liveLogger))
           val flow: Flow = new FlowImpl(state)
           flow.start()
           // Wall exhausted with no winner → push a final isFinished=true snapshot
@@ -61,6 +65,7 @@ class GameRunner private (
               "message" -> Json.fromString(Option(e.getMessage).getOrElse(e.toString))
             ))
         } finally {
+          recorder.foreach(_.close())
           hooks.markFinished()
         }
       }
@@ -192,12 +197,15 @@ object GameRunner {
     seed:       Option[Long],
     topic:      Topic[IO, Json],
     dispatcher: Dispatcher[IO],
-    onFinished: IO[Unit] = IO.unit
+    onFinished: IO[Unit] = IO.unit,
+    recordRepo: Option[GameRecordRepo] = None
   )(implicit config: Config): GameRunner = {
     require(seats.size == 4, "must have 4 seats")
     require(seats.forall(_.kind != SeatKind.Open), "cannot start with an open seat")
 
     val drawer: TileDrawer = new RandomTileDrawer(seed)
+    // Capture the full wall before dealing: it determines the deal and every draw.
+    val wall: Seq[Tile] = drawer.drawerState.shuffledTiles
     val hands: List[List[Tile]] = (0 until 4).map(_ => drawer.popHand()).toList
 
     val hooks = new GameHooks(roomId, topic, dispatcher, onFinished)
@@ -225,6 +233,8 @@ object GameRunner {
       drawer         = drawer
     )
 
-    new GameRunner(roomId, seats, players, state, webPlayers.toMap, hooks)
+    val recorder = recordRepo.map(r => new GameRecorder(r, dispatcher, roomId, seats, seed, wall))
+
+    new GameRunner(roomId, seats, players, state, webPlayers.toMap, hooks, recorder)
   }
 }
