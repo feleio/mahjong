@@ -20,10 +20,14 @@ import scala.concurrent.ExecutionContext
  */
 class RoomManager private (
   repo:       RoomRepo,
+  gameRepo:   Option[GameRecordRepo],
   dispatcher: Dispatcher[IO],
   cell:       AtomicCell[IO, Map[Models.RoomId, RoomManager.Live]]
 )(implicit config: Config, ec: ExecutionContext) {
   import RoomManager.Live
+
+  /** Fresh explicit seed per game so the shuffle is reproducible from the record. */
+  private def newSeed(): Option[Long] = Some(scala.util.Random.nextLong())
 
   /* --- room CRUD --- */
 
@@ -130,8 +134,8 @@ class RoomManager private (
         case Some(live) if !live.room.isFull =>
           (m, Left("room is not full"))
         case Some(live) =>
-          val runner = GameRunner.create(live.room.id, live.room.seats, None, live.topic, dispatcher,
-            onFinished = autoReadyBots(roomId))
+          val runner = GameRunner.create(live.room.id, live.room.seats, newSeed(), live.topic, dispatcher,
+            onFinished = autoReadyBots(roomId), recordRepo = gameRepo)
           val updated = live.room.copy(status = RoomStatus.Playing)
           (m.updated(roomId, live.copy(room = updated, runner = Some(runner))), Right((updated, runner)))
       }
@@ -197,8 +201,8 @@ class RoomManager private (
         case Some(live) if live.readySeats.size < 4 =>
           (m, IO.pure(Left("not all seats are ready")))
         case Some(live) =>
-          val runner  = GameRunner.create(live.room.id, live.room.seats, None, live.topic, dispatcher,
-            onFinished = autoReadyBots(roomId))
+          val runner  = GameRunner.create(live.room.id, live.room.seats, newSeed(), live.topic, dispatcher,
+            onFinished = autoReadyBots(roomId), recordRepo = gameRepo)
           val updated = live.room.copy(status = RoomStatus.Playing)
           val io = IO.delay(runner.start()) *>
             live.topic.publish1(Json.obj("type" -> "ready_update".asJson, "readySeats" -> Json.arr())).void *>
@@ -224,8 +228,9 @@ class RoomManager private (
 object RoomManager {
   case class Live(room: Models.Room, runner: Option[GameRunner], topic: Topic[IO, Json], readySeats: Set[Int] = Set.empty)
 
-  def create(repo: RoomRepo, dispatcher: Dispatcher[IO])(implicit config: Config, ec: ExecutionContext): IO[RoomManager] =
+  def create(repo: RoomRepo, dispatcher: Dispatcher[IO], gameRepo: Option[GameRecordRepo] = None)
+            (implicit config: Config, ec: ExecutionContext): IO[RoomManager] =
     AtomicCell[IO].of(Map.empty[Models.RoomId, Live]).map { cell =>
-      new RoomManager(repo, dispatcher, cell)
+      new RoomManager(repo, gameRepo, dispatcher, cell)
     }
 }
