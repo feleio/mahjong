@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   postgres:
     image: postgres:16
@@ -8,7 +6,7 @@ services:
       POSTGRES_USER:     mahjong
       POSTGRES_PASSWORD: mahjong
     ports:
-      - "5433:5432"
+      - "${PG_PORT:-5434}:5432"
     volumes:
       - mahjong-pg:/var/lib/postgresql/data
     healthcheck:
@@ -16,6 +14,36 @@ services:
       interval: 5s
       timeout:  3s
       retries:  10
+
+  # --- dogfood deploy (issue #30 step 2): docker compose --profile app up -d --build ---
+  # PUBLIC_HOST is the name/IP browsers use to reach this machine; defaults to
+  # localhost for same-machine play. LAN dogfood: PUBLIC_HOST=192.168.x.x
+  server:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    environment:
+      MAHJONG_DB_URL: jdbc:postgresql://postgres:5432/mahjong
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    profiles: ["app"]
+    build:
+      context: web
+      args:
+        NEXT_PUBLIC_API_BASE: http://${PUBLIC_HOST:-localhost}:8080
+        NEXT_PUBLIC_WS_BASE:  ws://${PUBLIC_HOST:-localhost}:8080
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      - server
+    restart: unless-stopped
 
 volumes:
   mahjong-pg:
