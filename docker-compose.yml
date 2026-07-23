@@ -6,7 +6,7 @@ services:
       POSTGRES_USER:     mahjong
       POSTGRES_PASSWORD: mahjong
     ports:
-      - "${PG_PORT:-5433}:5432"
+      - "${PG_PORT:-5434}:5432"
     volumes:
       - mahjong-pg:/var/lib/postgresql/data
     healthcheck:

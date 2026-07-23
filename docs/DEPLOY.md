@@ -17,9 +17,11 @@ Then players open `http://192.168.1.42:3000`.
 - `server` (port 8080) — HTTP + WebSocket API. Bakes the champion ONNX
   (`rl/checkpoints/best_raw_net.onnx`) into the image; every game is recorded
   to Postgres (`game_records` / `game_events`).
-- `postgres` (host port 5433) — same instance the dev workflow uses; game
-  records accumulate in the `mahjong-pg` volume. Back this volume up — it is
-  the human-data flywheel.
+- `postgres` (host port 5434 by default, override with `PG_PORT`) — same
+  instance the dev workflow uses; game records accumulate in the `mahjong-pg`
+  volume. Back this volume up — it is the human-data flywheel. (5434 rather
+  than the usual 5433 to avoid colliding with other Postgres containers on
+  a dev box; the in-network port the server uses is unaffected.)
 
 Without `--profile app`, `docker compose up` still starts Postgres only
 (unchanged dev workflow).
