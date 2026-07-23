@@ -1,0 +1,26 @@
+# Scala game server: sbt assembly in a build stage, slim JRE at runtime.
+# Build from the repo root:  docker build -f Dockerfile.server .
+
+FROM eclipse-temurin:17-jdk-jammy AS build
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+ && rm -rf /var/lib/apt/lists/* \
+ && curl -fL https://github.com/sbt/sbt/releases/download/v1.11.0/sbt-1.11.0.tgz | tar xz -C /usr/local
+ENV PATH=/usr/local/sbt/bin:$PATH
+WORKDIR /build
+
+# Dependency layer: resolves on build-file changes only, not source edits
+COPY build.sbt .
+COPY project/build.properties project/plugins.sbt project/
+RUN sbt -batch update server/update
+
+COPY src src
+COPY server server
+RUN sbt -batch server/assembly
+
+FROM eclipse-temurin:17-jre-jammy
+WORKDIR /app
+COPY --from=build /build/server/target/scala-2.12/mahjong-server.jar .
+COPY rl/checkpoints/best_raw_net.onnx model/best_raw_net.onnx
+ENV MAHJONG_CHAMPION_MODEL=/app/model/best_raw_net.onnx
+EXPOSE 8080
+CMD ["java", "-jar", "/app/mahjong-server.jar"]
