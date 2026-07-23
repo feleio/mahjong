@@ -221,6 +221,7 @@ object GameRunner {
         case SeatKind.AiRandom            => new RandomDiscard(seat.index, hand)
         case SeatKind.AiFirstFelix        => new FirstFelix(seat.index, hand, 5)
         case SeatKind.AiThreePointChicken => new ThreePointChicken(seat.index, hand)
+        case SeatKind.AiChampion          => new rl.NNPlayer(seat.index, hand, Nil, ChampionService.instance)
         case SeatKind.Open                => new Chicken(seat.index, hand)
       }
     }
