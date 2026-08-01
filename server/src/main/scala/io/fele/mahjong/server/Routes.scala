@@ -40,8 +40,20 @@ object Routes {
 
   def routes(rm: RoomManager): HttpRoutes[IO] = HttpRoutes.of[IO] {
 
+    /* Health: 200/ok only when game recording is live (repo wired AND DB
+     * reachable right now); 503/degraded otherwise so uptime checks catch a
+     * silent recording outage (the #34 failure mode) without reading logs. */
     case GET -> Root / "api" / "health" =>
-      Ok(Map("status" -> "ok").asJson)
+      rm.recordingHealth.flatMap { rec =>
+        val body = io.circe.Json.obj(
+          "status"         -> (if (rec.isRight) "ok" else "degraded").asJson,
+          "recording"      -> rec.isRight.asJson,
+          "gamesRecorded"  -> rec.toOption.asJson,
+          "recordingError" -> rec.left.toOption.asJson,
+          "champion"       -> ChampionService.unavailableReason.fold("ok")(e => s"unavailable: $e").asJson
+        )
+        if (rec.isRight) Ok(body) else ServiceUnavailable(body)
+      }
 
     /* List rooms */
     case GET -> Root / "api" / "rooms" =>

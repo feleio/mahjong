@@ -55,10 +55,10 @@ object Main extends IOApp {
       gameRecording <- Resource.eval(
                       withDbRetry("game-record init")(gameRepo.init *> gameRepo.abortStale).flatMap { n =>
                         IO(println(s"Game recording enabled ($n stale in-progress games marked aborted)"))
-                          .as(Option(gameRepo))
+                          .as(Right(gameRepo): Either[String, GameRecordRepo])
                       }.handleErrorWith { t =>
                         IO(println(s"WARN: game-record init failed (${t.getMessage}); games will not be recorded"))
-                          .as(None: Option[GameRecordRepo])
+                          .as(Left(s"init failed at boot: ${t.getMessage}"): Either[String, GameRecordRepo])
                       })
       _          <- Resource.eval(IO(ChampionService.unavailableReason match {
                       case None    => println(s"Champion bot enabled (model: ${ChampionService.modelPath})")
