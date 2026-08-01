@@ -11,8 +11,20 @@ import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.Router
 
 import scala.concurrent.ExecutionContext
+import scala.concurrent.duration._
 
 object Main extends IOApp {
+
+  private val DbInitAttempts = 30
+  private val DbInitDelay    = 2.seconds
+
+  private def withDbRetry[A](what: String, attemptsLeft: Int = DbInitAttempts)(io: IO[A]): IO[A] =
+    io.handleErrorWith { t =>
+      if (attemptsLeft <= 1) IO.raiseError(t)
+      else
+        IO(println(s"$what: Postgres not ready (${t.getMessage}); retrying in $DbInitDelay ($attemptsLeft attempts left)")) *>
+          IO.sleep(DbInitDelay) *> withDbRetry(what, attemptsLeft - 1)(io)
+    }
 
   override def run(args: List[String]): IO[ExitCode] = {
     val tcCfg = ConfigFactory.load()
@@ -35,13 +47,16 @@ object Main extends IOApp {
       repo        = new RoomRepo(xa)
       gameRepo    = new GameRecordRepo(xa)
       _          <- Resource.eval(IO(println(s"Connecting to Postgres at $dbUrl")))
-      _          <- Resource.eval(repo.init.handleErrorWith { t =>
+      // Docker restart policies don't honor depends_on ordering after a daemon
+      // restart, so Postgres may come up after us — retry before degrading.
+      _          <- Resource.eval(withDbRetry("db init")(repo.init).handleErrorWith { t =>
                       IO(println(s"WARN: db init failed (${t.getMessage}); rooms will not persist"))
                     })
       gameRecording <- Resource.eval(
-                      (gameRepo.init *> gameRepo.abortStale.flatMap { n =>
+                      withDbRetry("game-record init")(gameRepo.init *> gameRepo.abortStale).flatMap { n =>
                         IO(println(s"Game recording enabled ($n stale in-progress games marked aborted)"))
-                      }).as(Option(gameRepo)).handleErrorWith { t =>
+                          .as(Option(gameRepo))
+                      }.handleErrorWith { t =>
                         IO(println(s"WARN: game-record init failed (${t.getMessage}); games will not be recorded"))
                           .as(None: Option[GameRecordRepo])
                       })
