@@ -17,8 +17,9 @@ Usage:
   python human_eval.py --tables all        # every finished recorded game
   python human_eval.py --json              # machine-readable dump
 
-DB connection defaults to the repo compose Postgres (localhost:5434), override
-with MAHJONG_DB_HOST/PORT/NAME/USER/PASSWORD.
+DB connection defaults to the repo compose Postgres (localhost:5434). PG_PORT
+(the same variable docker-compose.yml uses) moves the port; MAHJONG_DB_HOST/
+PORT/NAME/USER/PASSWORD override everything else.
 """
 
 import argparse
@@ -97,7 +98,8 @@ def main():
 
     conn = psycopg2.connect(
         host=os.environ.get("MAHJONG_DB_HOST", "localhost"),
-        port=int(os.environ.get("MAHJONG_DB_PORT", "5434")),
+        port=int(os.environ.get("MAHJONG_DB_PORT",
+                                os.environ.get("PG_PORT", "5434"))),
         dbname=os.environ.get("MAHJONG_DB_NAME", "mahjong"),
         user=os.environ.get("MAHJONG_DB_USER", "mahjong"),
         password=os.environ.get("MAHJONG_DB_PASSWORD", "mahjong"),
