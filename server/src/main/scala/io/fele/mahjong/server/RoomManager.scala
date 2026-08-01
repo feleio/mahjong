@@ -33,6 +33,17 @@ class RoomManager private (
   private def championBlocked(room: Room): Option[String] =
     if (room.seats.exists(_.kind == SeatKind.AiChampion)) ChampionService.unavailableReason else None
 
+  /** Live game-recording probe: Left(reason) when recording is off or the DB is
+    * unreachable right now, Right(total games recorded) when the path works. */
+  def recordingHealth: IO[Either[String, Long]] = gameRepo match {
+    case None => IO.pure(Left("recording disabled (DB unavailable at boot)"))
+    case Some(repo) =>
+      repo.countGames.attempt.map {
+        case Right(n) => Right(n)
+        case Left(t)  => Left(s"db unreachable: ${t.getMessage}")
+      }
+  }
+
   /* --- room CRUD --- */
 
   def create(name: String, hostName: String): IO[(Room, PlayerId)] = {

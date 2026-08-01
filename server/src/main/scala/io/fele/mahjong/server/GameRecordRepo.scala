@@ -165,6 +165,10 @@ class GameRecordRepo(xa: Transactor[IO]) {
     """.update.run.transact(xa)
   }
 
+  /** Total games recorded. Doubles as a live DB reachability probe for /api/health. */
+  def countGames: IO[Long] =
+    sql"""SELECT count(*) FROM game_records""".query[Long].unique.transact(xa)
+
   def getGame(id: String): IO[Option[GameRecordRow]] =
     sql"""
       SELECT id, room_id, seats_json, seed, wall_json, status, outcome_json, started_at, finished_at

@@ -29,7 +29,11 @@ Without `--profile app`, `docker compose up` still starts Postgres only
 ## Checks
 
 ```bash
-curl http://localhost:8080/api/health          # {"status":"ok"}
+curl http://localhost:8080/api/health
+# 200 {"status":"ok","recording":true,"gamesRecorded":N,"recordingError":null,"champion":"ok"}
+# 503 {"status":"degraded","recording":false,...} when game recording is down —
+#     the health check does a live DB round-trip, so a dead Postgres shows up
+#     here immediately instead of only in the boot logs.
 docker compose logs server | grep -E "Champion|recording"
 #   Game recording enabled (N stale in-progress games marked aborted)
 #   Champion bot enabled (model: /app/model/best_raw_net.onnx)
