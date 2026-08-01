@@ -12,6 +12,7 @@ import io.fele.mahjong.server.Models._
 import java.time.Instant
 import java.util.UUID
 import scala.concurrent.ExecutionContext
+import scala.concurrent.duration._
 
 /**
  * Coordinates room CRUD and the live in-memory game runners. All mutating
@@ -20,7 +21,7 @@ import scala.concurrent.ExecutionContext
  */
 class RoomManager private (
   repo:       RoomRepo,
-  gameRepo:   Option[GameRecordRepo],
+  gameRepo:   Either[String, GameRecordRepo],
   dispatcher: Dispatcher[IO],
   cell:       AtomicCell[IO, Map[Models.RoomId, RoomManager.Live]]
 )(implicit config: Config, ec: ExecutionContext) {
@@ -34,11 +35,13 @@ class RoomManager private (
     if (room.seats.exists(_.kind == SeatKind.AiChampion)) ChampionService.unavailableReason else None
 
   /** Live game-recording probe: Left(reason) when recording is off or the DB is
-    * unreachable right now, Right(total games recorded) when the path works. */
+    * unreachable right now, Right(total games recorded) when the path works.
+    * The probe is time-boxed so a network partition (vs a clean refusal)
+    * degrades the health check instead of hanging it. */
   def recordingHealth: IO[Either[String, Long]] = gameRepo match {
-    case None => IO.pure(Left("recording disabled (DB unavailable at boot)"))
-    case Some(repo) =>
-      repo.countGames.attempt.map {
+    case Left(reason) => IO.pure(Left(s"recording disabled ($reason)"))
+    case Right(repo) =>
+      repo.countGames.timeout(5.seconds).attempt.map {
         case Right(n) => Right(n)
         case Left(t)  => Left(s"db unreachable: ${t.getMessage}")
       }
@@ -153,7 +156,7 @@ class RoomManager private (
           (m, Left(championBlocked(live.room).get))
         case Some(live) =>
           val runner = GameRunner.create(live.room.id, live.room.seats, newSeed(), live.topic, dispatcher,
-            onFinished = autoReadyBots(roomId), recordRepo = gameRepo)
+            onFinished = autoReadyBots(roomId), recordRepo = gameRepo.toOption)
           val updated = live.room.copy(status = RoomStatus.Playing)
           (m.updated(roomId, live.copy(room = updated, runner = Some(runner))), Right((updated, runner)))
       }
@@ -222,7 +225,7 @@ class RoomManager private (
           (m, IO.pure(Left(championBlocked(live.room).get): Either[String, Room]))
         case Some(live) =>
           val runner  = GameRunner.create(live.room.id, live.room.seats, newSeed(), live.topic, dispatcher,
-            onFinished = autoReadyBots(roomId), recordRepo = gameRepo)
+            onFinished = autoReadyBots(roomId), recordRepo = gameRepo.toOption)
           val updated = live.room.copy(status = RoomStatus.Playing)
           val io = IO.delay(runner.start()) *>
             live.topic.publish1(Json.obj("type" -> "ready_update".asJson, "readySeats" -> Json.arr())).void *>
@@ -248,7 +251,8 @@ class RoomManager private (
 object RoomManager {
   case class Live(room: Models.Room, runner: Option[GameRunner], topic: Topic[IO, Json], readySeats: Set[Int] = Set.empty)
 
-  def create(repo: RoomRepo, dispatcher: Dispatcher[IO], gameRepo: Option[GameRecordRepo] = None)
+  def create(repo: RoomRepo, dispatcher: Dispatcher[IO],
+             gameRepo: Either[String, GameRecordRepo] = Left("not configured"))
             (implicit config: Config, ec: ExecutionContext): IO[RoomManager] =
     AtomicCell[IO].of(Map.empty[Models.RoomId, Live]).map { cell =>
       new RoomManager(repo, gameRepo, dispatcher, cell)

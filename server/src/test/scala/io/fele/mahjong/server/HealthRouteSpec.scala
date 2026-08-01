@@ -22,7 +22,7 @@ class HealthRouteSpec extends AnyFlatSpec with Matchers {
   implicit val engineConfig: EngineConfig = new EngineConfig()
   implicit val ec: ExecutionContext = ExecutionContext.global
 
-  private def healthResponse(gameRepo: Option[GameRecordRepo]): (Status, Json) =
+  private def healthResponse(gameRepo: Either[String, GameRecordRepo]): (Status, Json) =
     Dispatcher.parallel[IO].use { dispatcher =>
       for {
         rm   <- RoomManager.create(new RoomRepo(xa), dispatcher, gameRepo)
@@ -38,7 +38,7 @@ class HealthRouteSpec extends AnyFlatSpec with Matchers {
     assume(available, "Postgres not reachable")
     repo.init.unsafeRunSync()
 
-    val (status, body) = healthResponse(Some(repo))
+    val (status, body) = healthResponse(Right(repo))
     status shouldBe Status.Ok
     field(body, "status").asString shouldBe Some("ok")
     field(body, "recording").asBoolean shouldBe Some(true)
@@ -49,10 +49,11 @@ class HealthRouteSpec extends AnyFlatSpec with Matchers {
   it should "report degraded with 503 when recording is disabled" in {
     assume(available, "Postgres not reachable")
 
-    val (status, body) = healthResponse(None)
+    val (status, body) = healthResponse(Left("init failed at boot: simulated"))
     status shouldBe Status.ServiceUnavailable
     field(body, "status").asString shouldBe Some("degraded")
     field(body, "recording").asBoolean shouldBe Some(false)
-    field(body, "recordingError").asString.getOrElse("") should include("disabled")
+    // The boot-failure cause must surface in the health body, not only in logs.
+    field(body, "recordingError").asString.getOrElse("") should include("simulated")
   }
 }
