@@ -1,0 +1,23 @@
+# Keep the server build context small: the repo carries ~8 GB of RL
+# checkpoints/data and ~600 MB of git history that the image never needs.
+.git
+.idea
+docs
+web
+webgame
+target
+project/target
+project/project
+server/target
+src/test
+
+# All RL artifacts except the champion model baked into the server image.
+# (re-include the checkpoints dir entry so the walker descends, then exclude
+# its contents again, keeping only the model)
+rl/**
+!rl/checkpoints
+rl/checkpoints/**
+!rl/checkpoints/best_raw_net.onnx
+
+# stray pip-redirect artifacts at repo root
+=*

@@ -11,13 +11,13 @@ import java.time.Instant
 import java.util.UUID
 
 /** Shared test-DB plumbing. Uses the same dev Postgres as the server
-  * (docker-compose, host port 5433); overridable via MAHJONG_DB_* env vars. */
+  * (docker-compose, host port 5434); overridable via MAHJONG_DB_* env vars. */
 object TestDb {
   private def env(k: String, default: String) = sys.env.getOrElse(k, default)
 
   val xa: Transactor[IO] = Transactor.fromDriverManager[IO](
     driver      = env("MAHJONG_DB_DRIVER", "org.postgresql.Driver"),
-    url         = env("MAHJONG_DB_URL", "jdbc:postgresql://localhost:5433/mahjong"),
+    url         = env("MAHJONG_DB_URL", "jdbc:postgresql://localhost:5434/mahjong"),
     user        = env("MAHJONG_DB_USER", "mahjong"),
     password    = env("MAHJONG_DB_PASSWORD", "mahjong"),
     logHandler  = None

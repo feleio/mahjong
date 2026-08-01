@@ -60,6 +60,8 @@ lazy val server = (project in file("server"))
     // Suites share one Postgres and race on CREATE TABLE IF NOT EXISTS otherwise
     Test / parallelExecution := false,
     assembly / mainClass := Some("io.fele.mahjong.server.Main"),
+    // Stable jar name so Dockerfile.server doesn't track the version
+    assembly / assemblyJarName := "mahjong-server.jar",
     assembly / assemblyMergeStrategy := {
       case PathList("META-INF", "io.netty.versions.properties") => MergeStrategy.first
       case PathList("META-INF", _*)                             => MergeStrategy.discard
