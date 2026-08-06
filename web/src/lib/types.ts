@@ -88,6 +88,24 @@ export type PromptKind =
   | "chow"
   | "discard";
 
+/* ---------- coach (champion hints, issue #37) ---------- */
+
+export interface OppTenpai {
+  seat: number;
+  p: number;
+}
+
+export interface CoachHint {
+  /** action key -> champion probability. Keys: tile wire names for
+   *  discard/self_kong, "pass"/"accept" for yes-no claims, "pass"/"LEFT"/
+   *  "MIDDLE"/"RIGHT" for chow. */
+  probs: Record<string, number>;
+  top: string;
+  value: number;
+  oppTenpai?: OppTenpai[] | null;
+  dangerByTile?: Record<string, number> | null;
+}
+
 export interface Prompt {
   type: "prompt";
   kind: PromptKind;
@@ -97,6 +115,7 @@ export interface Prompt {
   selfKongTiles: string[] | null;
   chowPositions: string[] | null;
   handTiles: string[] | null;
+  coach?: CoachHint | null;
 }
 
 export interface LobbyMsg {
@@ -115,4 +134,78 @@ export interface ClientAction {
   yes?: boolean;
   tile?: string;
   chowPos?: "LEFT" | "MIDDLE" | "RIGHT";
+}
+
+/* ---------- post-game review (issues #40/#41) ---------- */
+
+export interface GameOutcome {
+  drawn: boolean;
+  isSelfWin: boolean;
+  winningTile: string | null;
+  loserSeat: number | null;
+  winners: { seat: number; score: number }[];
+}
+
+export interface GameListItem {
+  id: string;
+  roomId: string;
+  startedAt: string;
+  finishedAt: string | null;
+  seats: Seat[];
+  outcome: GameOutcome | null;
+  mySeat: number | null;
+  myMoney: number | null;
+}
+
+export interface ReviewDecision {
+  seq: number;
+  kind: PromptKind;
+  contextTile: string | null;
+  hand: string[];
+  chosen: string;
+  chosenProb: number;
+  best: string;
+  bestProb: number;
+  gap: number;
+  value: number;
+  agree: boolean;
+}
+
+export interface ReviewSummary {
+  decisions: number;
+  agreements: number;
+  agreementRate: number;
+  meanGap: number;
+}
+
+export interface GameReview {
+  gameId: string;
+  seat: number;
+  playerName: string;
+  startedAt: string;
+  outcome: GameOutcome | null;
+  seatMoney: number;
+  summary: ReviewSummary;
+  decisions: ReviewDecision[];
+}
+
+export interface PlayerGameAgreement {
+  gameId: string;
+  startedAt: string;
+  agreementRate: number;
+  decisions: number;
+}
+
+export interface PlayerStats {
+  name: string;
+  games: number;
+  totalMoney: number;
+  moneyPerGame: number;
+  winRate: number;
+  selfWinRate: number;
+  dealInRate: number;
+  drawRate: number;
+  reviewedGames: number;
+  agreementRate: number | null;
+  agreementByGame: PlayerGameAgreement[];
 }

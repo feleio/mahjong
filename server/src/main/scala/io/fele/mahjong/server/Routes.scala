@@ -38,7 +38,24 @@ object Routes {
         inner.run(req).map(_.withHeaders(corsHeaders))
     }
 
-  def routes(rm: RoomManager): HttpRoutes[IO] = HttpRoutes.of[IO] {
+  /* ---------- Review API wire shapes (issues #40/#41) ---------- */
+  case class GameListItem(
+    id:         String,
+    roomId:     String,
+    startedAt:  java.time.Instant,
+    finishedAt: Option[java.time.Instant],
+    seats:      List[Seat],
+    outcome:    Option[GameOutcome],
+    mySeat:     Option[Int],   // present when filtered by ?player=
+    myMoney:    Option[Int]
+  )
+
+  private object PlayerQP extends OptionalQueryParamDecoderMatcher[String]("player")
+  private object LimitQP  extends OptionalQueryParamDecoderMatcher[Int]("limit")
+  private object SeatQP   extends QueryParamDecoderMatcher[Int]("seat")
+
+  def routes(rm: RoomManager, review: Option[ReviewService] = None)
+            (implicit engineConfig: io.fele.app.mahjong.Config): HttpRoutes[IO] = HttpRoutes.of[IO] {
 
     /* Health: 200/ok only when game recording is live (repo wired AND DB
      * reachable right now); 503/degraded otherwise so uptime checks catch a
@@ -50,9 +67,46 @@ object Routes {
           "recording"      -> rec.isRight.asJson,
           "gamesRecorded"  -> rec.toOption.asJson,
           "recordingError" -> rec.left.toOption.asJson,
-          "champion"       -> ChampionService.unavailableReason.fold("ok")(e => s"unavailable: $e").asJson
+          "champion"       -> ChampionService.unavailableReason.fold("ok")(e => s"unavailable: $e").asJson,
+          "dangerModel"    -> CoachService.dangerStatus.asJson
         )
         if (rec.isRight) Ok(body) else ServiceUnavailable(body)
+      }
+
+    /* Finished recorded games, optionally filtered to a player name (#40) */
+    case GET -> Root / "api" / "games" :? PlayerQP(player) +& LimitQP(limit) =>
+      review match {
+        case None => ServiceUnavailable(ErrResp("game records unavailable (recording is off)").asJson)
+        case Some(rs) =>
+          rs.gamesFor(player, limit.getOrElse(50)).flatMap { games =>
+            val items = games.map { case (g, mySeat) =>
+              GameListItem(g.id, g.roomId, g.startedAt, g.finishedAt, g.seats, g.outcome,
+                mySeat, for { s <- mySeat; o <- g.outcome } yield ReviewService.seatMoney(o, s))
+            }
+            Ok(items.asJson)
+          }
+      }
+
+    /* Champion-disagreement review of one seat of a finished game (#40) */
+    case GET -> Root / "api" / "games" / id / "review" :? SeatQP(seat) =>
+      review match {
+        case None => ServiceUnavailable(ErrResp("reviews unavailable (recording is off)").asJson)
+        case Some(rs) =>
+          rs.review(id, seat).flatMap {
+            case Right(r)                                => Ok(r.asJson)
+            case Left(ReviewService.GameNotFound)        => NotFound(ErrResp("game not found").asJson)
+            case Left(ReviewService.GameNotFinished)     => Conflict(ErrResp("game is not finished").asJson)
+            case Left(e: ReviewService.BadSeat)          => BadRequest(ErrResp(e.message).asJson)
+            case Left(e: ReviewService.ChampionDown)     => ServiceUnavailable(ErrResp(e.message).asJson)
+            case Left(e: ReviewService.ReplayFailed)     => Gone(ErrResp(s"cannot replay this record: ${e.message}").asJson)
+          }
+      }
+
+    /* Per-player progress stats incl. champion-agreement over time (#41) */
+    case GET -> Root / "api" / "players" / name / "stats" =>
+      review match {
+        case None => ServiceUnavailable(ErrResp("stats unavailable (recording is off)").asJson)
+        case Some(rs) => rs.playerStats(name).flatMap(s => Ok(s.asJson))
       }
 
     /* List rooms */

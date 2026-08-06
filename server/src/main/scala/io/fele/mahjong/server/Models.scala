@@ -169,6 +169,29 @@ object Models {
   )
   object GameSnapshot { implicit val enc: Encoder[GameSnapshot] = deriveEncoder }
 
+  /* ---------- Coach hints (issue #37) ---------- */
+  // Champion policy attached to a human seat's prompt. `probs` is keyed by the
+  // same action keys the client acts with: tile wire names for discard /
+  // self_kong, "pass"/"accept" for the yes-no claims, chow positions for chow
+  // (plus "pass"). Danger fields come from the v4 danger-head model when it is
+  // loaded; they are display-only relative heat (see docs/COACHING.md).
+
+  case class OppTenpaiWire(seat: Int, p: Double)
+  object OppTenpaiWire {
+    implicit val enc: Encoder[OppTenpaiWire] = deriveEncoder
+  }
+
+  case class CoachHint(
+    probs:        Map[String, Double],       // action key -> champion probability (legal actions only)
+    top:          String,                    // key with the highest probability
+    value:        Double,                    // champion value estimate for this seat
+    oppTenpai:    Option[List[OppTenpaiWire]],       // per-opponent p(tenpai), absolute seats
+    dangerByTile: Option[Map[String, Double]]        // tile wire name -> deal-in risk (relative heat)
+  )
+  object CoachHint {
+    implicit val enc: Encoder[CoachHint] = deriveEncoder
+  }
+
   /* ---------- Decision-prompt protocol ---------- */
   // The server sends a "prompt" to one player when the engine asks for a decision; the client
   // replies with the matching "action".
@@ -180,7 +203,8 @@ object Models {
     score:       Option[Int],            // for win/self_win
     selfKongTiles: Option[List[String]], // for self_kong
     chowPositions: Option[List[String]], // for chow ("LEFT","MIDDLE","RIGHT")
-    handTiles:   Option[List[String]]    // for discard
+    handTiles:   Option[List[String]],   // for discard
+    coach:       Option[CoachHint] = None
   )
   object Prompt { implicit val enc: Encoder[Prompt] = deriveEncoder }
 

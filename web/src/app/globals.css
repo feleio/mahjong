@@ -109,6 +109,128 @@ input, select {
   margin-top: 12px;
 }
 
+/* ── champion coach (issue #37) ─────────────────────────────────────────────
+   Two visually distinct channels (per issue #23 guidance):
+   jade = champion policy, cinnabar = deal-in danger (relative heat). */
+:root {
+  --jade: #34d399;
+  --cinnabar: #f87171;
+}
+
+button.coach-toggle { padding: 4px 10px; font-size: 12px; }
+button.coach-toggle.on { background: var(--jade); color: #0b3d2e; }
+
+.coach-legend { margin-top: 4px; }
+.coach-legend .jade { color: var(--jade); font-weight: 600; }
+.coach-legend .cinnabar { color: var(--cinnabar); font-weight: 600; }
+
+.coach-tile { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
+.coach-tile .coach-prob {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--jade);
+  line-height: 1;
+}
+.coach-tile.top .tile { outline: 2px solid var(--jade); outline-offset: 1px; }
+
+.danger-bar {
+  display: block;
+  width: 90%;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(248,113,113,.15);
+  overflow: hidden;
+}
+.danger-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--cinnabar);
+  border-radius: 2px;
+}
+
+.coach-pct {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(52,211,153,.15);
+  color: #065f46;
+}
+button.ghost .coach-pct { color: var(--jade); }
+.coach-pct.top { background: rgba(52,211,153,.35); }
+
+.tenpai-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+.tenpai-badge.cool { background: rgba(148,163,184,.15); color: var(--muted); }
+.tenpai-badge.warm { background: rgba(251,191,36,.2); color: #fbbf24; }
+.tenpai-badge.hot  { background: rgba(248,113,113,.25); color: var(--cinnabar); }
+
+.value-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #d1fae5;
+  background: rgba(52,211,153,.12);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+.value-track {
+  display: inline-block;
+  width: 60px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(0,0,0,.35);
+  overflow: hidden;
+}
+.value-fill { display: block; height: 100%; background: var(--jade); }
+
+/* ── post-game review (issues #40/#41) ── */
+.review-grid { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .review-grid { grid-template-columns: 1fr; } }
+
+.game-item {
+  background: var(--panel-2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  margin-bottom: 8px;
+}
+.game-item:hover { border-color: rgba(253,224,71,.4); }
+.game-item.selected { border-color: var(--accent); }
+
+.money.pos { color: var(--jade); font-weight: 700; }
+.money.neg { color: var(--cinnabar); font-weight: 700; }
+.money.zero { color: var(--muted); font-weight: 700; }
+
+.stat-tiles { display: flex; gap: 10px; flex-wrap: wrap; }
+.stat-tile {
+  background: var(--panel-2);
+  border-radius: 8px;
+  padding: 10px 14px;
+  min-width: 110px;
+}
+.stat-tile .big { font-size: 22px; font-weight: 800; }
+
+.decision {
+  background: var(--panel-2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-left: 4px solid var(--jade);
+}
+.decision.disagree { border-left-color: var(--cinnabar); }
+
+.agree-spark { display: flex; gap: 3px; align-items: flex-end; height: 42px; }
+.agree-spark .bar { width: 14px; background: var(--jade); border-radius: 2px 2px 0 0; min-height: 2px; }
+
 .modal-overlay {
   position: fixed;
   inset: 0;

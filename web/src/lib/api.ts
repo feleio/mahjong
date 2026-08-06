@@ -1,6 +1,9 @@
 import {
   CreateRoomResp,
+  GameListItem,
+  GameReview,
   JoinResp,
+  PlayerStats,
   Room,
   SeatKind,
 } from "./types";
@@ -102,5 +105,29 @@ export async function startNextGame(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ hostPlayerId }),
     }),
+  );
+}
+
+/* ---------- post-game review (issues #40/#41) ---------- */
+
+export async function listGames(
+  player?: string,
+  limit = 50,
+): Promise<GameListItem[]> {
+  const qs = new URLSearchParams({ limit: String(limit) });
+  if (player) qs.set("player", player);
+  return check(await fetch(`${API}/api/games?${qs}`));
+}
+
+export async function getReview(
+  gameId: string,
+  seat: number,
+): Promise<GameReview> {
+  return check(await fetch(`${API}/api/games/${gameId}/review?seat=${seat}`));
+}
+
+export async function getPlayerStats(name: string): Promise<PlayerStats> {
+  return check(
+    await fetch(`${API}/api/players/${encodeURIComponent(name)}/stats`),
   );
 }

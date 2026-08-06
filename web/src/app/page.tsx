@@ -70,7 +70,12 @@ export default function LobbyPage() {
 
   return (
     <div className="container">
-      <h1>🀄 Mahjong</h1>
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <h1>🀄 Mahjong</h1>
+        <button className="ghost" onClick={() => router.push("/review")}>
+          🎓 Review my games
+        </button>
+      </div>
       <p>Create a room and let others join, or jump into one waiting below.</p>
 
       <div className="card">

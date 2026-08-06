@@ -68,7 +68,21 @@ POST   /api/rooms/:id/join            { name, seatIndex? }          join an open
 PATCH  /api/rooms/:id/seat            { hostPlayerId, seatIndex, kind }
 POST   /api/rooms/:id/start           { hostPlayerId }
 GET    /ws/rooms/:id?seat=<n>&player=<playerId>     gameplay websocket
+
+# coaching / review (docs/COACHING.md)
+GET    /api/games?player=NAME&limit=N          finished recorded games
+GET    /api/games/:id/review?seat=K            champion-disagreement review
+GET    /api/players/:name/stats                progress incl. agreement rate
 ```
+
+## Coach
+
+With a room in play, the 🎓 Coach toggle overlays what the champion (net D)
+would do on every one of your decisions: per-tile discard probabilities, claim
+percentages and a value meter, plus opponent-tenpai badges and per-tile
+deal-in heat from the v4 danger model (`MAHJONG_DANGER_MODEL`, optional).
+`/review` replays your finished games through the champion and lists the
+decisions it would have played differently. See docs/COACHING.md.
 
 ## Notes
 

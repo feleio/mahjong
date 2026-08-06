@@ -164,7 +164,11 @@ class GameHooks(
     }
   }
 
-  /** Build a PromptSink that records the most recent prompt for each seat and broadcasts it. */
+  /** Build a PromptSink that records the most recent prompt for each seat and
+    * broadcasts it. Prompts only ever target human seats (only
+    * [[WebSocketPlayer]] uses the sink), so every prompt carries a champion
+    * coach hint when the model is available (issue #37); hint computation
+    * never throws — on any failure the prompt just ships without one. */
   val promptSink: WebSocketPlayer.PromptSink = new WebSocketPlayer.PromptSink {
     private def emit(seat: Int, p: Prompt): Unit = {
       val j = p.asJson.deepMerge(Json.obj("type" -> Json.fromString("prompt")))
@@ -172,19 +176,34 @@ class GameHooks(
       publish(j)
     }
     override def selfWin(seat: Int, t: Tile, score: Int, st: CurState): Unit =
-      emit(seat, Prompt("self_win", seat, Some(Models.tileToWire(t)), Some(score), None, None, None))
+      emit(seat, Prompt("self_win", seat, Some(Models.tileToWire(t)), Some(score), None, None, None,
+        CoachService.hint(seat, st, Some(t.toTileValue), _.selfWin, CoachService.binaryKeys)))
     override def win(seat: Int, t: Tile, score: Int, st: CurState): Unit =
-      emit(seat, Prompt("win", seat, Some(Models.tileToWire(t)), Some(score), None, None, None))
-    override def selfKong(seat: Int, ts: Set[Tile], st: CurState): Unit =
-      emit(seat, Prompt("self_kong", seat, None, None, Some(ts.toList.map(Models.tileToWire)), None, None))
+      emit(seat, Prompt("win", seat, Some(Models.tileToWire(t)), Some(score), None, None, None,
+        CoachService.hint(seat, st, Some(t.toTileValue), _.win, CoachService.binaryKeys)))
+    override def selfKong(seat: Int, ts: Set[Tile], st: CurState): Unit = {
+      // self_kong head: logit 0 = pass, logit t+1 = kong tile t
+      val keys = ("pass" -> 0) :: ts.toList.map(_.toTileValue).sorted.map(v => CoachService.tileWire(v) -> (v + 1))
+      emit(seat, Prompt("self_kong", seat, None, None, Some(ts.toList.map(Models.tileToWire)), None, None,
+        CoachService.hint(seat, st, None, _.selfKong, keys)))
+    }
     override def kong(seat: Int, t: Tile, st: CurState): Unit =
-      emit(seat, Prompt("kong", seat, Some(Models.tileToWire(t)), None, None, None, None))
+      emit(seat, Prompt("kong", seat, Some(Models.tileToWire(t)), None, None, None, None,
+        CoachService.hint(seat, st, Some(t.toTileValue), _.kong, CoachService.binaryKeys)))
     override def pong(seat: Int, t: Tile, st: CurState): Unit =
-      emit(seat, Prompt("pong", seat, Some(Models.tileToWire(t)), None, None, None, None))
-    override def chow(seat: Int, t: Tile, ps: Set[ChowPosition], st: CurState): Unit =
-      emit(seat, Prompt("chow", seat, Some(Models.tileToWire(t)), None, None, Some(ps.toList.map(_.toString)), None))
-    override def discard(seat: Int, st: CurState): Unit =
-      emit(seat, Prompt("discard", seat, None, None, None, None, Some(st.myInfo.tiles.map(Models.tileToWire))))
+      emit(seat, Prompt("pong", seat, Some(Models.tileToWire(t)), None, None, None, None,
+        CoachService.hint(seat, st, Some(t.toTileValue), _.pong, CoachService.binaryKeys)))
+    override def chow(seat: Int, t: Tile, ps: Set[ChowPosition], st: CurState): Unit = {
+      // chow head: logit 0 = pass, logits 1..3 = LEFT/MIDDLE/RIGHT (id + 1)
+      val keys = ("pass" -> 0) :: ps.toList.sortBy(_.id).map(p => p.toString -> (p.id + 1))
+      emit(seat, Prompt("chow", seat, Some(Models.tileToWire(t)), None, None, Some(ps.toList.map(_.toString)), None,
+        CoachService.hint(seat, st, Some(t.toTileValue), _.chow, keys)))
+    }
+    override def discard(seat: Int, st: CurState): Unit = {
+      val keys = st.myInfo.tiles.map(_.toTileValue).distinct.sorted.map(v => CoachService.tileWire(v) -> v)
+      emit(seat, Prompt("discard", seat, None, None, None, None, Some(st.myInfo.tiles.map(Models.tileToWire)),
+        CoachService.hint(seat, st, None, _.discard, keys)))
+    }
   }
 }
 

@@ -1,22 +1,35 @@
 "use client";
 
-import { ClientAction, Prompt } from "@/lib/types";
+import { ClientAction, CoachHint, Prompt } from "@/lib/types";
 import Tile from "./Tile";
 
 interface Props {
-  prompt: Prompt;
-  onAct:  (a: ClientAction) => void;
+  prompt:   Prompt;
+  onAct:    (a: ClientAction) => void;
+  coachOn?: boolean;
 }
 
-export default function PromptPanel({ prompt, onAct }: Props) {
+/** Champion probability badge for one action key (issue #37). */
+function Pct({ hint, k }: { hint?: CoachHint | null; k: string }) {
+  const p = hint?.probs?.[k];
+  if (p === undefined) return null;
+  return (
+    <span className={`coach-pct ${hint!.top === k ? "top" : ""}`}>
+      🎓{Math.round(p * 100)}%
+    </span>
+  );
+}
+
+export default function PromptPanel({ prompt, onAct, coachOn }: Props) {
+  const hint = coachOn ? prompt.coach : null;
   switch (prompt.kind) {
     case "self_win":
       return (
         <div className="prompt">
           <strong>Self-draw win</strong> {prompt.tile && <>with <Tile tile={prompt.tile} small /></>} for score {prompt.score}. Take it?
           <div className="row" style={{ marginTop: 8 }}>
-            <button onClick={() => onAct({ kind: "self_win", yes: true })}>Yes, win</button>
-            <button className="ghost" onClick={() => onAct({ kind: "self_win", yes: false })}>Pass</button>
+            <button onClick={() => onAct({ kind: "self_win", yes: true })}>Yes, win<Pct hint={hint} k="accept" /></button>
+            <button className="ghost" onClick={() => onAct({ kind: "self_win", yes: false })}>Pass<Pct hint={hint} k="pass" /></button>
           </div>
         </div>
       );
@@ -25,8 +38,8 @@ export default function PromptPanel({ prompt, onAct }: Props) {
         <div className="prompt">
           <strong>Win</strong> on opponent's discard {prompt.tile && <Tile tile={prompt.tile} small />} for score {prompt.score}.
           <div className="row" style={{ marginTop: 8 }}>
-            <button onClick={() => onAct({ kind: "win", yes: true })}>Yes, win</button>
-            <button className="ghost" onClick={() => onAct({ kind: "win", yes: false })}>Pass</button>
+            <button onClick={() => onAct({ kind: "win", yes: true })}>Yes, win<Pct hint={hint} k="accept" /></button>
+            <button className="ghost" onClick={() => onAct({ kind: "win", yes: false })}>Pass<Pct hint={hint} k="pass" /></button>
           </div>
         </div>
       );
@@ -35,8 +48,8 @@ export default function PromptPanel({ prompt, onAct }: Props) {
         <div className="prompt">
           <strong>Kong</strong> on {prompt.tile && <Tile tile={prompt.tile} small />}?
           <div className="row" style={{ marginTop: 8 }}>
-            <button onClick={() => onAct({ kind: "kong", yes: true })}>Kong</button>
-            <button className="ghost" onClick={() => onAct({ kind: "kong", yes: false })}>Pass</button>
+            <button onClick={() => onAct({ kind: "kong", yes: true })}>Kong<Pct hint={hint} k="accept" /></button>
+            <button className="ghost" onClick={() => onAct({ kind: "kong", yes: false })}>Pass<Pct hint={hint} k="pass" /></button>
           </div>
         </div>
       );
@@ -45,8 +58,8 @@ export default function PromptPanel({ prompt, onAct }: Props) {
         <div className="prompt">
           <strong>Pong</strong> on {prompt.tile && <Tile tile={prompt.tile} small />}?
           <div className="row" style={{ marginTop: 8 }}>
-            <button onClick={() => onAct({ kind: "pong", yes: true })}>Pong</button>
-            <button className="ghost" onClick={() => onAct({ kind: "pong", yes: false })}>Pass</button>
+            <button onClick={() => onAct({ kind: "pong", yes: true })}>Pong<Pct hint={hint} k="accept" /></button>
+            <button className="ghost" onClick={() => onAct({ kind: "pong", yes: false })}>Pass<Pct hint={hint} k="pass" /></button>
           </div>
         </div>
       );
@@ -58,10 +71,10 @@ export default function PromptPanel({ prompt, onAct }: Props) {
           <div className="row" style={{ marginTop: 8 }}>
             {opts.map((t) => (
               <button key={t} onClick={() => onAct({ kind: "self_kong", tile: t })}>
-                Kong {t}
+                Kong {t}<Pct hint={hint} k={t} />
               </button>
             ))}
-            <button className="ghost" onClick={() => onAct({ kind: "self_kong" })}>Pass</button>
+            <button className="ghost" onClick={() => onAct({ kind: "self_kong" })}>Pass<Pct hint={hint} k="pass" /></button>
           </div>
         </div>
       );
@@ -74,10 +87,10 @@ export default function PromptPanel({ prompt, onAct }: Props) {
           <div className="row" style={{ marginTop: 8 }}>
             {positions.map((p) => (
               <button key={p} onClick={() => onAct({ kind: "chow", chowPos: p })}>
-                Chow {p}
+                Chow {p}<Pct hint={hint} k={p} />
               </button>
             ))}
-            <button className="ghost" onClick={() => onAct({ kind: "chow" })}>Pass</button>
+            <button className="ghost" onClick={() => onAct({ kind: "chow" })}>Pass<Pct hint={hint} k="pass" /></button>
           </div>
         </div>
       );

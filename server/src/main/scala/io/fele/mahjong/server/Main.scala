@@ -40,7 +40,7 @@ object Main extends IOApp {
     val driver = tcCfg.getString("db.driver")
     val poolSz = tcCfg.getInt("db.poolSize")
 
-    val resources: Resource[IO, RoomManager] = for {
+    val resources: Resource[IO, (RoomManager, Option[ReviewService])] = for {
       ce         <- ExecutionContexts.fixedThreadPool[IO](poolSz)
       xa         <- HikariTransactor.newHikariTransactor[IO](driver, dbUrl, dbUser, dbPass, ce)
       dispatcher <- Dispatcher.parallel[IO]
@@ -64,19 +64,21 @@ object Main extends IOApp {
                       case None    => println(s"Champion bot enabled (model: ${ChampionService.modelPath})")
                       case Some(e) => println(s"WARN: champion bot unavailable: $e")
                     }))
+      _          <- Resource.eval(IO(CoachService.dangerService).void) // force-load + log danger model at boot
       rm         <- Resource.eval(RoomManager.create(repo, dispatcher, gameRecording))
       _          <- Resource.eval(rm.restoreFromDb.handleErrorWith { t =>
                       IO(println(s"WARN: db restore failed: ${t.getMessage}"))
                     })
-    } yield rm
+      review      = gameRecording.toOption.map(r => new ReviewService(r))
+    } yield (rm, review)
 
-    resources.flatMap { rm =>
+    resources.flatMap { case (rm, review) =>
       EmberServerBuilder.default[IO]
         .withHost(host)
         .withPort(port)
         .withHttpWebSocketApp { wsb =>
           val combined: org.http4s.HttpRoutes[IO] = org.http4s.HttpRoutes[IO] { req =>
-            Routes.withCors(Routes.routes(rm)).run(req)
+            Routes.withCors(Routes.routes(rm, review)).run(req)
               .orElse(WsRoutes.routes(rm, wsb).run(req))
           }
           Router("/" -> combined).orNotFound

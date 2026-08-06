@@ -6,6 +6,7 @@ import { getRoom, setSeat, startGame, markReady, startNextGame, WS_BASE } from "
 import {
   AI_KINDS,
   ClientAction,
+  CoachHint,
   GameSnapshot,
   Prompt,
   Room,
@@ -34,6 +35,22 @@ export default function RoomPage() {
   const [myReady,    setMyReady]    = useState(false);
   const wsRef                           = useRef<WebSocket | null>(null);
   const [wsEpoch, setWsEpoch]           = useState(0);
+
+  /* coach: champion hints on your prompts (issue #37). Off by default so
+     first-time players aren't overwhelmed; persisted across sessions. */
+  const [coachOn,  setCoachOn]  = useState(false);
+  const [lastHint, setLastHint] = useState<CoachHint | null>(null);
+
+  useEffect(() => {
+    setCoachOn(window.localStorage.getItem("mahjong:coach") === "on");
+  }, []);
+
+  function toggleCoach() {
+    setCoachOn((on) => {
+      window.localStorage.setItem("mahjong:coach", on ? "off" : "on");
+      return !on;
+    });
+  }
 
   useEffect(() => {
     setCreds(loadCreds(roomId));
@@ -68,6 +85,7 @@ export default function RoomPage() {
             break;
           case "prompt":
             setPrompt(msg);
+            if (msg.coach) setLastHint(msg.coach);
             break;
           case "lobby":
             setRoom(msg.room);
@@ -226,9 +244,12 @@ export default function RoomPage() {
             yourSeat={creds?.seat ?? null}
             prompt={creds && prompt?.seat === creds.seat ? prompt : null}
             onAct={send}
+            coachOn={coachOn}
+            onToggleCoach={creds ? toggleCoach : undefined}
+            lastHint={lastHint}
           />
           {prompt && creds && prompt.seat === creds.seat && (
-            <PromptPanel prompt={prompt} onAct={send} />
+            <PromptPanel prompt={prompt} onAct={send} coachOn={coachOn} />
           )}
           {snap.isFinished && (
             <GameOverModal
