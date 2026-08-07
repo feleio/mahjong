@@ -57,11 +57,36 @@ object Routes {
     myMoney:    Option[Int]
   )
 
+  /* ---------- input validation (issue #53) ---------- */
+
+  /** Names are shown to other players and, for humans, are the key the review
+    * and eval tools group by (ReviewService.gamesFor), so they cannot be empty
+    * and must stay a sane length. The frontend's maxLength is a hint to the
+    * person typing, not a constraint on anything. */
+  val MaxNameLength = 24
+
+  private def validated(label: String, raw: String): Either[String, String] = {
+    val t = raw.trim
+    if (t.isEmpty) Left(s"$label is required")
+    else if (t.length > MaxNameLength) Left(s"$label must be at most $MaxNameLength characters")
+    else Right(t)
+  }
+
+  private def badRequest(msg: String): IO[Response[IO]] = BadRequest(ErrResp(msg).asJson)
+
+  /** At-capacity is the server's problem, not a malformed request: it answers
+    * 429 so a client can tell "try later" from "fix your input". */
+  private def denied(d: RoomManager.Denied): IO[Response[IO]] = d match {
+    case RoomManager.Denied.Invalid(m)    => BadRequest(ErrResp(m).asJson)
+    case RoomManager.Denied.AtCapacity(m) => TooManyRequests(ErrResp(m).asJson)
+  }
+
   private object PlayerQP extends OptionalQueryParamDecoderMatcher[String]("player")
   private object LimitQP  extends OptionalQueryParamDecoderMatcher[Int]("limit")
   private object SeatQP   extends QueryParamDecoderMatcher[Int]("seat")
 
-  def routes(rm: RoomManager, review: Option[ReviewService] = None)
+  def routes(rm: RoomManager, review: Option[ReviewService] = None,
+             createLimiter: Option[RateLimiter] = None)
             (implicit engineConfig: io.fele.app.mahjong.Config): HttpRoutes[IO] = HttpRoutes.of[IO] {
 
     /* Health: 200/ok only when game recording is live (repo wired AND DB
@@ -128,20 +153,39 @@ object Routes {
         case None    => NotFound(ErrResp("room not found").asJson)
       }
 
-    /* Create a room. Body: { name, hostName } */
+    /* Create a room. Body: { name, hostName }
+     *
+     * The only unauthenticated write on the server, so it is the one that
+     * needs a rate limit: every room it makes is held in memory. */
     case req @ POST -> Root / "api" / "rooms" =>
-      req.as[CreateRoomReq].flatMap { body =>
-        rm.create(body.name, body.hostName).flatMap { case (room, hostId) =>
-          Ok(CreateRoomResp(RoomView.of(room), hostId).asJson)
-        }
+      val caller = req.remoteAddr.map(_.toString).getOrElse("unknown")
+      createLimiter.fold(IO.pure(true))(_.allow(caller)).flatMap {
+        case false =>
+          TooManyRequests(ErrResp("too many rooms created from here; wait a minute and try again").asJson)
+        case true =>
+          req.as[CreateRoomReq].flatMap { body =>
+            (validated("room name", body.name), validated("your name", body.hostName)) match {
+              case (Left(e), _) => badRequest(e)
+              case (_, Left(e)) => badRequest(e)
+              case (Right(roomName), Right(hostName)) =>
+                rm.create(roomName, hostName).flatMap {
+                  case Right((room, hostId)) => Ok(CreateRoomResp(RoomView.of(room), hostId).asJson)
+                  case Left(d)               => denied(d)
+                }
+            }
+          }
       }
 
     /* Join a room as a human guest */
     case req @ POST -> Root / "api" / "rooms" / id / "join" =>
       req.as[JoinReq].flatMap { body =>
-        rm.joinSeat(id, body.name, body.seatIndex).flatMap {
-          case Right((room, seat, pid)) => Ok(JoinResp(RoomView.of(room), seat, pid).asJson)
-          case Left(err)                => BadRequest(ErrResp(err).asJson)
+        validated("your name", body.name) match {
+          case Left(e) => badRequest(e)
+          case Right(name) =>
+            rm.joinSeat(id, name, body.seatIndex).flatMap {
+              case Right((room, seat, pid)) => Ok(JoinResp(RoomView.of(room), seat, pid).asJson)
+              case Left(err)                => badRequest(err)
+            }
         }
       }
 
@@ -158,8 +202,8 @@ object Routes {
     case req @ POST -> Root / "api" / "rooms" / id / "start" =>
       req.as[StartReq].flatMap { body =>
         rm.startGame(id, body.hostPlayerId).flatMap {
-          case Right(r)  => Ok(RoomView.of(r).asJson)
-          case Left(err) => BadRequest(ErrResp(err).asJson)
+          case Right(r) => Ok(RoomView.of(r).asJson)
+          case Left(d)  => denied(d)
         }
       }
 
@@ -176,8 +220,8 @@ object Routes {
     case req @ POST -> Root / "api" / "rooms" / id / "start-next" =>
       req.as[StartNextReq].flatMap { body =>
         rm.startNextGame(id, body.hostPlayerId).flatMap {
-          case Right(r)  => Ok(RoomView.of(r).asJson)
-          case Left(err) => BadRequest(ErrResp(err).asJson)
+          case Right(r) => Ok(RoomView.of(r).asJson)
+          case Left(d)  => denied(d)
         }
       }
   }

@@ -34,6 +34,11 @@ object Main extends IOApp {
     val host  = Host.fromString(tcCfg.getString("server.host")).getOrElse(host"0.0.0.0")
     val port  = Port.fromInt(tcCfg.getInt("server.port")).getOrElse(port"8080")
     val originPolicy = OriginPolicy.fromConfig(tcCfg.getString("server.allowedOrigins"))
+    val limits       = RoomManager.Limits(
+      maxRooms        = tcCfg.getInt("server.maxRooms"),
+      maxRunningGames = tcCfg.getInt("server.maxRunningGames"))
+    val roomTtl      = tcCfg.getInt("server.roomTtlHours").hours
+    val createPerMin = tcCfg.getInt("server.createRoomsPerMinute")
 
     val dbUrl  = tcCfg.getString("db.url")
     val dbUser = tcCfg.getString("db.user")
@@ -41,7 +46,7 @@ object Main extends IOApp {
     val driver = tcCfg.getString("db.driver")
     val poolSz = tcCfg.getInt("db.poolSize")
 
-    val resources: Resource[IO, (RoomManager, Option[ReviewService])] = for {
+    val resources: Resource[IO, (RoomManager, Option[ReviewService], RateLimiter)] = for {
       ce         <- ExecutionContexts.fixedThreadPool[IO](poolSz)
       xa         <- HikariTransactor.newHikariTransactor[IO](driver, dbUrl, dbUser, dbPass, ce)
       dispatcher <- Dispatcher.parallel[IO]
@@ -66,20 +71,26 @@ object Main extends IOApp {
                       case Some(e) => println(s"WARN: champion bot unavailable: $e")
                     }))
       _          <- Resource.eval(IO(CoachService.dangerService).void) // force-load + log danger model at boot
-      rm         <- Resource.eval(RoomManager.create(repo, dispatcher, gameRecording))
+      rm         <- Resource.eval(RoomManager.create(repo, dispatcher, gameRecording, limits))
       _          <- Resource.eval(rm.restoreFromDb.handleErrorWith { t =>
                       IO(println(s"WARN: db restore failed: ${t.getMessage}"))
                     })
+      limiter    <- Resource.eval(RateLimiter.create(createPerMin, 1.minute))
+      // Abandoned rooms would otherwise sit in memory holding the room cap
+      // against real players for as long as the process lives.
+      _          <- fs2.Stream.awakeEvery[IO](10.minutes)
+                      .evalMap(_ => rm.evictIdle(roomTtl).void)
+                      .compile.drain.background
       review      = gameRecording.toOption.map(r => new ReviewService(r))
-    } yield (rm, review)
+    } yield (rm, review, limiter)
 
-    resources.flatMap { case (rm, review) =>
+    resources.flatMap { case (rm, review, limiter) =>
       EmberServerBuilder.default[IO]
         .withHost(host)
         .withPort(port)
         .withHttpWebSocketApp { wsb =>
           val combined: org.http4s.HttpRoutes[IO] = org.http4s.HttpRoutes[IO] { req =>
-            Routes.withCors(originPolicy)(Routes.routes(rm, review)).run(req)
+            Routes.withCors(originPolicy)(Routes.routes(rm, review, Some(limiter))).run(req)
               // the socket route carries its own origin check: CORS does not
               // apply to websocket upgrades (issue #52)
               .orElse(WsRoutes.routes(rm, wsb, originPolicy).run(req))

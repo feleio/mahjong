@@ -123,7 +123,7 @@ class SnapshotParitySpec extends AnyFlatSpec with Matchers {
     // the lobby tells players empty seats are filled at start; the server has
     // to actually do it or a lone player can never press start
     val rm = RoomManager.create(new RoomRepo(TestDb.xa), dispatcherForTest, Left("off")).unsafeRunSync()
-    val (room, host) = rm.create("fill-test", "Solo").unsafeRunSync()
+    val (room, host) = rm.create("fill-test", "Solo").unsafeRunSync().getOrElse(fail("room not created"))
     room.seats.count(_.kind == SeatKind.Open) shouldBe 3
 
     val started = rm.startGame(room.id, host).unsafeRunSync()

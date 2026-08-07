@@ -12,7 +12,7 @@ import io.fele.mahjong.server.Models._
 import java.time.Instant
 import java.util.UUID
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration._
+import scala.concurrent.duration.{FiniteDuration, _}
 
 /**
  * Coordinates room CRUD and the live in-memory game runners. All mutating
@@ -23,9 +23,10 @@ class RoomManager private (
   repo:       RoomRepo,
   gameRepo:   Either[String, GameRecordRepo],
   dispatcher: Dispatcher[IO],
+  limits:     RoomManager.Limits,
   cell:       AtomicCell[IO, Map[Models.RoomId, RoomManager.Live]]
 )(implicit config: Config, ec: ExecutionContext) {
-  import RoomManager.Live
+  import RoomManager.{Denied, Live}
 
   /** Fresh explicit seed per game so the shuffle is reproducible from the record. */
   private def newSeed(): Option[Long] = Some(scala.util.Random.nextLong())
@@ -49,7 +50,7 @@ class RoomManager private (
 
   /* --- room CRUD --- */
 
-  def create(name: String, hostName: String): IO[(Room, PlayerId)] = {
+  def create(name: String, hostName: String): IO[Either[Denied, (Room, PlayerId)]] = {
     val hostId = UUID.randomUUID().toString
     val seats = List(
       Seat(0, SeatKind.Human, Some(hostId), hostName),
@@ -59,11 +60,18 @@ class RoomManager private (
     )
     val room = Room(Room.newId(), name, hostId, seats, RoomStatus.Waiting, Instant.now(),
       code = Room.newCode())
-    for {
-      _     <- repo.upsert(room)
-      topic <- Topic[IO, Json]
-      _     <- cell.update(_.updated(room.id, Live(room, None, topic)))
-    } yield (room, hostId)
+    Topic[IO, Json].flatMap { topic =>
+      cell.modify { m =>
+        if (m.size >= limits.maxRooms)
+          (m, Left(Denied.AtCapacity(
+            s"this server is holding its limit of ${limits.maxRooms} rooms; try again shortly")): Either[Denied, (Room, PlayerId)])
+        else
+          (m.updated(room.id, Live(room, None, topic)), Right((room, hostId)))
+      }.flatMap {
+        case Right(t) => repo.upsert(room).as(Right(t))
+        case l        => IO.pure(l)
+      }
+    }
   }
 
   /** Resolve by room id or by the short join code (case-insensitive). */
@@ -104,7 +112,7 @@ class RoomManager private (
             }
           }
           val updated = live.room.copy(seats = seats)
-          (m.updated(roomId, live.copy(room = updated)), Right(updated))
+          (m.updated(roomId, live.copy(room = updated).bump), Right(updated))
       }
     }.flatMap {
       case Right(r) => repo.upsert(r).as(Right(r))
@@ -144,7 +152,7 @@ class RoomManager private (
                 else s
               }
               val updated = live.room.copy(seats = newSeats)
-              (m.updated(roomId, live.copy(room = updated)), Right((updated, seat.index, pid)))
+              (m.updated(roomId, live.copy(room = updated).bump), Right((updated, seat.index, pid)))
           }
       }
     }.flatMap {
@@ -153,19 +161,26 @@ class RoomManager private (
     }
   }
 
+  /** Live games, each of which holds a dedicated engine thread. */
+  private def runningGames(m: Map[RoomId, Live]): Int =
+    m.values.count(_.room.status == RoomStatus.Playing)
+
   /** The host starts the game once every seat is non-Open. */
-  def startGame(roomId: RoomId, hostId: PlayerId): IO[Either[String, Room]] =
+  def startGame(roomId: RoomId, hostId: PlayerId): IO[Either[Denied, Room]] =
     cell.modify { m =>
       m.get(roomId) match {
-        case None => (m, Left("room not found"))
+        case None => (m, Left(Denied.Invalid("room not found")))
         case Some(live) if live.room.hostId != hostId =>
-          (m, Left("only the host can start the game"))
+          (m, Left(Denied.Invalid("only the host can start the game")))
         case Some(live) if live.room.status != RoomStatus.Waiting =>
-          (m, Left("game already started"))
+          (m, Left(Denied.Invalid("game already started")))
         case Some(live) if !live.room.isFull && fillEmptySeats(live.room) == live.room =>
-          (m, Left("room is not full"))
+          (m, Left(Denied.Invalid("room is not full")))
         case Some(live) if championBlocked(live.room).isDefined =>
-          (m, Left(championBlocked(live.room).get))
+          (m, Left(Denied.Invalid(championBlocked(live.room).get)))
+        case Some(_) if runningGames(m) >= limits.maxRunningGames =>
+          (m, Left(Denied.AtCapacity(
+            s"this server is already running its limit of ${limits.maxRunningGames} games; try again shortly")))
         case Some(live0) =>
           // the lobby promises empty seats get a bot at start; honour it
           val live = live0.copy(room = fillEmptySeats(live0.room))
@@ -175,7 +190,7 @@ class RoomManager private (
             balances = live.room.balances, gamesPlayed = live.room.gamesPlayed,
             pacingMs = pacingFor(live.room))
           val updated = live.room.copy(status = RoomStatus.Playing)
-          (m.updated(roomId, live.copy(room = updated, runner = Some(runner))), Right((updated, runner)))
+          (m.updated(roomId, live.copy(room = updated, runner = Some(runner)).bump), Right((updated, runner)))
       }
     }.flatMap {
       case Right((r, runner)) => IO.delay(runner.start()) *> repo.upsert(r).as(Right(r))
@@ -196,7 +211,7 @@ class RoomManager private (
               val io = live.topic.publish1(
                 Json.obj("type" -> "ready_update".asJson, "readySeats" -> newReady.toList.sorted.asJson)
               ).void.as(Right(newReady): Either[String, Set[Int]])
-              (m.updated(roomId, live.copy(readySeats = newReady)), io)
+              (m.updated(roomId, live.copy(readySeats = newReady).bump), io)
           }
       }
     }.flatten
@@ -234,7 +249,7 @@ class RoomManager private (
             balances    = live.room.balances.zipAll(delta, 0, 0).map { case (a, b) => a + b },
             gamesPlayed = live.room.gamesPlayed + 1
           )
-          (m.updated(roomId, live.copy(room = updated)), repo.upsert(updated).void)
+          (m.updated(roomId, live.copy(room = updated).bump), repo.upsert(updated).void)
       }
     }.flatten *> autoReadyBots(roomId)
 
@@ -249,7 +264,7 @@ class RoomManager private (
           val io = live.topic.publish1(
             Json.obj("type" -> "ready_update".asJson, "readySeats" -> newReady.toList.sorted.asJson)
           ).void *> markRoomFinished(roomId)
-          (m.updated(roomId, live.copy(readySeats = newReady)), io)
+          (m.updated(roomId, live.copy(readySeats = newReady).bump), io)
       }
     }.flatten
 
@@ -259,24 +274,27 @@ class RoomManager private (
         case None => (m, IO.unit)
         case Some(live) if live.room.status == RoomStatus.Playing =>
           val updated = live.room.copy(status = RoomStatus.Finished)
-          (m.updated(roomId, live.copy(room = updated)), repo.upsert(updated).void)
+          (m.updated(roomId, live.copy(room = updated).bump), repo.upsert(updated).void)
         case _ => (m, IO.unit)
       }
     }.flatten
 
   /** Host starts the next game once all seats (incl. bots) are ready. */
-  def startNextGame(roomId: RoomId, hostId: PlayerId): IO[Either[String, Room]] =
+  def startNextGame(roomId: RoomId, hostId: PlayerId): IO[Either[Denied, Room]] =
     cell.modify { m =>
       m.get(roomId) match {
-        case None => (m, IO.pure(Left("room not found"): Either[String, Room]))
+        case None => (m, IO.pure(Left(Denied.Invalid("room not found")): Either[Denied, Room]))
         case Some(live) if live.room.hostId != hostId =>
-          (m, IO.pure(Left("only the host can start the game")))
+          (m, IO.pure(Left(Denied.Invalid("only the host can start the game"))))
         case Some(live) if live.room.status != RoomStatus.Finished =>
-          (m, IO.pure(Left("game has not finished yet")))
+          (m, IO.pure(Left(Denied.Invalid("game has not finished yet"))))
         case Some(live) if live.readySeats.size < 4 =>
-          (m, IO.pure(Left("not all seats are ready")))
+          (m, IO.pure(Left(Denied.Invalid("not all seats are ready"))))
         case Some(live) if championBlocked(live.room).isDefined =>
-          (m, IO.pure(Left(championBlocked(live.room).get): Either[String, Room]))
+          (m, IO.pure(Left(Denied.Invalid(championBlocked(live.room).get)): Either[Denied, Room]))
+        case Some(_) if runningGames(m) >= limits.maxRunningGames =>
+          (m, IO.pure(Left(Denied.AtCapacity(
+            s"this server is already running its limit of ${limits.maxRunningGames} games; try again shortly"))))
         case Some(live) =>
           val runner  = GameRunner.create(live.room.id, live.room.seats, newSeed(), live.topic, dispatcher,
             onFinished = onGameFinished(roomId), recordRepo = gameRepo.toOption,
@@ -286,12 +304,27 @@ class RoomManager private (
           val updated = live.room.copy(status = RoomStatus.Playing)
           val io = IO.delay(runner.start()) *>
             live.topic.publish1(Json.obj("type" -> "ready_update".asJson, "readySeats" -> Json.arr())).void *>
-            repo.upsert(updated).as(Right(updated): Either[String, Room])
-          (m.updated(roomId, live.copy(room = updated, runner = Some(runner), readySeats = Set.empty)), io)
+            repo.upsert(updated).as(Right(updated): Either[Denied, Room])
+          (m.updated(roomId, live.copy(room = updated, runner = Some(runner), readySeats = Set.empty).bump), io)
       }
     }.flatten
 
   def runner(id: RoomId): IO[Option[GameRunner]] = cell.get.map(_.get(id).flatMap(_.runner))
+
+  /** Drop rooms nobody has touched in `ttl`, so a burst of abandoned rooms
+    * cannot hold the `maxRooms` cap against real players forever. Only idle
+    * rooms go: anything mid-game keeps its runner and its seats.
+    *
+    * The Postgres row is left alone — game records and the review pages read
+    * it, and it is what `restoreFromDb` needs after a restart. */
+  def evictIdle(ttl: FiniteDuration, now: Instant = Instant.now()): IO[Int] =
+    cell.modify { m =>
+      val cutoff = now.minusMillis(ttl.toMillis)
+      val (keep, drop) = m.partition { case (_, l) =>
+        l.room.status == RoomStatus.Playing || l.runner.isDefined || l.touched.isAfter(cutoff)
+      }
+      (keep, drop.size)
+    }.flatTap(n => IO.whenA(n > 0)(IO(println(s"Evicted $n idle room(s) older than $ttl"))))
 
   /** Restore in-memory entries for any rooms persisted in Postgres. */
   def restoreFromDb: IO[Unit] = repo.list.flatMap { rooms =>
@@ -306,12 +339,30 @@ class RoomManager private (
 }
 
 object RoomManager {
-  case class Live(room: Models.Room, runner: Option[GameRunner], topic: Topic[IO, Json], readySeats: Set[Int] = Set.empty)
+  case class Live(room: Models.Room, runner: Option[GameRunner], topic: Topic[IO, Json],
+                  readySeats: Set[Int] = Set.empty, touched: Instant = Instant.now()) {
+    /** Mark this room as active, so idle-eviction leaves it alone. */
+    def bump: Live = copy(touched = Instant.now())
+  }
+
+  /** Why an operation was refused. The distinction is not cosmetic: at-capacity
+    * is the server's problem and is worth retrying, so it must not be reported
+    * as a bad request that blames the caller for what they sent (issue #53). */
+  sealed trait Denied { def message: String }
+  object Denied {
+    case class Invalid(message: String)    extends Denied
+    case class AtCapacity(message: String) extends Denied
+  }
+
+  /** Resource ceilings. Rooms live in memory and each running game holds its
+    * own engine thread, so both need a bound before this faces the internet. */
+  case class Limits(maxRooms: Int = 200, maxRunningGames: Int = 32)
 
   def create(repo: RoomRepo, dispatcher: Dispatcher[IO],
-             gameRepo: Either[String, GameRecordRepo] = Left("not configured"))
+             gameRepo: Either[String, GameRecordRepo] = Left("not configured"),
+             limits: Limits = Limits())
             (implicit config: Config, ec: ExecutionContext): IO[RoomManager] =
     AtomicCell[IO].of(Map.empty[Models.RoomId, Live]).map { cell =>
-      new RoomManager(repo, gameRepo, dispatcher, cell)
+      new RoomManager(repo, gameRepo, dispatcher, limits, cell)
     }
 }
