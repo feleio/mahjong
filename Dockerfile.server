@@ -24,5 +24,7 @@ COPY rl/checkpoints/best_raw_net.onnx model/best_raw_net.onnx
 COPY rl/checkpoints/exit_v4/exit_final.onnx model/danger_v4.onnx
 ENV MAHJONG_CHAMPION_MODEL=/app/model/best_raw_net.onnx
 ENV MAHJONG_DANGER_MODEL=/app/model/danger_v4.onnx
+# nothing here writes to disk, so it has no business running as root
+USER 10001:10001
 EXPOSE 8080
 CMD ["java", "-jar", "/app/mahjong-server.jar"]

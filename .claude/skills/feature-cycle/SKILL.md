@@ -87,8 +87,8 @@ If a task sounds like "add X to the game UI", it means `webgame/frontend/`.
   (bespoke dark CSS in `web/`, circe semiauto encoders, `assume`-guarded
   specs that skip when Postgres or ONNX models are absent).
 - Order work so the server compiles and its tests pass before starting the
-  frontend: `sbt server/Test/compile` → `sbt server/test` → `cd web && npm
-  run build`.
+  frontend: `sbt server/Test/compile` → `sbt server/test` → `cd
+  webgame/frontend && pnpm lint && pnpm build`.
 - Write real tests, not smoke tests: fidelity/round-trip properties across
   many seeds, tamper/negative cases, cache-hit assertions.
 - Update docs (README endpoint table, DEPLOY env vars, Dockerfile model

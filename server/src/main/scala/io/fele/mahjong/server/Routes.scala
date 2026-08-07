@@ -1,6 +1,5 @@
 package io.fele.mahjong.server
 
-import cats.data.OptionT
 import cats.effect.IO
 import cats.syntax.all._
 import io.circe.generic.auto._
@@ -9,34 +8,49 @@ import io.fele.mahjong.server.Models._
 import org.http4s._
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.dsl.io._
+import org.http4s.headers.Origin
+import org.http4s.server.middleware.CORS
+import org.typelevel.ci._
 
 object Routes {
 
+  /* Rooms go out as `RoomView`: the credentials (`hostId`, per-seat
+   * `playerId`) never appear in a response body. The one caller entitled to a
+   * credential gets it in a dedicated field of their own create/join
+   * response, and nowhere else (issue #51). */
+
   case class CreateRoomReq(name: String, hostName: String)
-  case class CreateRoomResp(room: Room, hostPlayerId: PlayerId)
+  case class CreateRoomResp(room: RoomView, hostPlayerId: PlayerId)
   case class JoinReq(name: String, seatIndex: Option[Int])
-  case class JoinResp(room: Room, seat: Int, playerId: PlayerId)
+  case class JoinResp(room: RoomView, seat: Int, playerId: PlayerId)
   case class SetSeatReq(hostPlayerId: PlayerId, seatIndex: Int, kind: SeatKind)
   case class StartReq(hostPlayerId: PlayerId)
   case class ReadyReq(playerId: PlayerId)
   case class StartNextReq(hostPlayerId: PlayerId)
   case class ErrResp(error: String)
 
-  /** CORS for the Next.js dev server. Adds the headers when the inner routes
-    * matched the request, and answers OPTIONS preflight directly. */
-  private val corsHeaders: Headers = Headers(
-    Header.Raw(org.typelevel.ci.CIString("Access-Control-Allow-Origin"),  "*"),
-    Header.Raw(org.typelevel.ci.CIString("Access-Control-Allow-Methods"), "GET,POST,PATCH,DELETE,OPTIONS"),
-    Header.Raw(org.typelevel.ci.CIString("Access-Control-Allow-Headers"), "Content-Type")
-  )
-
-  def withCors(inner: HttpRoutes[IO]): HttpRoutes[IO] =
-    HttpRoutes[IO] { req =>
-      if (req.method == Method.OPTIONS && req.uri.path.toString.startsWith("/api"))
-        OptionT.pure[IO](Response[IO](Status.Ok).withHeaders(corsHeaders))
-      else
-        inner.run(req).map(_.withHeaders(corsHeaders))
-    }
+  /** CORS driven by the configured origin allowlist (issue #52).
+    *
+    * This replaces a hand-rolled `Access-Control-Allow-Origin: *`, which also
+    * answered every preflight itself and rewrote the response's whole header
+    * set. The library middleware gets the parts that are easy to get wrong —
+    * echoing the request origin, `Vary: Origin`, preflight status — right.
+    *
+    * Note what this is and is not. CORS stops *another website* from reading
+    * this API with a user's browser; a request from a disallowed origin still
+    * executes and simply comes back without the headers that would let the
+    * page read it, and a non-browser client ignores CORS entirely. It is not
+    * access control on the API. The socket route enforces its origin properly
+    * (see WsRoutes) because a websocket upgrade has no preflight to omit. */
+  def withCors(policy: OriginPolicy)(inner: HttpRoutes[IO]): HttpRoutes[IO] = {
+    val base = CORS.policy
+      .withAllowMethodsIn(Set(Method.GET, Method.POST, Method.PATCH, Method.DELETE, Method.OPTIONS))
+      .withAllowHeadersIn(Set(ci"Content-Type"))
+    val configured =
+      if (policy.allowsAll) base.withAllowOriginAll
+      else base.withAllowOriginHeader(o => policy.permits(Header[Origin].value(o)))
+    configured.httpRoutes[IO](inner)
+  }
 
   /* ---------- Review API wire shapes (issues #40/#41) ---------- */
   case class GameListItem(
@@ -44,17 +58,42 @@ object Routes {
     roomId:     String,
     startedAt:  java.time.Instant,
     finishedAt: Option[java.time.Instant],
-    seats:      List[Seat],
+    seats:      List[SeatView],
     outcome:    Option[GameOutcome],
     mySeat:     Option[Int],   // present when filtered by ?player=
     myMoney:    Option[Int]
   )
 
+  /* ---------- input validation (issue #53) ---------- */
+
+  /** Names are shown to other players and, for humans, are the key the review
+    * and eval tools group by (ReviewService.gamesFor), so they cannot be empty
+    * and must stay a sane length. The frontend's maxLength is a hint to the
+    * person typing, not a constraint on anything. */
+  val MaxNameLength = 24
+
+  private def validated(label: String, raw: String): Either[String, String] = {
+    val t = raw.trim
+    if (t.isEmpty) Left(s"$label is required")
+    else if (t.length > MaxNameLength) Left(s"$label must be at most $MaxNameLength characters")
+    else Right(t)
+  }
+
+  private def badRequest(msg: String): IO[Response[IO]] = BadRequest(ErrResp(msg).asJson)
+
+  /** At-capacity is the server's problem, not a malformed request: it answers
+    * 429 so a client can tell "try later" from "fix your input". */
+  private def denied(d: RoomManager.Denied): IO[Response[IO]] = d match {
+    case RoomManager.Denied.Invalid(m)    => BadRequest(ErrResp(m).asJson)
+    case RoomManager.Denied.AtCapacity(m) => TooManyRequests(ErrResp(m).asJson)
+  }
+
   private object PlayerQP extends OptionalQueryParamDecoderMatcher[String]("player")
   private object LimitQP  extends OptionalQueryParamDecoderMatcher[Int]("limit")
   private object SeatQP   extends QueryParamDecoderMatcher[Int]("seat")
 
-  def routes(rm: RoomManager, review: Option[ReviewService] = None)
+  def routes(rm: RoomManager, review: Option[ReviewService] = None,
+             createLimiter: Option[RateLimiter] = None)
             (implicit engineConfig: io.fele.app.mahjong.Config): HttpRoutes[IO] = HttpRoutes.of[IO] {
 
     /* Health: 200/ok only when game recording is live (repo wired AND DB
@@ -80,7 +119,7 @@ object Routes {
         case Some(rs) =>
           rs.gamesFor(player, limit.getOrElse(50)).flatMap { games =>
             val items = games.map { case (g, mySeat) =>
-              GameListItem(g.id, g.roomId, g.startedAt, g.finishedAt, g.seats, g.outcome,
+              GameListItem(g.id, g.roomId, g.startedAt, g.finishedAt, g.seats.map(SeatView.of), g.outcome,
                 mySeat, for { s <- mySeat; o <- g.outcome } yield ReviewService.seatMoney(o, s))
             }
             Ok(items.asJson)
@@ -110,31 +149,50 @@ object Routes {
         case Some(rs) => rs.playerStats(name).flatMap(s => Ok(s.asJson))
       }
 
-    /* List rooms */
-    case GET -> Root / "api" / "rooms" =>
-      rm.list.flatMap(rs => Ok(rs.asJson))
-
-    /* Get a single room */
+    /* Get a single room by id or short join code.
+     *
+     * There is deliberately no `GET /api/rooms` listing: knowing a room's id
+     * or code IS the capability to reach it, so enumerating them would hand
+     * every room to anyone who asks. Nothing in the frontend listed rooms. */
     case GET -> Root / "api" / "rooms" / id =>
       rm.get(id).flatMap {
-        case Some(r) => Ok(r.asJson)
+        case Some(r) => Ok(RoomView.of(r).asJson)
         case None    => NotFound(ErrResp("room not found").asJson)
       }
 
-    /* Create a room. Body: { name, hostName } */
+    /* Create a room. Body: { name, hostName }
+     *
+     * The only unauthenticated write on the server, so it is the one that
+     * needs a rate limit: every room it makes is held in memory. */
     case req @ POST -> Root / "api" / "rooms" =>
-      req.as[CreateRoomReq].flatMap { body =>
-        rm.create(body.name, body.hostName).flatMap { case (room, hostId) =>
-          Ok(CreateRoomResp(room, hostId).asJson)
-        }
+      val caller = req.remoteAddr.map(_.toString).getOrElse("unknown")
+      createLimiter.fold(IO.pure(true))(_.allow(caller)).flatMap {
+        case false =>
+          TooManyRequests(ErrResp("too many rooms created from here; wait a minute and try again").asJson)
+        case true =>
+          req.as[CreateRoomReq].flatMap { body =>
+            (validated("room name", body.name), validated("your name", body.hostName)) match {
+              case (Left(e), _) => badRequest(e)
+              case (_, Left(e)) => badRequest(e)
+              case (Right(roomName), Right(hostName)) =>
+                rm.create(roomName, hostName).flatMap {
+                  case Right((room, hostId)) => Ok(CreateRoomResp(RoomView.of(room), hostId).asJson)
+                  case Left(d)               => denied(d)
+                }
+            }
+          }
       }
 
     /* Join a room as a human guest */
     case req @ POST -> Root / "api" / "rooms" / id / "join" =>
       req.as[JoinReq].flatMap { body =>
-        rm.joinSeat(id, body.name, body.seatIndex).flatMap {
-          case Right((room, seat, pid)) => Ok(JoinResp(room, seat, pid).asJson)
-          case Left(err)                => BadRequest(ErrResp(err).asJson)
+        validated("your name", body.name) match {
+          case Left(e) => badRequest(e)
+          case Right(name) =>
+            rm.joinSeat(id, name, body.seatIndex).flatMap {
+              case Right((room, seat, pid)) => Ok(JoinResp(RoomView.of(room), seat, pid).asJson)
+              case Left(err)                => badRequest(err)
+            }
         }
       }
 
@@ -142,7 +200,7 @@ object Routes {
     case req @ PATCH -> Root / "api" / "rooms" / id / "seat" =>
       req.as[SetSeatReq].flatMap { body =>
         rm.setSeatKind(id, body.hostPlayerId, body.seatIndex, body.kind).flatMap {
-          case Right(r)  => Ok(r.asJson)
+          case Right(r)  => Ok(RoomView.of(r).asJson)
           case Left(err) => BadRequest(ErrResp(err).asJson)
         }
       }
@@ -151,8 +209,8 @@ object Routes {
     case req @ POST -> Root / "api" / "rooms" / id / "start" =>
       req.as[StartReq].flatMap { body =>
         rm.startGame(id, body.hostPlayerId).flatMap {
-          case Right(r)  => Ok(r.asJson)
-          case Left(err) => BadRequest(ErrResp(err).asJson)
+          case Right(r) => Ok(RoomView.of(r).asJson)
+          case Left(d)  => denied(d)
         }
       }
 
@@ -169,8 +227,8 @@ object Routes {
     case req @ POST -> Root / "api" / "rooms" / id / "start-next" =>
       req.as[StartNextReq].flatMap { body =>
         rm.startNextGame(id, body.hostPlayerId).flatMap {
-          case Right(r)  => Ok(r.asJson)
-          case Left(err) => BadRequest(ErrResp(err).asJson)
+          case Right(r) => Ok(RoomView.of(r).asJson)
+          case Left(d)  => denied(d)
         }
       }
   }

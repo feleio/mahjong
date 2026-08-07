@@ -23,20 +23,20 @@ docker compose up -d postgres
 
 ```bash
 sbt "server/run"
-# defaults: HTTP + WS on :8080, Postgres at jdbc:postgresql://localhost:5432/mahjong
+# defaults: HTTP + WS on :8080, Postgres at jdbc:postgresql://localhost:5434/mahjong
 ```
 
 Configuration is driven by `server/src/main/resources/application.conf` and
 overridable via env vars `MAHJONG_SERVER_HOST`, `MAHJONG_SERVER_PORT`,
-`MAHJONG_DB_URL`, `MAHJONG_DB_USER`, `MAHJONG_DB_PASSWORD`.
+`MAHJONG_DB_URL`, `MAHJONG_DB_USER`, `MAHJONG_DB_PASSWORD`,
+`MAHJONG_ALLOWED_ORIGINS` (see `docs/DEPLOY.md`).
 
 ### 3. Frontend (Next.js)
 
 ```bash
-cd web
-cp .env.example .env.local       # adjust API/WS hosts if needed
-npm install
-npm run dev
+cd webgame/frontend
+pnpm install
+pnpm dev
 # open http://localhost:3000
 ```
 
@@ -61,12 +61,14 @@ block on a queue fed by the websocket.
 ## REST API summary
 
 ```
-GET    /api/rooms                     list rooms
+GET    /api/health                    recording/champion status (200 ok, 503 degraded)
 POST   /api/rooms                     { name, hostName }            create
-GET    /api/rooms/:id                 fetch a room
+GET    /api/rooms/:id                 fetch a room, by id or join code
 POST   /api/rooms/:id/join            { name, seatIndex? }          join an open seat
 PATCH  /api/rooms/:id/seat            { hostPlayerId, seatIndex, kind }
 POST   /api/rooms/:id/start           { hostPlayerId }
+POST   /api/rooms/:id/ready           { playerId }                  ready for the next game
+POST   /api/rooms/:id/start-next      { hostPlayerId }
 GET    /ws/rooms/:id?seat=<n>&player=<playerId>     gameplay websocket
 
 # coaching / review (docs/COACHING.md)

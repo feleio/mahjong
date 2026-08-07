@@ -21,7 +21,24 @@ object WsRoutes {
     * - `seat` and `player` are optional. If both supplied and they match a
     *   human seat in the room, this connection can submit actions for that seat.
     *   Otherwise the connection is read-only (a spectator). */
-  def routes(rm: RoomManager, wsb: WebSocketBuilder2[IO]): HttpRoutes[IO] = HttpRoutes.of[IO] {
+  /** A websocket upgrade is not a CORS-protected request: the browser sends it
+    * cross-site without a preflight, so the CORS middleware on the REST routes
+    * cannot defend it. Any page a player visits could otherwise open a socket
+    * to a room they hold credentials for. Hence an explicit check here.
+    *
+    * A request with no `Origin` is allowed through: that is a non-browser
+    * client (curl, a test, a native app), which the allowlist was never
+    * protecting against — its purpose is to stop *other websites* from acting
+    * as the user. */
+  private def originAllowed(req: org.http4s.Request[IO], policy: OriginPolicy): Boolean =
+    policy.allowsAll ||
+      req.headers.get(org.typelevel.ci.CIString("Origin")).forall(h => policy.permits(h.head.value))
+
+  def routes(rm: RoomManager, wsb: WebSocketBuilder2[IO],
+             policy: OriginPolicy = OriginPolicy.allowAll): HttpRoutes[IO] = HttpRoutes.of[IO] {
+
+    case req @ GET -> Root / "ws" / "rooms" / roomId if !originAllowed(req, policy) =>
+      Forbidden("origin not allowed")
 
     case req @ GET -> Root / "ws" / "rooms" / roomId =>
       val seat   = req.params.get("seat").flatMap(s => scala.util.Try(s.toInt).toOption)
@@ -41,9 +58,11 @@ object WsRoutes {
           rm.runner(canonicalId).flatMap {
             case None =>
               // Game has not started yet — push a single lobby snapshot and keep the connection open.
+              // RoomView, not Room: a spectator socket must not receive the
+              // host's or any seat's credential (issue #51)
               val lobby = WebSocketFrame.Text(io.circe.Json.obj(
                 "type" -> "lobby".asJson,
-                "room" -> room.asJson
+                "room" -> RoomView.of(room).asJson
               ).noSpaces)
               val out: Stream[IO, WebSocketFrame] =
                 Stream.emit(lobby).covary[IO] ++ Stream.never[IO]

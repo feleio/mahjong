@@ -33,6 +33,12 @@ object Main extends IOApp {
 
     val host  = Host.fromString(tcCfg.getString("server.host")).getOrElse(host"0.0.0.0")
     val port  = Port.fromInt(tcCfg.getInt("server.port")).getOrElse(port"8080")
+    val originPolicy = OriginPolicy.fromConfig(tcCfg.getString("server.allowedOrigins"))
+    val limits       = RoomManager.Limits(
+      maxRooms        = tcCfg.getInt("server.maxRooms"),
+      maxRunningGames = tcCfg.getInt("server.maxRunningGames"))
+    val roomTtl      = tcCfg.getInt("server.roomTtlHours").hours
+    val createPerMin = tcCfg.getInt("server.createRoomsPerMinute")
 
     val dbUrl  = tcCfg.getString("db.url")
     val dbUser = tcCfg.getString("db.user")
@@ -40,7 +46,7 @@ object Main extends IOApp {
     val driver = tcCfg.getString("db.driver")
     val poolSz = tcCfg.getInt("db.poolSize")
 
-    val resources: Resource[IO, (RoomManager, Option[ReviewService])] = for {
+    val resources: Resource[IO, (RoomManager, Option[ReviewService], RateLimiter)] = for {
       ce         <- ExecutionContexts.fixedThreadPool[IO](poolSz)
       xa         <- HikariTransactor.newHikariTransactor[IO](driver, dbUrl, dbUser, dbPass, ce)
       dispatcher <- Dispatcher.parallel[IO]
@@ -65,27 +71,47 @@ object Main extends IOApp {
                       case Some(e) => println(s"WARN: champion bot unavailable: $e")
                     }))
       _          <- Resource.eval(IO(CoachService.dangerService).void) // force-load + log danger model at boot
-      rm         <- Resource.eval(RoomManager.create(repo, dispatcher, gameRecording))
-      _          <- Resource.eval(rm.restoreFromDb.handleErrorWith { t =>
+      rm         <- Resource.eval(RoomManager.create(repo, dispatcher, gameRecording, limits))
+      _          <- Resource.eval(rm.restoreFromDb(roomTtl).handleErrorWith { t =>
                       IO(println(s"WARN: db restore failed: ${t.getMessage}"))
                     })
+      limiter    <- Resource.eval(RateLimiter.create(createPerMin, 1.minute))
+      // Abandoned rooms would otherwise sit in memory holding the room cap
+      // against real players for as long as the process lives.
+      //
+      // The per-tick error handler is the point, not a formality: a raised
+      // error would complete this fiber and silently disable eviction for the
+      // life of the process, which is the exact shape of the recording outage
+      // in #34 -- something quietly stops working and nothing says so.
+      _          <- fs2.Stream.awakeEvery[IO](10.minutes)
+                      .evalMap(_ => rm.evictIdle(roomTtl).void.handleErrorWith { t =>
+                        IO(println(s"WARN: room eviction pass failed: ${t.getMessage}"))
+                      })
+                      .compile.drain.background
       review      = gameRecording.toOption.map(r => new ReviewService(r))
-    } yield (rm, review)
+    } yield (rm, review, limiter)
 
-    resources.flatMap { case (rm, review) =>
+    resources.flatMap { case (rm, review, limiter) =>
       EmberServerBuilder.default[IO]
         .withHost(host)
         .withPort(port)
         .withHttpWebSocketApp { wsb =>
           val combined: org.http4s.HttpRoutes[IO] = org.http4s.HttpRoutes[IO] { req =>
-            Routes.withCors(Routes.routes(rm, review)).run(req)
-              .orElse(WsRoutes.routes(rm, wsb).run(req))
+            Routes.withCors(originPolicy)(Routes.routes(rm, review, Some(limiter))).run(req)
+              // the socket route carries its own origin check: CORS does not
+              // apply to websocket upgrades (issue #52)
+              .orElse(WsRoutes.routes(rm, wsb, originPolicy).run(req))
           }
           Router("/" -> combined).orNotFound
         }
         .build
     }.use { _ =>
-      IO(println(s"Mahjong server listening on $host:$port")) *> IO.never
+      IO(println(s"Mahjong server listening on $host:$port (allowed origins: ${originPolicy.describe})")) *>
+        // a control whose misconfiguration mode is "off" has to say so out loud
+        IO.whenA(originPolicy.allowsAll)(IO(println(
+          "WARN: no origin allowlist — any website may call this API and open game sockets. " +
+          "Set MAHJONG_ALLOWED_ORIGINS for anything but local development."))) *>
+        IO.never
     }
   }
 }

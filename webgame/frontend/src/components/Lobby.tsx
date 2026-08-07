@@ -52,8 +52,12 @@ export function Lobby({
       {/* seats */}
       <div className="mt-6 grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
         {room.seats.map((seat) => {
-          const isYou = seat.userId !== null && seat.userId === room.youUserId;
-          const isSeatHost = seat.userId !== null && seat.userId === room.hostUserId;
+          // Your seat number comes from this browser, not from the server, so
+          // check it still looks like a seat a person is in: if the host
+          // reassigned it while you were away, the "You" badge would otherwise
+          // end up on a bot.
+          const isYou = seat.seat === room.youSeat && !seat.isBot && !seat.empty;
+          const isSeatHost = seat.seat === room.hostSeat;
           return (
             <div
               key={seat.seat}

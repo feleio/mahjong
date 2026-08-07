@@ -110,8 +110,66 @@ object Models {
 
     /** Unambiguous alphabet: no O/0, I/1, S/5 — these get read out loud. */
     private val CodeAlphabet = "ABCDEFGHJKLMNPQRTUVWXY2346789"
+
+    /** The code is a capability, not a label: with no room listing, knowing it
+      * is what lets you reach a room (#51). `scala.util.Random` is a 48-bit
+      * LCG whose state is recoverable from a handful of observed outputs, so
+      * anyone who creates two rooms of their own could predict every code
+      * issued afterwards. */
+    private val secureRandom = new java.security.SecureRandom()
+
     def newCode(): String =
-      (1 to 6).map(_ => CodeAlphabet(scala.util.Random.nextInt(CodeAlphabet.length))).mkString
+      (1 to 6).map(_ => CodeAlphabet(secureRandom.nextInt(CodeAlphabet.length))).mkString
+  }
+
+  /* ---------- Public wire views (issue #51) ----------
+   *
+   * `hostId` and a seat's `playerId` are the only credentials this server has:
+   * holding one lets you run that room or play that seat. They are handed to
+   * their owner once, at create/join time, and must never appear in a payload
+   * anyone else can read — so every route and socket frame serializes these
+   * id-free projections instead of `Room`/`Seat`.
+   *
+   * `hostSeat` replaces `hostId` for the UI's "who is the host" marker: it is
+   * derived from the room, not a secret, and cannot be replayed as a
+   * credential. */
+
+  case class SeatView(index: Int, kind: SeatKind, name: String, occupied: Boolean)
+  object SeatView {
+    implicit val enc: Encoder[SeatView] = deriveEncoder
+    implicit val dec: Decoder[SeatView] = deriveDecoder
+
+    def of(s: Seat): SeatView = SeatView(s.index, s.kind, s.name, s.playerId.isDefined)
+  }
+
+  case class RoomView(
+    id:          RoomId,
+    name:        String,
+    seats:       List[SeatView],
+    status:      RoomStatus,
+    createdAt:   Instant,
+    code:        String,
+    balances:    List[Int],
+    gamesPlayed: Int,
+    hostSeat:    Int
+  )
+  object RoomView {
+    implicit val enc: Encoder[RoomView] = deriveEncoder
+    implicit val dec: Decoder[RoomView] = deriveDecoder
+
+    def of(r: Room): RoomView = RoomView(
+      id          = r.id,
+      name        = r.name,
+      seats       = r.seats.map(SeatView.of),
+      status      = r.status,
+      createdAt   = r.createdAt,
+      code        = r.code,
+      balances    = r.balances,
+      gamesPlayed = r.gamesPlayed,
+      // the host holds hostId; seat 0 is the host's seat and cannot be
+      // reassigned (RoomManager.setSeatKind), so the lookup has a sane default
+      hostSeat    = r.seats.find(_.playerId.contains(r.hostId)).map(_.index).getOrElse(0)
+    )
   }
 
   /* ---------- Tile JSON ---------- */

@@ -29,25 +29,30 @@ import { asSeat, chowFromWire, chowToWire, isBot, tileFromWire, tilesFromWire, t
 export const COACH_MODEL = "Champion";
 
 export function adaptRoom(room: ServerRoom, creds: RoomCreds | null): RoomState {
-  const seats: SeatInfo[] = room.seats.map((s, i) => ({
-    seat: asSeat(s.index),
-    name: s.kind === "open" ? "—" : s.name,
-    isBot: isBot(s.kind),
-    userId: s.playerId,
-    // The server does not track presence yet; a seated human is shown as
-    // present rather than falsely flagged as disconnected.
-    connected: true,
-    balance: room.balances[i] ?? 0,
-    empty: s.kind === "open",
-  }));
+  const seats: SeatInfo[] = room.seats.map((s, i) => {
+    // A seat can be kind "human" with nobody in it — the host converting a bot
+    // seat back to a human one leaves it waiting for someone. Going by kind
+    // alone would draw a phantom player there that nobody can be and the host
+    // cannot clear, so occupancy decides.
+    const vacant = s.kind === "open" || (!isBot(s.kind) && !s.occupied);
+    return {
+      seat: asSeat(s.index),
+      name: vacant ? "—" : s.name,
+      isBot: isBot(s.kind),
+      // The server does not track presence yet; a seated human is shown as
+      // present rather than falsely flagged as disconnected.
+      connected: true,
+      balance: room.balances[i] ?? 0,
+      empty: vacant,
+    };
+  });
   return {
     code: room.code || room.id.slice(0, 6).toUpperCase(),
     // "finished" keeps the table on screen with the game-over modal over it
     status: room.status === "waiting" ? "lobby" : "playing",
-    hostUserId: room.hostId,
+    hostSeat: asSeat(room.hostSeat ?? 0),
     seats,
     youSeat: creds ? asSeat(creds.seat) : null,
-    youUserId: creds?.playerId ?? "",
     gamesPlayed: room.gamesPlayed,
     coachModels: [COACH_MODEL],
     enforceTimeLimit: true,

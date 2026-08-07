@@ -46,9 +46,48 @@ SELECT count(*), status FROM game_records GROUP BY status;
 SELECT count(*) FROM game_events;
 ```
 
-## Not for public internet
+## Configuration
 
-The Next 14 advisories that used to block this are gone — the player-facing
-app is `webgame/frontend` on Next 16 (issue #47). What still keeps this off the
-public internet is the server: CORS is `*` and rooms have no auth, so keep it
-behind a LAN/VPN until that is addressed.
+| Env var | Default | What it does |
+| --- | --- | --- |
+| `PUBLIC_HOST` | `localhost` | Host players' browsers use. Baked into the web image, so changing it needs `--build`. |
+| `WEB_PORT` | `3000` | Host port for the UI. |
+| `PG_PORT` | `5434` | Host port for Postgres, bound to `127.0.0.1` only. |
+| `MAHJONG_ALLOWED_ORIGINS` | set by compose | Comma-separated browser origins allowed to call the API and open game sockets. Compose sets it to this stack's own web origin; `*` allows any (the bare-`sbt run` default). |
+| `MAHJONG_DB_PASSWORD` | `mahjong` | Postgres password, used by both the database and the server. **Set this for anything but a private machine.** |
+| `MAHJONG_MAX_ROOMS` | `200` | Rooms held in memory before creation is refused with 429. |
+| `MAHJONG_MAX_RUNNING_GAMES` | `32` | Concurrent games (each holds an engine thread). |
+| `MAHJONG_ROOM_TTL_HOURS` | `24` | Idle rooms are evicted after this; rooms mid-game never are. |
+| `MAHJONG_CREATE_ROOMS_PER_MINUTE` | `10` | Room creations per caller IP. |
+
+## Security model
+
+Access is by capability, with no accounts:
+
+- A room's **join code or id is the capability to reach it**. There is no room
+  listing, and the server never publishes the host id or any seat's player id
+  (issue #51) — yours is handed to you once, on create/join, and lives in your
+  browser's localStorage.
+- Holding a seat's player id is what lets you play that seat; holding the host
+  id is what lets you run the room.
+- `MAHJONG_ALLOWED_ORIGINS` bounds which sites may call the API or open a game
+  socket, so another page you visit cannot act as you (issue #52).
+
+Two people who type the same display name still share one review history and
+one stats page — names are not accounts. That is a known gap, tracked
+separately, and it is worth knowing before inviting strangers.
+
+## Before putting this on the public internet
+
+Still required, and deliberately not in the compose file:
+
+1. **TLS via a reverse proxy.** Everything here is plain HTTP/WS. A public
+   deploy needs `https://` + `wss://` in front (and then `PUBLIC_HOST`,
+   `NEXT_PUBLIC_*` and `MAHJONG_ALLOWED_ORIGINS` all have to use the https
+   origin).
+2. **A real `MAHJONG_DB_PASSWORD`**, not the default.
+3. **Client IPs through the proxy.** The room-creation rate limit keys on the
+   connection's remote address, so behind a proxy every caller shares one
+   bucket unless the deploy forwards the real address.
+
+On a LAN or VPN, the defaults above are safe to run as-is.

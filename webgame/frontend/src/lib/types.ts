@@ -1,4 +1,6 @@
-// Protocol types — mirrors PROTOCOL.md exactly.
+// View-model types for the components, adapted from `server/`'s wire shapes in
+// adapt.ts. Identity here is by seat index: the server no longer publishes
+// player ids, and a seat is all the UI ever needed (issue #51).
 
 export type Seat = 0 | 1 | 2 | 3;
 
@@ -6,7 +8,6 @@ export interface SeatInfo {
   seat: Seat;
   name: string; // display name or "Bot 2"
   isBot: boolean;
-  userId: string | null; // null for bots / empty seats
   connected: boolean; // false when a human's socket is down
   balance: number; // cumulative across games in this room
   empty: boolean; // true if nobody (lobby only)
@@ -15,10 +16,9 @@ export interface SeatInfo {
 export interface RoomState {
   code: string; // 6-char join code
   status: "lobby" | "playing";
-  hostUserId: string;
+  hostSeat: Seat; // the seat that runs the room
   seats: SeatInfo[]; // always length 4
   youSeat: Seat | null; // your seat in this room
-  youUserId: string;
   gamesPlayed: number;
   coachModels: string[]; // available AI-coach models, strongest first ([] = coach off)
   enforceTimeLimit: boolean; // false = no decision countdown (default)

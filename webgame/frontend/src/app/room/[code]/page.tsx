@@ -78,7 +78,7 @@ export default function RoomPage() {
           creds = {
             playerId: joined.playerId,
             seat: joined.seat,
-            isHost: joined.room.hostId === joined.playerId,
+            isHost: joined.room.hostSeat === joined.seat,
             name: getName(),
           };
           saveCreds(room.id, creds);
@@ -123,7 +123,10 @@ export default function RoomPage() {
 
   const room = state.room;
   const creds = roomId ? loadCreds(roomId) : null;
-  const isHost = creds?.isHost ?? false;
+  // Prefer the room's own answer over the flag we stored at join time: the
+  // server publishes which seat runs the room, so host UI follows what the
+  // server says rather than a boolean sitting in localStorage.
+  const isHost = room && creds ? room.hostSeat === creds.seat : (creds?.isHost ?? false);
 
   const refreshRoom = useCallback(async () => {
     if (!roomId) return;
