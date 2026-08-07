@@ -30,6 +30,7 @@ object WsRoutes {
       rm.get(roomId).flatMap {
         case None => NotFound("room not found")
         case Some(room) =>
+          val canonicalId = room.id
           val authorisedSeat: Option[Int] = for {
             s <- seat
             p <- player
@@ -37,7 +38,7 @@ object WsRoutes {
             if seatRow.kind == SeatKind.Human && seatRow.playerId.contains(p)
           } yield s
 
-          rm.runner(roomId).flatMap {
+          rm.runner(canonicalId).flatMap {
             case None =>
               // Game has not started yet — push a single lobby snapshot and keep the connection open.
               val lobby = WebSocketFrame.Text(io.circe.Json.obj(
@@ -54,7 +55,7 @@ object WsRoutes {
 
               val inSink: Pipe[IO, WebSocketFrame, Unit] = _.evalMap {
                 case WebSocketFrame.Text(text, _) =>
-                  rm.runner(roomId).flatMap { currentRunner =>
+                  rm.runner(canonicalId).flatMap { currentRunner =>
                     IO.delay {
                       for {
                         r     <- currentRunner

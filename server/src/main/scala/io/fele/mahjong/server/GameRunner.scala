@@ -90,9 +90,20 @@ class GameRunner private (
           if (seat.exists(_ == pseat.getOrElse(-1))) pj
           else pj.mapObject(_.remove("handTiles"))
         }
-        j.mapObject(_
-          .add("players",  Json.fromValues(redacted))
-          .add("yourSeat", seat.fold(Json.Null)(Json.fromInt)))
+        // a drawn tile is private to the drawer, even though the event that
+        // carries it is broadcast to the whole table
+        val evt = j.hcursor.downField("event").focus.map { e =>
+          val isDraw    = e.hcursor.get[String]("kind").toOption.contains("draw")
+          val drawnBy   = e.hcursor.get[Int]("seat").toOption
+          val itsMine   = seat.isDefined && drawnBy == seat
+          if (isDraw && !itsMine && !isFinished) e.mapObject(_.add("tile", Json.Null)) else e
+        }
+        j.mapObject { o =>
+          val withPlayers = o
+            .add("players",  Json.fromValues(redacted))
+            .add("yourSeat", seat.fold(Json.Null)(Json.fromInt))
+          evt.fold(withPlayers)(e => withPlayers.add("event", e))
+        }
       case Some("prompt") =>
         val target = j.hcursor.get[Int]("seat").toOption
         if (seat.isDefined && target.contains(seat.get)) j else Json.Null
@@ -103,10 +114,14 @@ class GameRunner private (
 
 /** Container for the pieces shared between the GameLogger, PromptSink, and runner. */
 class GameHooks(
-  val roomId:     RoomId,
-  val topic:      Topic[IO, Json],
-  val dispatcher: Dispatcher[IO],
-  onFinished:     IO[Unit] = IO.unit
+  val roomId:      RoomId,
+  val topic:       Topic[IO, Json],
+  val dispatcher:  Dispatcher[IO],
+  onFinished:      IO[Unit] = IO.unit,
+  val dealerSeat:  Int = 0,
+  val balances:    List[Int] = List(0, 0, 0, 0),
+  val gamesPlayed: Int = 0,
+  val pacingMs:    Long = 0L
 ) {
   @volatile private var _snapshot:    Option[Json] = None
   @volatile private var _lastPrompts: Map[Int, Json] = Map.empty
@@ -142,16 +157,27 @@ class GameHooks(
 
   /** Build a GameLogger that publishes a fresh snapshot after every event. */
   def gameLogger(state: GameState, seats: List[Seat])(implicit config: Config): GameLogger = new GameLogger {
-    override def start():  Unit = snap(Some("start"))
-    override def resume(): Unit = snap(Some("resume"))
-    override def discard(e: DiscardEvent): Unit = snap(Some(s"player ${e.playerId} discarded ${Models.tileToWire(e.tile)}"))
-    override def kong(e: KongEvent):       Unit = snap(Some(s"player ${e.playerId} kong"))
-    override def pong(e: PongEvent):       Unit = snap(Some(s"player ${e.playerId} pong"))
-    override def chow(e: ChowEvent):       Unit = snap(Some(s"player ${e.playerId} chow"))
-    override def end(e: EndEvent):         Unit = snap(Some("end"))
-    override def draw(e: DrawEvent):       Unit = snap(Some(s"player ${e.playerId} drew"))
+    private def ev(kind: String, seat: Option[Int] = None, tile: Option[Tile] = None,
+                   from: Option[Int] = None, pos: Option[String] = None): Option[EventView] =
+      Some(EventView(kind, seat, tile.map(Models.tileToWire), from, pos))
 
-    private def snap(label: Option[String]): Unit = {
+    override def start():  Unit = snap(Some("start"),  ev("start"))
+    override def resume(): Unit = snap(Some("resume"), ev("resume"))
+    override def discard(e: DiscardEvent): Unit =
+      snap(Some(s"player ${e.playerId} discarded ${Models.tileToWire(e.tile)}"),
+        ev("discard", Some(e.playerId), Some(e.tile)))
+    override def kong(e: KongEvent): Unit =
+      snap(Some(s"player ${e.playerId} kong"), ev("kong", Some(e.playerId), Some(e.tile), Some(e.sourcePlayerId)))
+    override def pong(e: PongEvent): Unit =
+      snap(Some(s"player ${e.playerId} pong"), ev("pong", Some(e.playerId), Some(e.tile), Some(e.sourcePlayerId)))
+    override def chow(e: ChowEvent): Unit =
+      snap(Some(s"player ${e.playerId} chow"),
+        ev("chow", Some(e.playerId), Some(e.tile), Some(e.sourcePlayerId), Some(e.position.toString)))
+    override def end(e: EndEvent): Unit = snap(Some("end"), ev("end"))
+    override def draw(e: DrawEvent): Unit =
+      snap(Some(s"player ${e.playerId} drew"), ev("draw", Some(e.playerId), Some(e.tile)))
+
+    private def snap(label: Option[String], event: Option[EventView]): Unit = {
       val views = state.players.zipWithIndex.map { case (p, i) =>
         PlayerView(
           seat        = i,
@@ -162,14 +188,23 @@ class GameHooks(
           handTiles   = Some(p.privateInfo.tiles.map(Models.tileToWire))
         )
       }
+      // the newest discard stays claimable until someone draws or claims it
+      val pending = event.filter(_.kind == "discard").flatMap { e =>
+        for { s <- e.seat; t <- e.tile } yield DiscardView(s, t)
+      }
       val snap = GameSnapshot(
         roomId         = roomId,
         yourSeat       = None,
         curPlayer      = state.curPlayerId,
+        dealerSeat     = dealerSeat,
         remainingTiles = state.drawer.remainingTiles.size,
         players        = views,
         discards       = state.discards.reverse.map(d => DiscardView(d.playerId, Models.tileToWire(d.tile))),
         lastEvent      = label,
+        event          = event,
+        pendingDiscard = pending,
+        balances       = balances,
+        gamesPlayed    = gamesPlayed,
         winners        = state.winnersInfo.toList.flatMap(_.winners.toList.map(w => WinnerView(w.id, w.score))),
         isFinished     = state.winnersInfo.isDefined,
         selfWin        = state.winnersInfo.exists(_.isSelfWin)
@@ -177,6 +212,9 @@ class GameHooks(
       val j = snap.asJson.deepMerge(Json.obj("type" -> Json.fromString("snapshot")))
       _snapshot = Some(j)
       publish(j)
+      // Bots resolve a whole round in microseconds. Without a beat between
+      // events a human sees the table teleport; pace it so play is watchable.
+      if (pacingMs > 0) try Thread.sleep(pacingMs) catch { case _: InterruptedException => () }
     }
   }
 
@@ -190,6 +228,12 @@ class GameHooks(
       val j = p.asJson.deepMerge(Json.obj("type" -> Json.fromString("prompt")))
       _lastPrompts = _lastPrompts.updated(seat, j)
       publish(j)
+      // everyone else only sees the table stop, so say who we are waiting on
+      publish(Json.obj(
+        "type"     -> Json.fromString("waiting"),
+        "seat"     -> Json.fromInt(seat),
+        "decision" -> Json.fromString(p.kind)
+      ))
     }
     override def selfWin(seat: Int, t: Tile, score: Int, st: CurState, promptId: Long): Unit =
       emit(seat, Prompt("self_win", seat, Some(Models.tileToWire(t)), Some(score), None, None, None,
@@ -240,13 +284,20 @@ object GameRunner {
 
   /** Build a runner whose seats map cleanly to engine players. */
   def create(
-    roomId:     RoomId,
-    seats:      List[Seat],
-    seed:       Option[Long],
-    topic:      Topic[IO, Json],
-    dispatcher: Dispatcher[IO],
-    onFinished: IO[Unit] = IO.unit,
-    recordRepo: Option[GameRecordRepo] = None
+    roomId:      RoomId,
+    seats:       List[Seat],
+    seed:        Option[Long],
+    topic:       Topic[IO, Json],
+    dispatcher:  Dispatcher[IO],
+    onFinished:  IO[Unit] = IO.unit,
+    recordRepo:  Option[GameRecordRepo] = None,
+    // Whoever starts is part of what makes a game replayable, so it is recorded
+    // rather than assumed — a dealer rotation only has to pass a value here and
+    // old records stay valid.
+    dealerSeat:  Int = 0,
+    balances:    List[Int] = List(0, 0, 0, 0),
+    gamesPlayed: Int = 0,
+    pacingMs:    Long = 0L
   )(implicit config: Config): GameRunner = {
     require(seats.size == 4, "must have 4 seats")
     require(seats.forall(_.kind != SeatKind.Open), "cannot start with an open seat")
@@ -256,7 +307,8 @@ object GameRunner {
     val wall: Seq[Tile] = drawer.drawerState.shuffledTiles
     val hands: List[List[Tile]] = (0 until 4).map(_ => drawer.popHand()).toList
 
-    val hooks = new GameHooks(roomId, topic, dispatcher, onFinished)
+    val hooks = new GameHooks(roomId, topic, dispatcher, onFinished,
+      dealerSeat = dealerSeat, balances = balances, gamesPlayed = gamesPlayed, pacingMs = pacingMs)
     val webPlayers = scala.collection.mutable.Map.empty[Int, WebSocketPlayer]
 
     val players: List[Player] = seats.zip(hands).map { case (seat, hand) =>
@@ -274,10 +326,6 @@ object GameRunner {
       }
     }
 
-    // Whoever starts is part of what makes a game replayable, so it is recorded
-    // rather than assumed. Today it is always seat 0; a future dealer rotation
-    // only has to change this value and old records stay valid.
-    val dealerSeat = 0
 
     val state = GameState(
       players        = players,
