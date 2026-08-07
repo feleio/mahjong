@@ -57,6 +57,29 @@ object DecisionExplainer {
     case x           => s"$x away from ready"
   }
 
+  /** Wire codes like "D5"/"HW_E" mean nothing to a player reading a sentence;
+    * the tile images carry them everywhere else in the UI, so spell them out
+    * here. Mirrors tileLabel() in web/src/lib/tiles.ts. */
+  def tileName(wire: String): String = wire match {
+    case "HW_E" => "East wind"
+    case "HW_S" => "South wind"
+    case "HW_W" => "West wind"
+    case "HW_N" => "North wind"
+    case "HD_R" => "Red dragon"
+    case "HD_G" => "Green dragon"
+    case "HD_B" => "White dragon"
+    case s if s.length == 2 && s(1).isDigit =>
+      val n   = s(1)
+      val one = n == '1'
+      s(0) match {
+        case 'D' => if (one) "1 dot" else s"$n dots"
+        case 'B' => s"$n bamboo"
+        case 'C' => if (one) "1 character" else s"$n characters"
+        case _   => s
+      }
+    case s => s
+  }
+
   /** Explain why the champion preferred `best` over `chosen`.
     * Returns None when nothing can be said with confidence. */
   def explain(kind: String, cs: CurState, chosen: String, best: String, hint: CoachHint): Option[Explanation] =
@@ -83,18 +106,18 @@ object DecisionExplainer {
 
         if (theirShanten < myShanten)
           Some(Explanation(Bucket.Shape.key,
-            s"Keeping $best would have left you ${shantenWord(theirShanten)}; discarding $chosen leaves you ${shantenWord(myShanten)}."))
+            s"Keeping ${tileName(best)} would have left you ${shantenWord(theirShanten)}; discarding ${tileName(chosen)} leaves you ${shantenWord(myShanten)}."))
         else if (theirShanten == myShanten && theirUkeire > myUkeire * 6 / 5 && theirUkeire - myUkeire >= 2)
           Some(Explanation(Bucket.Tempo.key,
             s"Both keep you ${shantenWord(myShanten)}, but the champion's discard leaves $theirUkeire tiles that improve the hand against your $myUkeire."))
         else (myDanger, theirDanger) match {
           case (Some(md), Some(td)) if md > td * 1.5 && md > 0.02 =>
             Some(Explanation(Bucket.Safety.key,
-              f"Similar shape either way, but $chosen is the more dangerous discard right now (${md * 100}%.0f%% vs ${td * 100}%.0f%% relative deal-in risk)."))
+              f"Similar shape either way, but ${tileName(chosen)} is the more dangerous discard right now (${md * 100}%.0f%% vs ${td * 100}%.0f%% relative deal-in risk)."))
           case _ if theirShanten == myShanten && theirUkeire == myUkeire => None
           case _ =>
             Some(Explanation(Bucket.Other.key,
-              s"The champion preferred $best; shape and acceptance are close, so this is a judgement call it makes differently."))
+              s"The champion preferred ${tileName(best)}; shape and acceptance are close, so this is a judgement call it makes differently."))
         }
       }
     } yield expl

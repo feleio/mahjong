@@ -36,8 +36,20 @@ class DecisionExplainerSpec extends AnyFlatSpec with Matchers {
     val e = DecisionExplainer.explain("discard", cs, "D1", "HW_E", hint(Map("D1" -> 0.1, "HW_E" -> 0.6)))
     e shouldBe defined
     e.get.bucket shouldBe "shape"
-    e.get.text should include("HW_E")
-    e.get.text should include("D1")
+    // spelled out, not wire codes — the player never sees "HW_E" anywhere else
+    e.get.text should include("East wind")
+    e.get.text should include("1 dot")
+    e.get.text should not include "HW_E"
+  }
+
+  it should "spell tiles out in plain language" in {
+    DecisionExplainer.tileName("HW_E") shouldBe "East wind"
+    DecisionExplainer.tileName("HD_R") shouldBe "Red dragon"
+    DecisionExplainer.tileName("D1")   shouldBe "1 dot"
+    DecisionExplainer.tileName("D5")   shouldBe "5 dots"
+    DecisionExplainer.tileName("B9")   shouldBe "9 bamboo"
+    DecisionExplainer.tileName("C1")   shouldBe "1 character"
+    DecisionExplainer.tileName("C7")   shouldBe "7 characters"
   }
 
   it should "fall back to safety when shape is equal but one tile is far more dangerous" in {
