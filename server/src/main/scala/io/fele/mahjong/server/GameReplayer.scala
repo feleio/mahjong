@@ -49,14 +49,17 @@ object GameReplayer {
     wall:         List[String],
     events:       List[GameEventRow],
     outcome:      GameOutcome,
+    dealerSeat:   Int,
     observedSeat: Option[Int],
     observer:     DecisionObserver
-  )(implicit config: Config): Unit = new Run(wall, events, outcome, observedSeat, observer).execute()
+  )(implicit config: Config): Unit =
+    new Run(wall, events, outcome, dealerSeat, observedSeat, observer).execute()
 
   private class Run(
     wallWire:     List[String],
     events:       List[GameEventRow],
     outcome:      GameOutcome,
+    dealerSeat:   Int,
     observedSeat: Option[Int],
     observer:     DecisionObserver
   )(implicit config: Config) {
@@ -178,7 +181,7 @@ object GameReplayer {
       val wall = wallWire.map(parseTile)
       val drawer: TileDrawer = new RandomTileDrawer(None, Some(wall))
       val players: List[Player] = (0 until 4).map(i => new ScriptedPlayer(i, drawer.popHand()): Player).toList
-      val state = GameState(players, None, Nil, 0, drawer)
+      val state = GameState(players, None, Nil, dealerSeat, drawer)
       implicit val gl: GameLogger = verifier
       new FlowImpl(state).start()
       if (pos != events.size) fail(s"replay finished with ${events.size - pos} recorded events left over")

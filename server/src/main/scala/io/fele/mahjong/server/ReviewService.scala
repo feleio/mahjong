@@ -172,7 +172,7 @@ class ReviewService(repo: GameRecordRepo)(implicit engineConfig: EngineConfig) {
         }
       }
       try {
-        GameReplayer.replay(g.wall, events, outcome, Some(seat), observer)
+        GameReplayer.replay(g.wall, events, outcome, g.dealerSeat, Some(seat), observer)
         val ds = buf.toList
         val played     = ds.filterNot(_.timedOut)
         val agreements = played.count(_.agree)

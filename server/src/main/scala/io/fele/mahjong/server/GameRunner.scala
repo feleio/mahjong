@@ -264,15 +264,20 @@ object GameRunner {
       }
     }
 
+    // Whoever starts is part of what makes a game replayable, so it is recorded
+    // rather than assumed. Today it is always seat 0; a future dealer rotation
+    // only has to change this value and old records stay valid.
+    val dealerSeat = 0
+
     val state = GameState(
       players        = players,
       winnersInfo    = None,
       discards       = Nil,
-      curPlayerId    = 0,
+      curPlayerId    = dealerSeat,
       drawer         = drawer
     )
 
-    val recorder = recordRepo.map(r => new GameRecorder(r, dispatcher, roomId, seats, seed, wall))
+    val recorder = recordRepo.map(r => new GameRecorder(r, dispatcher, roomId, seats, seed, wall, dealerSeat))
     recorder.foreach(r => hooks.onTimeout = (seat, kind) => r.decisionTimedOut(seat, kind))
 
     new GameRunner(roomId, seats, players, state, webPlayers.toMap, hooks, recorder)

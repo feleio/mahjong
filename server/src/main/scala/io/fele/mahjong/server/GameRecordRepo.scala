@@ -57,6 +57,7 @@ case class GameRecordRow(
   seats:      List[Seat],
   seed:       Option[Long],
   wall:       List[String],          // 136 tiles in draw order; slice(13*i, 13*(i+1)) = seat i's deal
+  dealerSeat: Int,                   // seat that takes the first turn (rows written before this column: 0)
   status:     String,
   outcome:    Option[GameOutcome],
   startedAt:  Instant,
@@ -117,6 +118,11 @@ class GameRecordRepo(xa: Transactor[IO]) {
     val gamesIdx = sql"""
       CREATE INDEX IF NOT EXISTS game_records_room_idx ON game_records (room_id)
     """.update.run
+    // Added after the first records existed: rows written before it started at
+    // seat 0, which is what the default backfills.
+    val dealerCol = sql"""
+      ALTER TABLE game_records ADD COLUMN IF NOT EXISTS dealer_seat INT NOT NULL DEFAULT 0
+    """.update.run
     val events = sql"""
       CREATE TABLE IF NOT EXISTS game_events (
         game_id       TEXT NOT NULL REFERENCES game_records(id) ON DELETE CASCADE,
@@ -140,23 +146,24 @@ class GameRecordRepo(xa: Transactor[IO]) {
         PRIMARY KEY (game_id, event_seq, seat, kind)
       )
     """.update.run
-    (games *> gamesIdx *> events *> timeouts).transact(xa).void
+    (games *> gamesIdx *> dealerCol *> events *> timeouts).transact(xa).void
   }
 
   def insertGame(
     id:        String,
     roomId:    RoomId,
     seats:     List[Seat],
-    seed:      Option[Long],
-    wall:      List[String],
-    startedAt: Instant
+    seed:       Option[Long],
+    wall:       List[String],
+    dealerSeat: Int,
+    startedAt:  Instant
   ): IO[Unit] = {
     val seatsJson = seats.asJson.noSpaces
     val wallJson  = wall.asJson.noSpaces
     val status    = GameRecordStatus.InProgress
     sql"""
-      INSERT INTO game_records (id, room_id, seats_json, seed, wall_json, status, started_at)
-      VALUES ($id, $roomId, $seatsJson, $seed, $wallJson, $status, $startedAt)
+      INSERT INTO game_records (id, room_id, seats_json, seed, wall_json, dealer_seat, status, started_at)
+      VALUES ($id, $roomId, $seatsJson, $seed, $wallJson, $dealerSeat, $status, $startedAt)
     """.update.run.transact(xa).void
   }
 
@@ -199,20 +206,20 @@ class GameRecordRepo(xa: Transactor[IO]) {
 
   def getGame(id: String): IO[Option[GameRecordRow]] =
     sql"""
-      SELECT id, room_id, seats_json, seed, wall_json, status, outcome_json, started_at, finished_at
+      SELECT id, room_id, seats_json, seed, wall_json, dealer_seat, status, outcome_json, started_at, finished_at
       FROM game_records WHERE id = $id
-    """.query[(String, String, String, Option[Long], String, String, Option[String], Instant, Option[Instant])]
+    """.query[(String, String, String, Option[Long], String, Int, String, Option[String], Instant, Option[Instant])]
       .option
       .transact(xa)
       .map(_.flatMap(rowToGame))
 
   def listGames(roomId: Option[RoomId], limit: Int = 200): IO[List[GameRecordRow]] = {
     val base =
-      fr"""SELECT id, room_id, seats_json, seed, wall_json, status, outcome_json, started_at, finished_at
+      fr"""SELECT id, room_id, seats_json, seed, wall_json, dealer_seat, status, outcome_json, started_at, finished_at
            FROM game_records""" ++
         roomId.fold(Fragment.empty)(r => fr"WHERE room_id = $r") ++
         fr"ORDER BY started_at DESC LIMIT $limit"
-    base.query[(String, String, String, Option[Long], String, String, Option[String], Instant, Option[Instant])]
+    base.query[(String, String, String, Option[Long], String, Int, String, Option[String], Instant, Option[Instant])]
       .to[List]
       .transact(xa)
       .map(_.flatMap(rowToGame))
@@ -244,9 +251,9 @@ class GameRecordRepo(xa: Transactor[IO]) {
     sql"""DELETE FROM game_records WHERE id = $id""".update.run.transact(xa).void
 
   private def rowToGame(
-    row: (String, String, String, Option[Long], String, String, Option[String], Instant, Option[Instant])
+    row: (String, String, String, Option[Long], String, Int, String, Option[String], Instant, Option[Instant])
   ): Option[GameRecordRow] = {
-    val (id, roomId, seatsJson, seed, wallJson, status, outcomeJson, startedAt, finishedAt) = row
+    val (id, roomId, seatsJson, seed, wallJson, dealerSeat, status, outcomeJson, startedAt, finishedAt) = row
     for {
       seats   <- decode[List[Seat]](seatsJson).toOption
       wall    <- decode[List[String]](wallJson).toOption
@@ -254,6 +261,6 @@ class GameRecordRepo(xa: Transactor[IO]) {
                    case None    => Some(None)
                    case Some(j) => decode[GameOutcome](j).toOption.map(Some(_))
                  }
-    } yield GameRecordRow(id, roomId, seats, seed, wall, status, outcome, startedAt, finishedAt)
+    } yield GameRecordRow(id, roomId, seats, seed, wall, dealerSeat, status, outcome, startedAt, finishedAt)
   }
 }

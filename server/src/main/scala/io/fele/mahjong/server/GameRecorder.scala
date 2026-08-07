@@ -22,7 +22,8 @@ class GameRecorder(
   roomId:     RoomId,
   seats:      List[Seat],
   seed:       Option[Long],
-  wall:       Seq[Tile]
+  wall:       Seq[Tile],
+  dealerSeat: Int
 ) {
   val gameId: String = UUID.randomUUID().toString
 
@@ -42,7 +43,7 @@ class GameRecorder(
 
   /** Insert the game row. Must be called before any event is logged. */
   def begin(): Unit =
-    run(repo.insertGame(gameId, roomId, seats, seed, wall.map(Models.tileToWire).toList, Instant.now()), "insert game")
+    run(repo.insertGame(gameId, roomId, seats, seed, wall.map(Models.tileToWire).toList, dealerSeat, Instant.now()), "insert game")
 
   private def event(
     eventType:  String,
