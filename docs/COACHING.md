@@ -130,6 +130,29 @@ Testing: sbt unit tests for CoachService + GameReplayer (replay determinism reus
 `GameRecordingSpec` fixtures); manual end-to-end via browser (create room vs champion,
 verify hints/danger/value, finish a game, review it).
 
+## 5b. Follow-up work (shipped after the first pass)
+
+Found by dogfooding the features above, then fixed:
+
+- **Auto-played turns no longer count as your play (#42).** A human seat that
+  does not answer within 60s gets a default from the engine, and those defaults
+  were entering `game_events` indistinguishable from real choices — which meant
+  the agreement rate scored moves nobody made. `WebSocketPlayer` now reports the
+  expiry, `GameRecorder` pins it to the event cursor the replayer reports
+  (`game_decision_timeouts`), and reviews list such turns separately and exclude
+  them from every metric. `rl/human_eval.py` drops games containing them unless
+  `--include-timeouts`. The UI shows a turn countdown and says plainly when the
+  engine moved for you.
+- **The connection is visible and self-healing (#43).** The room page reports
+  connecting / reconnecting state and retries with exponential backoff (the old
+  retry-on-close had no delay, so a downed server produced a hot loop), and
+  re-fetches the room when the socket comes back.
+- **Disagreements explain themselves (#44).** `DecisionExplainer` says *why* the
+  champion differed using facts the engine can prove — shanten and ukeire deltas
+  for shape/tempo, the danger heads for safety — bucketed the way
+  `rl/mine_overrides.py` buckets search-vs-net disagreements. When neither
+  explanation is grounded, it says nothing rather than inventing a story.
+
 ## 6. Risks / open questions
 
 - **Replay fidelity**: the replayer must consume events in exactly the recorded order,

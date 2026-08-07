@@ -11,10 +11,16 @@ Payout rule (mirrors WinnersInfo.winnersBalance in Flow.scala):
   discard win: each winner receives scoreMap[score], the discarder pays the sum
   draw:        everyone 0
 
+Games where a human let prompts expire are excluded by default (issue #42):
+the engine plays a default on their behalf, so the result measures the timeout
+fallback, not a person. --include-timeouts keeps them, --max-timeouts N allows
+up to N expired turns per game.
+
 Usage:
   python human_eval.py                     # tables with >=1 human AND >=1 champion
   python human_eval.py --tables human      # any table with >=1 human seat
   python human_eval.py --tables all        # every finished recorded game
+  python human_eval.py --include-timeouts  # do not drop auto-played games
   python human_eval.py --json              # machine-readable dump
 
 DB connection defaults to the repo compose Postgres (localhost:5434). PG_PORT
@@ -61,8 +67,30 @@ def seat_money(outcome: dict) -> list:
     return money
 
 
-def load_games(conn, tables: str):
-    """Yield (game_id, seats, outcome) for finished games matching the filter."""
+def timeout_counts(conn):
+    """game_id -> number of expired human prompts (issue #42).
+
+    Returns {} when the table is absent, i.e. records written by a server
+    older than the timeout fix — those games are indistinguishable and are
+    treated as clean rather than silently dropped.
+    """
+    with conn.cursor() as cur:
+        cur.execute("SELECT to_regclass('game_decision_timeouts') IS NOT NULL")
+        if not cur.fetchone()[0]:
+            return {}
+        cur.execute("SELECT game_id, count(*) FROM game_decision_timeouts GROUP BY game_id")
+        return dict(cur.fetchall())
+
+
+def load_games(conn, tables: str, max_timeouts=0):
+    """Yield (game_id, seats, outcome, auto_played) for matching finished games.
+
+    `auto_played` is True when the game had more than `max_timeouts` expired
+    human prompts; the caller drops those from the stats but still counts them
+    so the report can say how many were excluded. Pass max_timeouts=None to
+    mark nothing.
+    """
+    timeouts = timeout_counts(conn)
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id, seats_json, outcome_json FROM game_records "
@@ -76,7 +104,10 @@ def load_games(conn, tables: str):
                 continue
             if tables == "human" and "human" not in kinds:
                 continue
-            yield game_id, seats, json.loads(outcome_json)
+            if max_timeouts is not None and timeouts.get(game_id, 0) > max_timeouts:
+                yield game_id, seats, json.loads(outcome_json), True
+                continue
+            yield game_id, seats, json.loads(outcome_json), False
 
 
 def ci95(values):
@@ -94,7 +125,12 @@ def main():
                     default="champion-vs-human",
                     help="which recorded tables to include (default: champion-vs-human)")
     ap.add_argument("--json", action="store_true", help="emit raw JSON instead of a report")
+    ap.add_argument("--include-timeouts", action="store_true",
+                    help="keep games where human prompts expired and the engine auto-played (#42)")
+    ap.add_argument("--max-timeouts", type=int, default=0,
+                    help="expired human turns tolerated per game before it is excluded (default: 0)")
     args = ap.parse_args()
+    max_timeouts = None if args.include_timeouts else args.max_timeouts
 
     conn = psycopg2.connect(
         host=os.environ.get("MAHJONG_DB_HOST", "localhost"),
@@ -110,8 +146,12 @@ def main():
                                    "deal_ins": 0, "draws": 0})
     by_human = defaultdict(lambda: {"money": [], "wins": 0, "deal_ins": 0})
     n_games = 0
+    n_auto_played = 0
 
-    for _game_id, seats, outcome in load_games(conn, args.tables):
+    for _game_id, seats, outcome, auto_played in load_games(conn, args.tables, max_timeouts):
+        if auto_played:
+            n_auto_played += 1
+            continue
         n_games += 1
         money = seat_money(outcome)
         drawn = bool(outcome.get("drawn"))
@@ -134,8 +174,13 @@ def main():
     conn.close()
 
     if n_games == 0:
-        print(f"No finished recorded games match --tables {args.tables}. "
-              "Play some games on the dogfood deploy first (docs/DEPLOY.md).")
+        if n_auto_played:
+            print(f"All {n_auto_played} matching game(s) had expired human prompts and were "
+                  "excluded — the engine, not a person, made those moves (issue #42). "
+                  "Use --include-timeouts to score them anyway.")
+        else:
+            print(f"No finished recorded games match --tables {args.tables}. "
+                  "Play some games on the dogfood deploy first (docs/DEPLOY.md).")
         sys.exit(1)
 
     def stats(agg):
@@ -154,6 +199,7 @@ def main():
     result = {
         "tables": args.tables,
         "games": n_games,
+        "excluded_auto_played_games": n_auto_played,
         "by_kind": {k: stats(v) for k, v in sorted(by_kind.items())},
         "by_human": {k: stats(v) for k, v in sorted(by_human.items())},
     }
@@ -162,7 +208,11 @@ def main():
         print(json.dumps(result, indent=2))
         return
 
-    print(f"Recorded-game eval — tables: {args.tables}, games: {n_games}\n")
+    print(f"Recorded-game eval — tables: {args.tables}, games: {n_games}")
+    if n_auto_played:
+        print(f"  ({n_auto_played} game(s) excluded: human prompts expired and the engine "
+              "auto-played — see issue #42; --include-timeouts to keep them)")
+    print()
     hdr = f"{'seat kind':<20}{'n':>6}{'money/game':>14}{'win%':>8}{'self%':>8}{'deal-in%':>10}{'draw%':>8}"
     print(hdr)
     print("-" * len(hdr))

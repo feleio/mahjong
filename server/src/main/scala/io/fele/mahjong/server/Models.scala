@@ -204,7 +204,8 @@ object Models {
     selfKongTiles: Option[List[String]], // for self_kong
     chowPositions: Option[List[String]], // for chow ("LEFT","MIDDLE","RIGHT")
     handTiles:   Option[List[String]],   // for discard
-    coach:       Option[CoachHint] = None
+    coach:       Option[CoachHint] = None,
+    timeoutMs:   Option[Long] = Some(WebSocketPlayer.DefaultTimeoutMs) // client-side countdown (#42)
   )
   object Prompt { implicit val enc: Encoder[Prompt] = deriveEncoder }
 

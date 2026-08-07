@@ -18,7 +18,7 @@ class WebSocketPlayer(
   tiles:      List[Tile],
   tileGroups: List[TileGroup],
   promptSink: WebSocketPlayer.PromptSink,
-  timeoutMs:  Long = 60000L
+  timeoutMs:  Long = WebSocketPlayer.DefaultTimeoutMs
 )(implicit c: Config) extends Player(id, tiles, tileGroups)(c) {
 
   private val mailbox = new LinkedBlockingQueue[WebSocketPlayer.ClientAction](1)
@@ -30,48 +30,58 @@ class WebSocketPlayer(
     mailbox.offer(action)
   }
 
-  private def waitFor(): Option[WebSocketPlayer.ClientAction] =
-    Option(mailbox.poll(timeoutMs, TimeUnit.MILLISECONDS))
+  /** Wait for the client's action. A timeout means the engine is about to act
+    * on this player's behalf, which is NOT a decision the human made — tell
+    * the sink so it can be recorded as such (issue #42) and shown in the UI,
+    * instead of silently entering the record as a real choice. */
+  private def waitFor(kind: String): Option[WebSocketPlayer.ClientAction] =
+    Option(mailbox.poll(timeoutMs, TimeUnit.MILLISECONDS)) match {
+      case some @ Some(_) => some
+      case None           => promptSink.timedOut(id, kind); None
+    }
 
   override def decideSelfWin(tile: Tile, score: Int, curState: CurState): Boolean = {
     promptSink.selfWin(id, tile, score, curState)
-    waitFor().flatMap(_.yes).getOrElse(true)
+    waitFor("self_win").flatMap(_.yes).getOrElse(true)
   }
 
   override def decideWin(tile: Tile, score: Int, curState: CurState): Boolean = {
     promptSink.win(id, tile, score, curState)
-    waitFor().flatMap(_.yes).getOrElse(false)
+    waitFor("win").flatMap(_.yes).getOrElse(false)
   }
 
   override def decideSelfKong(selfKongTiles: Set[Tile], curState: CurState): Option[Tile] = {
     promptSink.selfKong(id, selfKongTiles, curState)
-    waitFor().flatMap(_.tile).filter(selfKongTiles.contains)
+    waitFor("self_kong").flatMap(_.tile).filter(selfKongTiles.contains)
   }
 
   override def decideKong(tile: Tile, curState: CurState): Boolean = {
     promptSink.kong(id, tile, curState)
-    waitFor().flatMap(_.yes).getOrElse(false)
+    waitFor("kong").flatMap(_.yes).getOrElse(false)
   }
 
   override def decidePong(tile: Tile, curState: CurState): Boolean = {
     promptSink.pong(id, tile, curState)
-    waitFor().flatMap(_.yes).getOrElse(false)
+    waitFor("pong").flatMap(_.yes).getOrElse(false)
   }
 
   override def decideChow(tile: Tile, positions: Set[ChowPosition], curState: CurState): Option[ChowPosition] = {
     promptSink.chow(id, tile, positions, curState)
-    waitFor().flatMap(_.chowPos).filter(positions.contains)
+    waitFor("chow").flatMap(_.chowPos).filter(positions.contains)
   }
 
   override def decideDiscard(curState: CurState): Tile = {
     promptSink.discard(id, curState)
-    waitFor().flatMap(_.tile)
+    waitFor("discard").flatMap(_.tile)
       .filter(t => hand.dynamicTiles.contains(t))
       .getOrElse(hand.dynamicTiles.head)
   }
 }
 
 object WebSocketPlayer {
+  /** How long a human seat has to answer before the engine plays a default. */
+  val DefaultTimeoutMs: Long = 60000L
+
   /** Decoded action submitted from the client. */
   case class ClientAction(
     yes:     Option[Boolean],
@@ -88,5 +98,9 @@ object WebSocketPlayer {
     def pong(seat: Int, tile: Tile, st: CurState): Unit
     def chow(seat: Int, tile: Tile, positions: Set[ChowPosition], st: CurState): Unit
     def discard(seat: Int, st: CurState): Unit
+
+    /** A prompt of `kind` for `seat` expired; the engine is about to play a
+      * default on the player's behalf. */
+    def timedOut(seat: Int, kind: String): Unit
   }
 }

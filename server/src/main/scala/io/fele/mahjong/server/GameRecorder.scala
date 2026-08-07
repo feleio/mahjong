@@ -56,6 +56,13 @@ class GameRecorder(
     run(repo.insertEvent(row), s"insert event $eventType")
   }
 
+  /** A human prompt expired and the engine is playing a default (issue #42).
+    * Pinned to the current `seq` — the event this non-decision precedes — so a
+    * review can tell it apart from a move the player actually made. Called on
+    * the game thread before the resulting event is logged. */
+  def decisionTimedOut(seat: Int, kind: String): Unit =
+    run(repo.insertTimeout(DecisionTimeoutRow(gameId, seq, seat, kind, Instant.now())), s"insert timeout $kind")
+
   /** The engine-facing hook; tee it with the snapshot-publishing logger. */
   val logger: GameLogger = new GameLogger {
     override def start():  Unit = event("start")

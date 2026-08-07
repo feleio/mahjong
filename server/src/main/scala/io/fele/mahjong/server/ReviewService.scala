@@ -31,11 +31,17 @@ object ReviewService {
     bestProb:    Double,
     gap:         Double,            // bestProb - chosenProb (0 when you agreed)
     value:       Double,            // champion value estimate at the decision
-    agree:       Boolean
+    agree:       Boolean,
+    timedOut:    Boolean,           // engine played a default; not a choice you made (#42)
+    why:         Option[String],    // grounded reason the champion differed (#44)
+    bucket:      Option[String]     // shape | tempo | safety | accept | other
   )
   object ReviewDecision { implicit val enc: Encoder[ReviewDecision] = deriveEncoder }
 
-  case class ReviewSummary(decisions: Int, agreements: Int, agreementRate: Double, meanGap: Double)
+  /** Counts cover the decisions the player actually made; `timedOut` turns are
+    * reported separately and excluded, because scoring moves nobody chose
+    * would make the agreement rate meaningless (issue #42). */
+  case class ReviewSummary(decisions: Int, agreements: Int, agreementRate: Double, meanGap: Double, timedOut: Int)
   object ReviewSummary { implicit val enc: Encoder[ReviewSummary] = deriveEncoder }
 
   case class GameReview(
@@ -57,7 +63,8 @@ object ReviewService {
   case class  ChampionDown(msg: String) extends ReviewError { val message = msg }
   case class  ReplayFailed(msg: String) extends ReviewError { val message = msg }
 
-  case class PlayerGameAgreement(gameId: String, startedAt: Instant, agreementRate: Double, decisions: Int)
+  case class PlayerGameAgreement(gameId: String, startedAt: Instant, agreementRate: Double,
+                                 decisions: Int, timedOut: Int)
   object PlayerGameAgreement { implicit val enc: Encoder[PlayerGameAgreement] = deriveEncoder }
 
   case class PlayerStats(
@@ -70,7 +77,8 @@ object ReviewService {
     dealInRate:      Double,
     drawRate:        Double,
     reviewedGames:   Int,
-    agreementRate:   Option[Double],          // pooled over reviewed games
+    agreementRate:   Option[Double],          // pooled over reviewed games, timed-out turns excluded (#42)
+    timedOutTurns:   Int,                     // turns the engine played for you across reviewed games
     agreementByGame: List[PlayerGameAgreement] // newest first — the "over time" series
   )
   object PlayerStats { implicit val enc: Encoder[PlayerStats] = deriveEncoder }
@@ -106,7 +114,8 @@ class ReviewService(repo: GameRecordRepo)(implicit engineConfig: EngineConfig) {
           _   <- checkChampion
           g   <- loadFinished(gameId).flatMap(e => IO.fromEither(e.left.map(Bail)))
           evs <- repo.eventsFor(gameId)
-          rev <- runReplay(g, evs, seat).flatMap(e => IO.fromEither(e.left.map(Bail)))
+          tos <- repo.timeoutsFor(gameId)
+          rev <- runReplay(g, evs, tos, seat).flatMap(e => IO.fromEither(e.left.map(Bail)))
           _   <- IO(cache.put(key, rev)).void
         } yield rev).attempt.map {
           case Right(r)        => Right(r)
@@ -129,15 +138,20 @@ class ReviewService(repo: GameRecordRepo)(implicit engineConfig: EngineConfig) {
       case Some(g)                                               => Right(g)
     }
 
-  private def runReplay(g: GameRecordRow, events: List[GameEventRow], seat: Int): IO[Either[ReviewError, GameReview]] =
+  private def runReplay(g: GameRecordRow, events: List[GameEventRow],
+                        timeouts: List[DecisionTimeoutRow], seat: Int): IO[Either[ReviewError, GameReview]] =
     IO.blocking {
       val outcome = g.outcome.getOrElse(GameOutcome(drawn = true, isSelfWin = false, None, None, Nil))
+      // (event cursor, decision kind) of every prompt this seat let expire
+      val timedOutAt: Set[(Int, String)] =
+        timeouts.filter(_.seat == seat).map(t => (t.eventSeq, t.kind)).toSet
       val buf = ListBuffer.empty[ReviewDecision]
       val observer = new GameReplayer.DecisionObserver {
         override def onDecision(eventPos: Int, kind: String, cs: CurState, contextTile: Option[Int],
                                 head: PolicyOut => Array[Float], keys: List[(String, Int)], chosen: String): Unit = {
           CoachService.hint(seat, cs, contextTile, head, keys).foreach { h =>
             val chosenProb = h.probs.getOrElse(chosen, 0.0)
+            val why = scala.util.Try(DecisionExplainer.explain(kind, cs, chosen, h.top, h)).toOption.flatten
             buf += ReviewDecision(
               seq         = eventPos,
               kind        = kind,
@@ -149,7 +163,10 @@ class ReviewService(repo: GameRecordRepo)(implicit engineConfig: EngineConfig) {
               bestProb    = h.probs.getOrElse(h.top, 0.0),
               gap         = math.max(0.0, h.probs.getOrElse(h.top, 0.0) - chosenProb),
               value       = h.value,
-              agree       = chosen == h.top
+              agree       = chosen == h.top,
+              timedOut    = timedOutAt.contains((eventPos, kind)),
+              why         = why.map(_.text),
+              bucket      = why.map(_.bucket)
             )
           }
         }
@@ -157,14 +174,17 @@ class ReviewService(repo: GameRecordRepo)(implicit engineConfig: EngineConfig) {
       try {
         GameReplayer.replay(g.wall, events, outcome, Some(seat), observer)
         val ds = buf.toList
-        val agreements = ds.count(_.agree)
+        val played     = ds.filterNot(_.timedOut)
+        val agreements = played.count(_.agree)
         val summary = ReviewSummary(
-          decisions     = ds.size,
+          decisions     = played.size,
           agreements    = agreements,
-          agreementRate = if (ds.isEmpty) 1.0 else agreements.toDouble / ds.size,
-          meanGap       = if (ds.isEmpty) 0.0 else ds.map(_.gap).sum / ds.size
+          agreementRate = if (played.isEmpty) 1.0 else agreements.toDouble / played.size,
+          meanGap       = if (played.isEmpty) 0.0 else played.map(_.gap).sum / played.size,
+          timedOut      = ds.size - played.size
         )
-        val sorted = ds.sortBy(d => (d.agree, -d.gap, d.seq))
+        // timed-out turns sink to the bottom: they are context, not study material
+        val sorted = ds.sortBy(d => (d.timedOut, d.agree, -d.gap, d.seq))
         Right(GameReview(g.id, seat, g.seats.lift(seat).map(_.name).getOrElse(s"seat $seat"),
           g.startedAt, g.outcome, seatMoney(outcome, seat), summary, sorted))
       } catch {
@@ -200,7 +220,7 @@ class ReviewService(repo: GameRecordRepo)(implicit engineConfig: EngineConfig) {
       import cats.syntax.traverse._
       outcomes.take(maxReviewGames).traverse { case (g, seat, _) =>
         review(g.id, seat).map(_.toOption.map(r =>
-          PlayerGameAgreement(g.id, g.startedAt, r.summary.agreementRate, r.summary.decisions)))
+          PlayerGameAgreement(g.id, g.startedAt, r.summary.agreementRate, r.summary.decisions, r.summary.timedOut)))
       }.map(_.flatten).map { agr =>
         val totalDecisions = agr.map(_.decisions).sum
         val pooled =
@@ -217,6 +237,7 @@ class ReviewService(repo: GameRecordRepo)(implicit engineConfig: EngineConfig) {
           drawRate        = rate(draws, n),
           reviewedGames   = agr.size,
           agreementRate   = pooled,
+          timedOutTurns   = agr.map(_.timedOut).sum,
           agreementByGame = agr
         )
       }

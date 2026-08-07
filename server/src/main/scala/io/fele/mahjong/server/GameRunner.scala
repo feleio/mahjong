@@ -108,6 +108,12 @@ class GameHooks(
   @volatile private var _lastPrompts: Map[Int, Json] = Map.empty
   @volatile private var _finished:    Boolean = false
 
+  /** Set by [[GameRunner.create]] once the recorder exists, so an expired
+    * prompt can be persisted as a non-decision (issue #42). */
+  @volatile private var _onTimeout: (Int, String) => Unit = (_, _) => ()
+  def onTimeout: (Int, String) => Unit = _onTimeout
+  def onTimeout_=(f: (Int, String) => Unit): Unit = _onTimeout = f
+
   def snapshot:           Option[Json] = _snapshot
   def promptFor(seat: Option[Int]): Option[Json] = seat.flatMap(_lastPrompts.get)
   def finished:           Boolean      = _finished
@@ -204,6 +210,19 @@ class GameHooks(
       emit(seat, Prompt("discard", seat, None, None, None, None, Some(st.myInfo.tiles.map(Models.tileToWire)),
         CoachService.hint(seat, st, None, _.discard, keys)))
     }
+
+    /** Persist the expired prompt as a non-decision and tell the client the
+      * engine is about to move for them, so the turn does not silently look
+      * like a choice they made (issue #42). */
+    override def timedOut(seat: Int, kind: String): Unit = {
+      _onTimeout(seat, kind)
+      _lastPrompts = _lastPrompts - seat
+      publish(Json.obj(
+        "type" -> Json.fromString("timeout"),
+        "seat" -> Json.fromInt(seat),
+        "kind" -> Json.fromString(kind)
+      ))
+    }
   }
 }
 
@@ -254,6 +273,7 @@ object GameRunner {
     )
 
     val recorder = recordRepo.map(r => new GameRecorder(r, dispatcher, roomId, seats, seed, wall))
+    recorder.foreach(r => hooks.onTimeout = (seat, kind) => r.decisionTimedOut(seat, kind))
 
     new GameRunner(roomId, seats, players, state, webPlayers.toMap, hooks, recorder)
   }

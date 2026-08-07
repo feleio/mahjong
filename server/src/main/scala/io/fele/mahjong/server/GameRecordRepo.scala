@@ -74,6 +74,24 @@ case class GameEventRow(
   ts:           Instant
 )
 
+/** A human prompt that expired, so the engine played a default instead of the
+  * player (issue #42).
+  *
+  * `eventSeq` is the seq the *next* event will carry, which is exactly the
+  * event cursor [[GameReplayer]] reports at that decision point — that is what
+  * lets a review tell "the player passed" apart from "nobody answered".
+  * Decisions that produce no event of their own (a declined claim) are still
+  * pinned by (eventSeq, seat, kind), since a seat is offered each claim kind
+  * at most once per discarded tile.
+  */
+case class DecisionTimeoutRow(
+  gameId:   String,
+  eventSeq: Int,
+  seat:     Int,
+  kind:     String,                   // discard | win | self_win | kong | self_kong | pong | chow
+  ts:       Instant
+)
+
 /** Postgres persistence of complete per-game event streams (issue #30).
   *
   * Events, not observations: the wall + seat kinds + the ordered event stream
@@ -112,7 +130,17 @@ class GameRecordRepo(xa: Transactor[IO]) {
         PRIMARY KEY (game_id, seq)
       )
     """.update.run
-    (games *> gamesIdx *> events).transact(xa).void
+    val timeouts = sql"""
+      CREATE TABLE IF NOT EXISTS game_decision_timeouts (
+        game_id   TEXT NOT NULL REFERENCES game_records(id) ON DELETE CASCADE,
+        event_seq INT NOT NULL,
+        seat      INT NOT NULL,
+        kind      TEXT NOT NULL,
+        ts        TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (game_id, event_seq, seat, kind)
+      )
+    """.update.run
+    (games *> gamesIdx *> events *> timeouts).transact(xa).void
   }
 
   def insertGame(
@@ -189,6 +217,21 @@ class GameRecordRepo(xa: Transactor[IO]) {
       .transact(xa)
       .map(_.flatMap(rowToGame))
   }
+
+  /** Records that a human prompt expired. Idempotent: a retry of the same
+    * decision must not fail the game thread. */
+  def insertTimeout(t: DecisionTimeoutRow): IO[Unit] =
+    sql"""
+      INSERT INTO game_decision_timeouts (game_id, event_seq, seat, kind, ts)
+      VALUES (${t.gameId}, ${t.eventSeq}, ${t.seat}, ${t.kind}, ${t.ts})
+      ON CONFLICT DO NOTHING
+    """.update.run.transact(xa).void
+
+  def timeoutsFor(gameId: String): IO[List[DecisionTimeoutRow]] =
+    sql"""
+      SELECT game_id, event_seq, seat, kind, ts
+      FROM game_decision_timeouts WHERE game_id = $gameId ORDER BY event_seq
+    """.query[DecisionTimeoutRow].to[List].transact(xa)
 
   def eventsFor(gameId: String): IO[List[GameEventRow]] =
     sql"""
