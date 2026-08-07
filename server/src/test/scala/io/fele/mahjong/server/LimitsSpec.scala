@@ -137,7 +137,36 @@ class LimitsSpec extends AnyFlatSpec with Matchers {
     }
   }
 
+  it should "hold under a concurrent burst, not just sequential calls" in {
+    assume(available, "Postgres not reachable")
+    // a cap checked outside the atomic update lets a burst overshoot it, which
+    // is exactly the case an attacker produces and a sequential test misses
+    withManager(RoomManager.Limits(maxRooms = 5)) { rm =>
+      List.range(0, 60).parTraverse(i => rm.create(s"room$i", "Alice")).map { results =>
+        results.count(_.isRight) shouldBe 5
+        results.count(_.isLeft)  shouldBe 55
+      }
+    }
+  }
+
   /* ---------- running-game cap ---------- */
+
+  "The running-game cap" should "hold under a concurrent burst of starts" in {
+    assume(available, "Postgres not reachable")
+    // each admitted start spawns a real engine thread, so overshooting here
+    // costs threads, not just map entries
+    val allowed = 2
+    withManager(RoomManager.Limits(maxRunningGames = allowed)) { rm =>
+      for {
+        made    <- List.range(0, 8).traverse(i => rm.create(s"room$i", "Alice"))
+        rooms    = made.collect { case Right((r, host)) => (r.id, host) }
+        results <- rooms.parTraverse { case (id, host) => rm.startGame(id, host) }
+      } yield {
+        rooms.size shouldBe 8
+        results.count(_.isRight) shouldBe allowed
+      }
+    }
+  }
 
   "The running-game cap" should "refuse to start another game once it is reached" in {
     assume(available, "Postgres not reachable")
