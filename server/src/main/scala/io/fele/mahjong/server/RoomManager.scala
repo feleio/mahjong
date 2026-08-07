@@ -66,8 +66,6 @@ class RoomManager private (
     } yield (room, hostId)
   }
 
-  def list: IO[List[Room]] = repo.list
-
   /** Resolve by room id or by the short join code (case-insensitive). */
   def get(idOrCode: RoomId): IO[Option[Room]] = cell.get.flatMap { m =>
     m.get(idOrCode).map(l => IO.pure(Option(l.room))).getOrElse {

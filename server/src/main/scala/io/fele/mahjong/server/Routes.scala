@@ -12,10 +12,15 @@ import org.http4s.dsl.io._
 
 object Routes {
 
+  /* Rooms go out as `RoomView`: the credentials (`hostId`, per-seat
+   * `playerId`) never appear in a response body. The one caller entitled to a
+   * credential gets it in a dedicated field of their own create/join
+   * response, and nowhere else (issue #51). */
+
   case class CreateRoomReq(name: String, hostName: String)
-  case class CreateRoomResp(room: Room, hostPlayerId: PlayerId)
+  case class CreateRoomResp(room: RoomView, hostPlayerId: PlayerId)
   case class JoinReq(name: String, seatIndex: Option[Int])
-  case class JoinResp(room: Room, seat: Int, playerId: PlayerId)
+  case class JoinResp(room: RoomView, seat: Int, playerId: PlayerId)
   case class SetSeatReq(hostPlayerId: PlayerId, seatIndex: Int, kind: SeatKind)
   case class StartReq(hostPlayerId: PlayerId)
   case class ReadyReq(playerId: PlayerId)
@@ -44,7 +49,7 @@ object Routes {
     roomId:     String,
     startedAt:  java.time.Instant,
     finishedAt: Option[java.time.Instant],
-    seats:      List[Seat],
+    seats:      List[SeatView],
     outcome:    Option[GameOutcome],
     mySeat:     Option[Int],   // present when filtered by ?player=
     myMoney:    Option[Int]
@@ -80,7 +85,7 @@ object Routes {
         case Some(rs) =>
           rs.gamesFor(player, limit.getOrElse(50)).flatMap { games =>
             val items = games.map { case (g, mySeat) =>
-              GameListItem(g.id, g.roomId, g.startedAt, g.finishedAt, g.seats, g.outcome,
+              GameListItem(g.id, g.roomId, g.startedAt, g.finishedAt, g.seats.map(SeatView.of), g.outcome,
                 mySeat, for { s <- mySeat; o <- g.outcome } yield ReviewService.seatMoney(o, s))
             }
             Ok(items.asJson)
@@ -110,14 +115,14 @@ object Routes {
         case Some(rs) => rs.playerStats(name).flatMap(s => Ok(s.asJson))
       }
 
-    /* List rooms */
-    case GET -> Root / "api" / "rooms" =>
-      rm.list.flatMap(rs => Ok(rs.asJson))
-
-    /* Get a single room */
+    /* Get a single room by id or short join code.
+     *
+     * There is deliberately no `GET /api/rooms` listing: knowing a room's id
+     * or code IS the capability to reach it, so enumerating them would hand
+     * every room to anyone who asks. Nothing in the frontend listed rooms. */
     case GET -> Root / "api" / "rooms" / id =>
       rm.get(id).flatMap {
-        case Some(r) => Ok(r.asJson)
+        case Some(r) => Ok(RoomView.of(r).asJson)
         case None    => NotFound(ErrResp("room not found").asJson)
       }
 
@@ -125,7 +130,7 @@ object Routes {
     case req @ POST -> Root / "api" / "rooms" =>
       req.as[CreateRoomReq].flatMap { body =>
         rm.create(body.name, body.hostName).flatMap { case (room, hostId) =>
-          Ok(CreateRoomResp(room, hostId).asJson)
+          Ok(CreateRoomResp(RoomView.of(room), hostId).asJson)
         }
       }
 
@@ -133,7 +138,7 @@ object Routes {
     case req @ POST -> Root / "api" / "rooms" / id / "join" =>
       req.as[JoinReq].flatMap { body =>
         rm.joinSeat(id, body.name, body.seatIndex).flatMap {
-          case Right((room, seat, pid)) => Ok(JoinResp(room, seat, pid).asJson)
+          case Right((room, seat, pid)) => Ok(JoinResp(RoomView.of(room), seat, pid).asJson)
           case Left(err)                => BadRequest(ErrResp(err).asJson)
         }
       }
@@ -142,7 +147,7 @@ object Routes {
     case req @ PATCH -> Root / "api" / "rooms" / id / "seat" =>
       req.as[SetSeatReq].flatMap { body =>
         rm.setSeatKind(id, body.hostPlayerId, body.seatIndex, body.kind).flatMap {
-          case Right(r)  => Ok(r.asJson)
+          case Right(r)  => Ok(RoomView.of(r).asJson)
           case Left(err) => BadRequest(ErrResp(err).asJson)
         }
       }
@@ -151,7 +156,7 @@ object Routes {
     case req @ POST -> Root / "api" / "rooms" / id / "start" =>
       req.as[StartReq].flatMap { body =>
         rm.startGame(id, body.hostPlayerId).flatMap {
-          case Right(r)  => Ok(r.asJson)
+          case Right(r)  => Ok(RoomView.of(r).asJson)
           case Left(err) => BadRequest(ErrResp(err).asJson)
         }
       }
@@ -169,7 +174,7 @@ object Routes {
     case req @ POST -> Root / "api" / "rooms" / id / "start-next" =>
       req.as[StartNextReq].flatMap { body =>
         rm.startNextGame(id, body.hostPlayerId).flatMap {
-          case Right(r)  => Ok(r.asJson)
+          case Right(r)  => Ok(RoomView.of(r).asJson)
           case Left(err) => BadRequest(ErrResp(err).asJson)
         }
       }

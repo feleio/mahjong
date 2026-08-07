@@ -41,9 +41,11 @@ object WsRoutes {
           rm.runner(canonicalId).flatMap {
             case None =>
               // Game has not started yet — push a single lobby snapshot and keep the connection open.
+              // RoomView, not Room: a spectator socket must not receive the
+              // host's or any seat's credential (issue #51)
               val lobby = WebSocketFrame.Text(io.circe.Json.obj(
                 "type" -> "lobby".asJson,
-                "room" -> room.asJson
+                "room" -> RoomView.of(room).asJson
               ).noSpaces)
               val out: Stream[IO, WebSocketFrame] =
                 Stream.emit(lobby).covary[IO] ++ Stream.never[IO]
