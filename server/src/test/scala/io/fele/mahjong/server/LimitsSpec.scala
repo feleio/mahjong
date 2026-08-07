@@ -15,6 +15,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
 import java.time.Instant
+import java.util.UUID
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 
@@ -145,6 +146,72 @@ class LimitsSpec extends AnyFlatSpec with Matchers {
       List.range(0, 60).parTraverse(i => rm.create(s"room$i", "Alice")).map { results =>
         results.count(_.isRight) shouldBe 5
         results.count(_.isLeft)  shouldBe 55
+      }
+    }
+  }
+
+  private def persistedRoom(name: String, ageDays: Int): Room = Room(
+    id        = UUID.randomUUID().toString,
+    name      = name,
+    hostId    = UUID.randomUUID().toString,
+    seats     = List(Seat(0, SeatKind.Human, Some("h"), "Ghost")),
+    status    = RoomStatus.Finished,
+    createdAt = Instant.now().minusSeconds(ageDays.toLong * 24 * 3600),
+    code      = Room.newCode(), balances = List(0, 0, 0, 0), gamesPlayed = 0)
+
+  "Restoring rooms after a restart" should "not let long-dead rooms hold the cap" in {
+    assume(available, "Postgres not reachable")
+    // The rooms table outlives any single process. Restoring it unconditionally
+    // means that once enough rooms have ever been created, every restart boots
+    // at capacity and refuses every new room — a create outage caused by a
+    // routine deploy. RoomRepo.list returns up to 200 rows and maxRooms
+    // defaults to 200, so the two numbers meet exactly.
+    val repo = new RoomRepo(xa)
+    val dead = List.tabulate(3)(i => persistedRoom(s"dead$i", ageDays = 30))
+    (repo.init *> dead.traverse_(repo.upsert)).unsafeRunSync()
+
+    withManager() { rm =>
+      rm.restoreFromDb(24.hours) *> dead.traverse(d => rm.get(d.code)).map { found =>
+        // a code only resolves through the in-memory map, so "not found" means
+        // these never took a slot
+        withClue("long-dead rooms were pulled back into memory: ") { found.flatten shouldBe empty }
+      }
+    }
+  }
+
+  it should "still be able to create a room when the database is full of recent ones" in {
+    assume(available, "Postgres not reachable")
+    // Observed for real: a dev database with 355 rooms, all created that day,
+    // made the server answer 429 to every create immediately after a restart.
+    // Age filtering alone does not help when the rows filling the table are
+    // themselves recent, so the restore is capped to a share of the ceiling.
+    val repo  = new RoomRepo(xa)
+    val fresh = List.tabulate(10)(i => persistedRoom(s"fresh$i", ageDays = 0))
+    (repo.init *> fresh.traverse_(repo.upsert)).unsafeRunSync()
+
+    withManager(RoomManager.Limits(maxRooms = 4)) { rm =>
+      for {
+        _       <- rm.restoreFromDb(24.hours)
+        n       <- rm.roomCount
+        created <- rm.create("after the restart", "Bob")
+      } yield {
+        withClue("a restart must not consume the whole cap: ") { n should be < 4 }
+        withClue("a restart must leave room to create: ") { created.isRight shouldBe true }
+      }
+    }
+  }
+
+  it should "still restore a room that is genuinely in use" in {
+    assume(available, "Postgres not reachable")
+    // the cheap fix (restore nothing) would also pass the test above; this is
+    // what stops it — a reconnecting player must still find their room
+    val repo  = new RoomRepo(xa)
+    val alive = persistedRoom("still in use", ageDays = 0)
+    (repo.init *> repo.upsert(alive)).unsafeRunSync()
+
+    withManager() { rm =>
+      rm.restoreFromDb(24.hours) *> rm.get(alive.code).map { found =>
+        found.map(_.name) shouldBe Some("still in use")
       }
     }
   }
@@ -315,6 +382,40 @@ class LimitsSpec extends AnyFlatSpec with Matchers {
         n shouldBe 0
         got.flatMap(_.seats.lift(1)).map(_.name) shouldBe Some("Bob")
       }
+    }
+  }
+
+  "The reclaim rule" should "reclaim an abandoned room whose game has ended" in {
+    // The case eviction exists for, and the one an earlier version missed: a
+    // finished room keeps its runner attached forever, so any liveness test
+    // based on the runner exempts every room that has ever played a game.
+    val cutoff = Instant.now().minusSeconds(24 * 3600)
+    val stale  = Instant.now().minusSeconds(48 * 3600)
+    RoomManager.reclaimable(RoomStatus.Finished, stale, cutoff) shouldBe true
+    RoomManager.reclaimable(RoomStatus.Waiting,  stale, cutoff) shouldBe true
+  }
+
+  it should "never reclaim a room with a live game, however old" in {
+    val cutoff = Instant.now().minusSeconds(24 * 3600)
+    val stale  = Instant.now().minusSeconds(365 * 24 * 3600)
+    RoomManager.reclaimable(RoomStatus.Playing, stale, cutoff) shouldBe false
+  }
+
+  it should "never reclaim a room somebody touched inside the window" in {
+    val cutoff = Instant.now().minusSeconds(24 * 3600)
+    RoomManager.reclaimable(RoomStatus.Finished, Instant.now(), cutoff) shouldBe false
+  }
+
+  it should "forget the evicted room in Postgres too, so a restart cannot refill the cap" in {
+    assume(available, "Postgres not reachable")
+    withManager() { rm =>
+      val repo = new RoomRepo(xa)
+      for {
+        made <- rm.create("Table", "Alice")
+        id    = made.getOrElse(fail("room not created"))._1.id
+        _    <- rm.evictIdle(24.hours, Instant.now().plusSeconds(48 * 3600))
+        row  <- repo.get(id)
+      } yield row shouldBe None
     }
   }
 

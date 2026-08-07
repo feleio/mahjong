@@ -72,14 +72,21 @@ object Main extends IOApp {
                     }))
       _          <- Resource.eval(IO(CoachService.dangerService).void) // force-load + log danger model at boot
       rm         <- Resource.eval(RoomManager.create(repo, dispatcher, gameRecording, limits))
-      _          <- Resource.eval(rm.restoreFromDb.handleErrorWith { t =>
+      _          <- Resource.eval(rm.restoreFromDb(roomTtl).handleErrorWith { t =>
                       IO(println(s"WARN: db restore failed: ${t.getMessage}"))
                     })
       limiter    <- Resource.eval(RateLimiter.create(createPerMin, 1.minute))
       // Abandoned rooms would otherwise sit in memory holding the room cap
       // against real players for as long as the process lives.
+      //
+      // The per-tick error handler is the point, not a formality: a raised
+      // error would complete this fiber and silently disable eviction for the
+      // life of the process, which is the exact shape of the recording outage
+      // in #34 -- something quietly stops working and nothing says so.
       _          <- fs2.Stream.awakeEvery[IO](10.minutes)
-                      .evalMap(_ => rm.evictIdle(roomTtl).void)
+                      .evalMap(_ => rm.evictIdle(roomTtl).void.handleErrorWith { t =>
+                        IO(println(s"WARN: room eviction pass failed: ${t.getMessage}"))
+                      })
                       .compile.drain.background
       review      = gameRecording.toOption.map(r => new ReviewService(r))
     } yield (rm, review, limiter)
@@ -99,7 +106,12 @@ object Main extends IOApp {
         }
         .build
     }.use { _ =>
-      IO(println(s"Mahjong server listening on $host:$port (allowed origins: ${originPolicy.describe})")) *> IO.never
+      IO(println(s"Mahjong server listening on $host:$port (allowed origins: ${originPolicy.describe})")) *>
+        // a control whose misconfiguration mode is "off" has to say so out loud
+        IO.whenA(originPolicy.allowsAll)(IO(println(
+          "WARN: no origin allowlist — any website may call this API and open game sockets. " +
+          "Set MAHJONG_ALLOWED_ORIGINS for anything but local development."))) *>
+        IO.never
     }
   }
 }

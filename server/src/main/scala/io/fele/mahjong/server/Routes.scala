@@ -34,7 +34,14 @@ object Routes {
     * This replaces a hand-rolled `Access-Control-Allow-Origin: *`, which also
     * answered every preflight itself and rewrote the response's whole header
     * set. The library middleware gets the parts that are easy to get wrong —
-    * echoing the request origin, `Vary: Origin`, preflight status — right. */
+    * echoing the request origin, `Vary: Origin`, preflight status — right.
+    *
+    * Note what this is and is not. CORS stops *another website* from reading
+    * this API with a user's browser; a request from a disallowed origin still
+    * executes and simply comes back without the headers that would let the
+    * page read it, and a non-browser client ignores CORS entirely. It is not
+    * access control on the API. The socket route enforces its origin properly
+    * (see WsRoutes) because a websocket upgrade has no preflight to omit. */
   def withCors(policy: OriginPolicy)(inner: HttpRoutes[IO]): HttpRoutes[IO] = {
     val base = CORS.policy
       .withAllowMethodsIn(Set(Method.GET, Method.POST, Method.PATCH, Method.DELETE, Method.OPTIONS))

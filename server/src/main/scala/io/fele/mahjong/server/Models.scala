@@ -110,8 +110,16 @@ object Models {
 
     /** Unambiguous alphabet: no O/0, I/1, S/5 — these get read out loud. */
     private val CodeAlphabet = "ABCDEFGHJKLMNPQRTUVWXY2346789"
+
+    /** The code is a capability, not a label: with no room listing, knowing it
+      * is what lets you reach a room (#51). `scala.util.Random` is a 48-bit
+      * LCG whose state is recoverable from a handful of observed outputs, so
+      * anyone who creates two rooms of their own could predict every code
+      * issued afterwards. */
+    private val secureRandom = new java.security.SecureRandom()
+
     def newCode(): String =
-      (1 to 6).map(_ => CodeAlphabet(scala.util.Random.nextInt(CodeAlphabet.length))).mkString
+      (1 to 6).map(_ => CodeAlphabet(secureRandom.nextInt(CodeAlphabet.length))).mkString
   }
 
   /* ---------- Public wire views (issue #51) ----------

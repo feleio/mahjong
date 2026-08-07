@@ -28,8 +28,11 @@ class RoomManager private (
 )(implicit config: Config, ec: ExecutionContext) {
   import RoomManager.{Denied, Live}
 
-  /** Fresh explicit seed per game so the shuffle is reproducible from the record. */
-  private def newSeed(): Option[Long] = Some(scala.util.Random.nextLong())
+  /** Fresh explicit seed per game so the shuffle is reproducible from the
+    * record. Drawn from a CSPRNG for the same reason as the room code: the
+    * seed determines the whole wall, and a predictable one lets a player at
+    * the table know every tile before it is drawn. */
+  private def newSeed(): Option[Long] = Some(RoomManager.secureRandom.nextLong())
 
   /** Reason a game with a champion seat cannot start (model missing/broken), if any. */
   private def championBlocked(room: Room): Option[String] =
@@ -68,7 +71,14 @@ class RoomManager private (
         else
           (m.updated(room.id, Live(room, None, topic)), Right((room, hostId)))
       }.flatMap {
-        case Right(t) => repo.upsert(room).as(Right(t))
+        // The cap check and the insert have to be one atomic step, so the room
+        // is in the map before it is in Postgres. If that write fails the
+        // caller never receives its host credential, so the room is
+        // unreachable by anyone -- take the slot back rather than leave it
+        // occupied by a room nobody can enter.
+        case Right(t) => repo.upsert(room).as(Right(t)).onError { case _ =>
+          cell.update(_ - room.id)
+        }
         case l        => IO.pure(l)
       }
     }
@@ -160,6 +170,10 @@ class RoomManager private (
       case Left(e)              => IO.pure(Left(e))
     }
   }
+
+  /** How many rooms a restart may reclaim. Half the cap, so a restart always
+    * leaves capacity for the people arriving after it. */
+  private def restoreLimit: Int = math.max(1, limits.maxRooms / 2)
 
   /** Live games, each of which holds a dedicated engine thread. */
   private def runningGames(m: Map[RoomId, Live]): Int =
@@ -311,6 +325,9 @@ class RoomManager private (
 
   def runner(id: RoomId): IO[Option[GameRunner]] = cell.get.map(_.get(id).flatMap(_.runner))
 
+  /** Rooms held in memory right now, i.e. what `maxRooms` bounds. */
+  def roomCount: IO[Int] = cell.get.map(_.size)
+
   /** Drop rooms nobody has touched in `ttl`, so a burst of abandoned rooms
     * cannot hold the `maxRooms` cap against real players forever. Only idle
     * rooms go: anything mid-game keeps its runner and its seats.
@@ -321,24 +338,69 @@ class RoomManager private (
     cell.modify { m =>
       val cutoff = now.minusMillis(ttl.toMillis)
       val (keep, drop) = m.partition { case (_, l) =>
-        l.room.status == RoomStatus.Playing || l.runner.isDefined || l.touched.isAfter(cutoff)
+        !RoomManager.reclaimable(l.room.status, l.touched, cutoff)
       }
-      (keep, drop.size)
-    }.flatTap(n => IO.whenA(n > 0)(IO(println(s"Evicted $n idle room(s) older than $ttl"))))
-
-  /** Restore in-memory entries for any rooms persisted in Postgres. */
-  def restoreFromDb: IO[Unit] = repo.list.flatMap { rooms =>
-    rooms.traverse_ { r =>
-      Topic[IO, Json].flatMap { t =>
-        val restored = if (r.status == RoomStatus.Playing) r.copy(status = RoomStatus.Finished) else r
-        cell.update(_.updated(r.id, Live(restored, None, t))) *>
-          (if (restored ne r) repo.upsert(restored) else IO.unit)
-      }
+      (keep, drop.keys.toList)
+    }.flatMap { dropped =>
+      // Drop the row too, or the table grows without bound and `restoreFromDb`
+      // refills the cap from it after every restart. Game records are keyed on
+      // room_id but do not reference this table, so reviews are unaffected.
+      dropped.traverse_(id => repo.delete(id).handleErrorWith(t =>
+        IO(println(s"WARN: could not delete evicted room $id: ${t.getMessage}")))) *>
+        IO.whenA(dropped.nonEmpty)(IO(println(s"Evicted ${dropped.size} idle room(s) older than $ttl")))
+          .as(dropped.size)
     }
+
+  /** Restore in-memory entries for any rooms persisted in Postgres.
+    *
+    * Restoring unconditionally is a create outage waiting to happen, and not
+    * hypothetically: `RoomRepo.list` returns up to 200 rows and `maxRooms`
+    * defaults to 200, so once that many rooms exist the server boots at
+    * capacity and answers 429 to every new room. Filtering by age is not
+    * enough on its own — the rows filling the table are often recent — so the
+    * restore is also held to a share of the cap. Coming back with fewer of
+    * yesterday's rooms is a much smaller failure than coming back unable to
+    * make one. */
+  def restoreFromDb(ttl: FiniteDuration = 24.hours): IO[Unit] = {
+    val cutoff = Instant.now().minusMillis(ttl.toMillis)
+    // Rows that piled up while the process was down. A running server would
+    // have evicted these; `list` is capped at 200 rows so only a bulk delete
+    // can reach the tail.
+    repo.deleteOlderThan(cutoff).handleErrorWith { t =>
+      IO(println(s"WARN: could not prune old rooms: ${t.getMessage}")).as(0)
+    }.flatMap { pruned =>
+      IO.whenA(pruned > 0)(IO(println(s"Pruned $pruned room(s) older than $ttl")))
+    } *> repo.list
+  }.flatMap { rooms =>
+    val cutoff  = Instant.now().minusMillis(ttl.toMillis)
+    val restore = rooms.filter(_.createdAt.isAfter(cutoff)).take(restoreLimit)
+    val skipped = rooms.size - restore.size
+    IO.whenA(skipped > 0)(IO(println(s"Did not restore $skipped stale or over-share room(s)"))) *>
+      restore.traverse_ { r =>
+        Topic[IO, Json].flatMap { t =>
+          val restored = if (r.status == RoomStatus.Playing) r.copy(status = RoomStatus.Finished) else r
+          cell.update(_.updated(r.id, Live(restored, None, t))) *>
+            (if (restored ne r) repo.upsert(restored) else IO.unit)
+        }
+      }
   }
 }
 
 object RoomManager {
+  private val secureRandom = new java.security.SecureRandom()
+
+  /** Whether an idle room can be reclaimed.
+    *
+    * The parameters are the whole point: this sees the status and the last
+    * time somebody touched the room, and deliberately NOT the runner. A
+    * runner is attached when a game starts and is never detached — a finished
+    * game's runner still serves the final snapshot to clients reconnecting to
+    * see the result — so treating "has a runner" as "is alive" would exempt
+    * every room that has ever played a game, which is most of the abandoned
+    * ones this exists to reclaim. `Playing` is the live-game test. */
+  def reclaimable(status: Models.RoomStatus, touched: Instant, cutoff: Instant): Boolean =
+    status != RoomStatus.Playing && !touched.isAfter(cutoff)
+
   case class Live(room: Models.Room, runner: Option[GameRunner], topic: Topic[IO, Json],
                   readySeats: Set[Int] = Set.empty, touched: Instant = Instant.now()) {
     /** Mark this room as active, so idle-eviction leaves it alone. */

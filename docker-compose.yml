@@ -29,8 +29,10 @@ services:
     environment:
       MAHJONG_DB_URL: jdbc:postgresql://postgres:5432/mahjong
       MAHJONG_DB_PASSWORD: ${MAHJONG_DB_PASSWORD:-mahjong}
-      # Only this stack's own web app may call the API or open game sockets.
-      # Add more (comma-separated) if you serve the UI from another origin.
+      # Which sites' browsers may use this API and open game sockets. Add more
+      # (comma-separated) if you serve the UI from another origin. This stops
+      # other websites acting as your players; it is not access control on the
+      # API itself, which anything that isn't a browser can still call.
       MAHJONG_ALLOWED_ORIGINS: http://${PUBLIC_HOST:-localhost}:${WEB_PORT:-3000}
     ports:
       - "8080:8080"

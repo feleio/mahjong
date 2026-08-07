@@ -76,6 +76,15 @@ class RoomRepo(xa: Transactor[IO]) {
   def delete(id: RoomId): IO[Unit] =
     sql"""DELETE FROM rooms WHERE id = $id""".update.run.transact(xa).void
 
+  /** Bulk-drop rooms created before `cutoff`, returning how many went.
+    *
+    * Rooms are the only table nothing ever deleted from, and `list` is capped
+    * at 200 rows, so per-row cleanup can never reach the tail. Game records
+    * are keyed on room_id but do not reference this table, so history and the
+    * review pages are unaffected. */
+  def deleteOlderThan(cutoff: Instant): IO[Int] =
+    sql"""DELETE FROM rooms WHERE created_at < $cutoff""".update.run.transact(xa)
+
   private def rowToRoom(row: Row): Option[Room] = {
     val (id, name, host, seatsJson, status, createdAt, code, balancesJson, gamesPlayed) = row
     for {
