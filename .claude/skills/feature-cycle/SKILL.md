@@ -37,15 +37,11 @@ This repo has accumulated more than one app. Only these are current:
   the coach, and the replay-complete game records that every review and eval
   depends on.
 
-Retired, kept only until the deploy switch (issue #47) — **never add features
-to these**, and prefer deleting over extending them:
+Both former stacks are **deleted** (PR for issue #47): the old Next 14 UI
+(`web/`) and the Node + Socket.IO backend (`webgame/backend/`). If you find a
+reference to either, it is stale — remove it rather than reviving them.
 
-- `web/` — the older Next 14 UI. See `web/DEPRECATED.md`.
-- `webgame/backend/` — the Node + Socket.IO server that used to sit under the
-  new frontend.
-
-If a task sounds like "add X to the game UI", it means `webgame/frontend/`. If
-you find yourself editing `web/`, stop and re-read this.
+If a task sounds like "add X to the game UI", it means `webgame/frontend/`.
 
 ## Phase 1 — Review current status
 
@@ -161,6 +157,6 @@ The issues stay open until the work is on master, so the cycle is not done at
 - Treating "PR opened" as done — the goal is the work on master with issues
   closed.
 - Merging a large diff on your own reading alone when the repo has no CI.
-- Building UI in `web/` — it is retired. The product UI is `webgame/frontend/`.
+- Reviving a deleted stack. The product is `webgame/frontend/` + `server/`.
 - Picking between two stacks silently. If a fork exists, surface it and let the
   user choose; burying the choice in a spec is not surfacing it.

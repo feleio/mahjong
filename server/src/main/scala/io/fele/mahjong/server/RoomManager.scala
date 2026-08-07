@@ -164,11 +164,13 @@ class RoomManager private (
           (m, Left("only the host can start the game"))
         case Some(live) if live.room.status != RoomStatus.Waiting =>
           (m, Left("game already started"))
-        case Some(live) if !live.room.isFull =>
+        case Some(live) if !live.room.isFull && fillEmptySeats(live.room) == live.room =>
           (m, Left("room is not full"))
         case Some(live) if championBlocked(live.room).isDefined =>
           (m, Left(championBlocked(live.room).get))
-        case Some(live) =>
+        case Some(live0) =>
+          // the lobby promises empty seats get a bot at start; honour it
+          val live = live0.copy(room = fillEmptySeats(live0.room))
           val runner = GameRunner.create(live.room.id, live.room.seats, newSeed(), live.topic, dispatcher,
             onFinished = onGameFinished(roomId), recordRepo = gameRepo.toOption,
             dealerSeat = live.room.gamesPlayed % 4,   // dealer moves on each game
@@ -200,6 +202,19 @@ class RoomManager private (
           }
       }
     }.flatten
+
+  /** Seat a bot in every open seat so a lone player can just press start.
+    * Prefers the champion — playing it is the point — but falls back when its
+    * model is missing, since an unstartable table is worse than a weaker bot. */
+  private def fillEmptySeats(room: Room): Room = {
+    val botKind =
+      if (ChampionService.unavailableReason.isEmpty) SeatKind.AiChampion else SeatKind.AiFirstFelix
+    if (!room.seats.exists(_.kind == SeatKind.Open)) room
+    else room.copy(seats = room.seats.map { s =>
+      if (s.kind != SeatKind.Open) s
+      else s.copy(kind = botKind, playerId = None, name = aiLabel(botKind, s.index))
+    })
+  }
 
   /** Only pace the table when a person is watching; bot-only games (tests,
     * evals) must stay as fast as the engine can run. */

@@ -51,6 +51,9 @@ class SnapshotParitySpec extends AnyFlatSpec with Matchers {
       } yield out.toList
     }.unsafeRunSync().filter(_.hcursor.get[String]("type").toOption.contains("snapshot"))
 
+  private lazy val dispatcherForTest: Dispatcher[IO] =
+    Dispatcher.parallel[IO].allocated.unsafeRunSync()._1
+
   private def waitFinished(runner: GameRunner, timeout: FiniteDuration): IO[Unit] =
     if (timeout <= Duration.Zero) IO.raiseError(new RuntimeException("game did not finish"))
     else if (runner.isFinished) IO.unit
@@ -114,6 +117,20 @@ class SnapshotParitySpec extends AnyFlatSpec with Matchers {
     }
     spectator should not be empty
     spectator.foreach(_.hcursor.downField("event").downField("tile").focus.map(_.isNull) shouldBe Some(true))
+  }
+
+  "starting a room with open seats" should "fill them with bots" in {
+    // the lobby tells players empty seats are filled at start; the server has
+    // to actually do it or a lone player can never press start
+    val rm = RoomManager.create(new RoomRepo(TestDb.xa), dispatcherForTest, Left("off")).unsafeRunSync()
+    val (room, host) = rm.create("fill-test", "Solo").unsafeRunSync()
+    room.seats.count(_.kind == SeatKind.Open) shouldBe 3
+
+    val started = rm.startGame(room.id, host).unsafeRunSync()
+    started.isRight shouldBe true
+    val after = rm.get(room.id).unsafeRunSync().get
+    after.seats.count(_.kind == SeatKind.Open) shouldBe 0
+    after.seats.tail.foreach(_.kind.toString should startWith("Ai"))
   }
 
   "a room code" should "be readable aloud and resolve back to the room" in {

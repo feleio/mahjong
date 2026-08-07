@@ -12,7 +12,7 @@ PUBLIC_HOST=192.168.1.42 docker compose --profile app up -d --build
 
 Then players open `http://192.168.1.42:3000`.
 
-- `web` (port 3000) — Next.js UI. `NEXT_PUBLIC_*` bases are baked at image
+- `web` (port 3000) — the Next.js UI, built from `webgame/frontend`. `NEXT_PUBLIC_*` bases are baked at image
   build time, so changing `PUBLIC_HOST` requires `--build`.
 - `server` (port 8080) — HTTP + WebSocket API. Bakes the champion ONNX
   (`rl/checkpoints/best_raw_net.onnx`) into the image; every game is recorded
@@ -48,6 +48,7 @@ SELECT count(*) FROM game_events;
 
 ## Not for public internet
 
-Public deploy is blocked on the Next 14→16 migration (residual advisories on
-all of 14.x) — see issue #30. CORS is `*` and rooms have no auth; keep this
-behind a LAN/VPN.
+The Next 14 advisories that used to block this are gone — the player-facing
+app is `webgame/frontend` on Next 16 (issue #47). What still keeps this off the
+public internet is the server: CORS is `*` and rooms have no auth, so keep it
+behind a LAN/VPN until that is addressed.

@@ -36,7 +36,7 @@ services:
   web:
     profiles: ["app"]
     build:
-      context: web
+      context: webgame/frontend
       args:
         NEXT_PUBLIC_API_BASE: http://${PUBLIC_HOST:-localhost}:8080
         NEXT_PUBLIC_WS_BASE:  ws://${PUBLIC_HOST:-localhost}:8080

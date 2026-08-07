@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getName, setName as persistName } from "@/lib/identity";
 import { createRoom as createRoomApi, getRoom, saveCreds, saveName } from "@/lib/server";
@@ -154,6 +155,13 @@ function Landing() {
           </p>
         )}
       </div>
+      <Link
+        href="/review"
+        className="mt-6 text-sm text-emerald-100/60 underline-offset-4 hover:text-amber-300 hover:underline"
+      >
+        🎓 覆盤 Review my games
+      </Link>
+
     </main>
   );
 }
