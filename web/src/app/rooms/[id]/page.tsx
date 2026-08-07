@@ -115,7 +115,10 @@ export default function RoomPage() {
             case "prompt":
               setPrompt(msg);
               setPromptAt(Date.now());
-              setAutoPlayed(null);
+              // NB: do not clear `autoPlayed` here. The engine's default move
+              // is followed by the next prompt within milliseconds, so
+              // clearing on prompt means the player never sees that a turn
+              // was played for them. It stays until they act or dismiss it.
               if (msg.coach) setLastHint(msg.coach);
               break;
             case "timeout":
@@ -238,6 +241,8 @@ export default function RoomPage() {
       setRoom(updated);
       setSnap(null);
       setPrompt(null);
+      setPromptAt(null);
+      setAutoPlayed(null);
     } catch (e: any) {
       setError(String(e.message ?? e));
     } finally {
@@ -254,6 +259,7 @@ export default function RoomPage() {
     ws.send(JSON.stringify(action));
     setPrompt(null);
     setPromptAt(null);
+    setAutoPlayed(null);   // they're back at the table
   }
 
   const isFull = useMemo(
