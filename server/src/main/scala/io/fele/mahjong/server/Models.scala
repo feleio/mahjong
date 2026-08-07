@@ -89,12 +89,15 @@ object Models {
   }
 
   case class Room(
-    id:        RoomId,
-    name:      String,
-    hostId:    PlayerId,
-    seats:     List[Seat],            // exactly 4 entries, sorted by index
-    status:    RoomStatus,
-    createdAt: Instant
+    id:          RoomId,
+    name:        String,
+    hostId:      PlayerId,
+    seats:       List[Seat],          // exactly 4 entries, sorted by index
+    status:      RoomStatus,
+    createdAt:   Instant,
+    code:        String = "",         // short join code people can read out loud
+    balances:    List[Int] = List(0, 0, 0, 0), // cumulative money per seat here
+    gamesPlayed: Int = 0
   ) {
     def isFull: Boolean = seats.forall(s => s.kind != SeatKind.Open)
     def humanSeats: List[Seat] = seats.filter(_.kind == SeatKind.Human)
@@ -104,6 +107,11 @@ object Models {
     implicit val dec: Decoder[Room] = deriveDecoder
 
     def newId(): RoomId = UUID.randomUUID().toString
+
+    /** Unambiguous alphabet: no O/0, I/1, S/5 — these get read out loud. */
+    private val CodeAlphabet = "ABCDEFGHJKLMNPQRTUVWXY2346789"
+    def newCode(): String =
+      (1 to 6).map(_ => CodeAlphabet(scala.util.Random.nextInt(CodeAlphabet.length))).mkString
   }
 
   /* ---------- Tile JSON ---------- */
@@ -155,15 +163,41 @@ object Models {
   case class WinnerView(seat: Int, score: Int)
   object WinnerView { implicit val enc: Encoder[WinnerView] = deriveEncoder }
 
+  /** The last thing that happened, structured rather than as a label, so a
+    * client can render an event feed, flash the acting seat, and separate a
+    * freshly drawn tile. A draw's `tile` is visible only to the drawer —
+    * [[GameRunner.annotateForSeat]] strips it for everyone else. */
+  case class EventView(
+    kind:     String,          // draw | discard | pong | kong | chow | start | resume | end
+    seat:     Option[Int],
+    tile:     Option[String],
+    fromSeat: Option[Int],     // whose discard was claimed
+    position: Option[String]   // chow position
+  )
+  object EventView { implicit val enc: Encoder[EventView] = deriveEncoder }
+
+  /** Which seat the game is currently blocked on, so everyone else can be
+    * shown "waiting for X" instead of a dead table. */
+  case class WaitingView(seat: Int, decision: String)
+  object WaitingView { implicit val enc: Encoder[WaitingView] = deriveEncoder }
+
   case class GameSnapshot(
     roomId:        RoomId,
     yourSeat:      Option[Int],
     curPlayer:     Int,
+    dealerSeat:    Int,
     remainingTiles: Int,
     players:       List[PlayerView],
     discards:      List[DiscardView],
     lastEvent:     Option[String],
+    event:         Option[EventView],          // structured form of lastEvent
+    pendingDiscard: Option[DiscardView],       // just discarded and still claimable
+    balances:      List[Int],                  // cumulative money per seat in this room
+    gamesPlayed:   Int,
     winners:       List[WinnerView],
+    winningTile:   Option[String],             // what the win was on
+    loserSeat:     Option[Int],                // who fed it (None on a self-draw)
+    balanceDelta:  List[Int],                  // money this game moved, per seat
     isFinished:    Boolean,
     selfWin:       Boolean
   )

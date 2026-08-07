@@ -3,9 +3,8 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getName, setName as persistName } from "@/lib/identity";
-import { emitAck } from "@/lib/socket";
+import { createRoom as createRoomApi, getRoom, saveCreds, saveName } from "@/lib/server";
 import { storeSetRoom } from "@/lib/store";
-import type { RoomAck } from "@/lib/types";
 import { Tile } from "@/components/Tile";
 
 function Landing() {
@@ -28,6 +27,7 @@ function Landing() {
       return false;
     }
     persistName(name);
+    saveName(name.trim());
     return true;
   };
 
@@ -36,13 +36,21 @@ function Landing() {
     setBusy("create");
     setError(null);
     try {
-      const res = await emitAck<RoomAck>("room:create");
-      if (res.ok) {
-        storeSetRoom(res.room);
-        router.push(`/room/${res.room.code}`);
-      } else {
-        setError(res.error);
-      }
+      const res = await createRoomApi(`${name.trim()}'s table`, name.trim());
+      // the creator holds seat 0 and is the host
+      saveCreds(res.room.id, {
+        playerId: res.hostPlayerId,
+        seat: 0,
+        isHost: true,
+        name: name.trim(),
+      });
+      storeSetRoom(res.room, {
+        playerId: res.hostPlayerId,
+        seat: 0,
+        isHost: true,
+        name: name.trim(),
+      });
+      router.push(`/room/${res.room.code}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to reach the server.");
     } finally {
@@ -60,15 +68,11 @@ function Landing() {
     setBusy("join");
     setError(null);
     try {
-      const res = await emitAck<RoomAck>("room:join", { code });
-      if (res.ok) {
-        storeSetRoom(res.room);
-        router.push(`/room/${res.room.code}`);
-      } else {
-        setError(res.error);
-      }
+      // just check it exists here; the room page claims the seat
+      const room = await getRoom(code);
+      router.push(`/room/${room.code || code}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to reach the server.");
+      setError(e instanceof Error ? e.message : "No room with that code.");
     } finally {
       setBusy(null);
     }

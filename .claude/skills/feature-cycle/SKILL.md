@@ -23,6 +23,30 @@ forgotten.
 Track the phases with the task list (TaskCreate) so nothing is dropped; the
 cycle spans hours and context compaction.
 
+## Where the product lives (read this before touching any UI)
+
+This repo has accumulated more than one app. Only these are current:
+
+- **`webgame/frontend/`** — the player-facing UI. Next.js 16 / React 19 /
+  Tailwind v4, permanently dark felt theme, CSS-drawn tiles, bilingual labels.
+  **All UI work goes here.** It has its own `AGENTS.md` requiring you to read
+  `node_modules/next/dist/docs/` before writing code, because this Next version
+  differs from training data (`params` is async in server components; the pages
+  are client components using `useParams`; Turbopack is the default builder).
+- **`server/`** — the only backend. http4s + doobie, owns the champion seat,
+  the coach, and the replay-complete game records that every review and eval
+  depends on.
+
+Retired, kept only until the deploy switch (issue #47) — **never add features
+to these**, and prefer deleting over extending them:
+
+- `web/` — the older Next 14 UI. See `web/DEPRECATED.md`.
+- `webgame/backend/` — the Node + Socket.IO server that used to sit under the
+  new frontend.
+
+If a task sounds like "add X to the game UI", it means `webgame/frontend/`. If
+you find yourself editing `web/`, stop and re-read this.
+
 ## Phase 1 — Review current status
 
 - Read auto-memory (MEMORY.md) and open GitHub issues/PRs first:
@@ -32,8 +56,12 @@ cycle spans hours and context compaction.
 - Launch an Explore agent for a status map of the area (concrete file paths +
   line refs). Ask it specifically for: what already exists, what exists in a
   *different* stack/module and could be ported, how to run things locally, and
-  where the data lives. Prior art in this repo is common — e.g. the legacy
-  `webgame/` stack often has features the current `server/`+`web/` stack lacks.
+  where the data lives.
+- **Duplicate implementations are the recurring trap here.** The coach was
+  built twice — once per frontend — because nobody checked whether the feature
+  already existed elsewhere. Before building UI, grep the other app for it. If
+  a feature exists in a retired stack, port it rather than rewrite it, and say
+  so in the spec.
 - Verify ground facts yourself before designing on top of them (model files
   exist, containers run, ports match).
 
@@ -133,3 +161,6 @@ The issues stay open until the work is on master, so the cycle is not done at
 - Treating "PR opened" as done — the goal is the work on master with issues
   closed.
 - Merging a large diff on your own reading alone when the repo has no CI.
+- Building UI in `web/` — it is retired. The product UI is `webgame/frontend/`.
+- Picking between two stacks silently. If a fork exists, surface it and let the
+  user choose; burying the choice in a spec is not surfacing it.

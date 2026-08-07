@@ -3,16 +3,28 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getName } from "@/lib/identity";
-import { ensureConnected, emitAck } from "@/lib/socket";
 import {
-  bindSocketToStore,
-  storeClearDecision,
+  getRoom,
+  joinRoom,
+  loadCreds,
+  saveCreds,
+  setSeat,
+  startGame as startGameApi,
+  startNextGame,
+  markReady,
+  type ServerRoom,
+} from "@/lib/server";
+import {
+  connectRoom,
+  disconnectRoom,
+  sendAction,
   storeClearGame,
+  storeDismissAutoPlayed,
   storeReset,
-  storeSync,
+  storeSetRoom,
   useStore,
 } from "@/lib/store";
-import type { PlainAck, RoomAck, StateAck } from "@/lib/types";
+import { BOT_KINDS } from "@/lib/wire";
 import { GameOverModal } from "@/components/GameOverModal";
 import { GameTable } from "@/components/GameTable";
 import { Lobby } from "@/components/Lobby";
@@ -25,6 +37,7 @@ export default function RoomPage() {
 
   const [toast, setToast] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [roomId, setRoomId] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = useCallback((msg: string) => {
@@ -39,7 +52,7 @@ export default function RoomPage() {
     };
   }, []);
 
-  // ---- connect / join / sync ----
+  // ---- resolve the room, take a seat, connect ----
   useEffect(() => {
     if (!code) return;
     if (!getName()) {
@@ -48,92 +61,129 @@ export default function RoomPage() {
       return;
     }
 
-    bindSocketToStore();
-    const socket = ensureConnected();
     let cancelled = false;
 
-    const sync = async () => {
+    const enter = async () => {
       try {
-        const joinRes = await emitAck<RoomAck>("room:join", { code });
+        // the URL carries the short code; everything else keys off the room id
+        const room: ServerRoom = await getRoom(code);
         if (cancelled) return;
-        if (!joinRes.ok) {
-          showToast(joinRes.error);
-          router.replace("/");
-          return;
+        setRoomId(room.id);
+
+        // claim a seat once per room, then reuse it across reloads
+        let creds = loadCreds(room.id);
+        if (!creds && room.status === "waiting" && room.seats.some((s) => s.kind === "open")) {
+          const joined = await joinRoom(room.id, getName());
+          if (cancelled) return;
+          creds = {
+            playerId: joined.playerId,
+            seat: joined.seat,
+            isHost: joined.room.hostId === joined.playerId,
+            name: getName(),
+          };
+          saveCreds(room.id, creds);
         }
-        const stateRes = await emitAck<StateAck>("room:state");
+        const fresh = await getRoom(room.id);
         if (cancelled) return;
-        if (stateRes.ok) {
-          storeSync(stateRes.room, stateRes.game, stateRes.decision);
-        } else {
-          showToast(stateRes.error);
-        }
+        storeSetRoom(fresh, loadCreds(room.id));
+        connectRoom(room.id);
       } catch (e) {
         if (!cancelled) {
-          showToast(e instanceof Error ? e.message : "Connection failed.");
+          showToast(e instanceof Error ? e.message : "Could not join that room.");
+          router.replace("/");
         }
       }
     };
 
-    // Initial sync (also runs immediately if already connected) and
-    // re-sync on every (re)connect.
-    if (socket.connected) void sync();
-    const onConnect = () => void sync();
-    socket.on("connect", onConnect);
-
+    void enter();
     return () => {
       cancelled = true;
-      socket.off("connect", onConnect);
+      disconnectRoom();
+      storeReset();
     };
   }, [code, router, showToast]);
+
+  // The server decides at connect time whether a game is running, so the
+  // socket has to be re-established when the room leaves or enters the lobby.
+  const roomStatus = state.room?.status;
+  useEffect(() => {
+    if (!roomId) return;
+    connectRoom(roomId);
+  }, [roomId, roomStatus]);
 
   // ---- room closed ----
   useEffect(() => {
     if (state.roomClosed !== null) {
       const reason = state.roomClosed;
       storeReset();
-      alert(`Room closed: ${reason}`);
       router.replace("/");
+      showToast(`Room closed: ${reason}`);
     }
-  }, [state.roomClosed, router]);
+  }, [state.roomClosed, router, showToast]);
 
   const room = state.room;
-  const isHost = room !== null && room.youUserId === room.hostUserId;
+  const creds = roomId ? loadCreds(roomId) : null;
+  const isHost = creds?.isHost ?? false;
 
-  // ---- actions ----
-  const hostAction = useCallback(
-    async (event: string, payload: object = {}) => {
+  const refreshRoom = useCallback(async () => {
+    if (!roomId) return;
+    try {
+      storeSetRoom(await getRoom(roomId), loadCreds(roomId));
+    } catch {
+      /* the socket will resync */
+    }
+  }, [roomId]);
+
+  // ---- host actions ----
+  const seatBot = useCallback(
+    async (seat: number, kind: string) => {
+      if (!roomId || !creds) return;
       try {
-        const res = await emitAck<PlainAck>(event, payload);
-        if (!res.ok) showToast(res.error);
-        return res.ok;
+        await setSeat(roomId, creds.playerId, seat, kind);
+        await refreshRoom();
       } catch (e) {
-        showToast(e instanceof Error ? e.message : "Request failed.");
-        return false;
+        showToast(e instanceof Error ? e.message : "Could not change that seat.");
       }
     },
-    [showToast],
+    [roomId, creds, refreshRoom, showToast],
   );
 
+  const addBot = useCallback(() => {
+    const open = room?.seats.find((s) => s.empty);
+    if (!open) return;
+    // strongest first: playing the champion is the point of the app
+    void seatBot(open.seat, BOT_KINDS[0]);
+  }, [room, seatBot]);
+
+  const removeBot = useCallback((seat: number) => void seatBot(seat, "open"), [seatBot]);
+
   const startGame = useCallback(async () => {
+    if (!roomId || !creds) return;
     setStarting(true);
-    await hostAction("room:start");
-    setStarting(false);
-  }, [hostAction]);
+    try {
+      // the first game starts the room; later ones need everyone ready
+      if (state.room?.gamesPlayed && state.gameOver) {
+        await markReady(roomId, creds.playerId);
+        await startNextGame(roomId, creds.playerId);
+      } else {
+        await startGameApi(roomId, creds.playerId);
+      }
+      storeClearGame();
+      await refreshRoom();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Could not start the game.");
+    } finally {
+      setStarting(false);
+    }
+  }, [roomId, creds, state.room?.gamesPlayed, state.gameOver, refreshRoom, showToast]);
 
   const onGameAction = useCallback(
     (action: boolean | number | null) => {
       const decision = state.decision;
       if (!decision) return;
-      storeClearDecision();
-      emitAck<PlainAck>("game:action", {
-        requestId: decision.requestId,
-        action,
-      })
-        .then((res) => {
-          if (!res.ok) showToast(res.error);
-        })
-        .catch(() => showToast("Failed to send action."));
+      if (!sendAction(decision.decision, action)) {
+        showToast("Not connected — your move was not sent.");
+      }
     },
     [state.decision, showToast],
   );
@@ -169,9 +219,9 @@ export default function RoomPage() {
           room={room}
           isHost={isHost}
           starting={starting}
-          onAddBot={() => void hostAction("room:addBot")}
-          onRemoveBot={(seat) => void hostAction("room:removeBot", { seat })}
-          onSetTimeLimit={(enabled) => void hostAction("room:setTimeLimit", { enabled })}
+          onAddBot={addBot}
+          onRemoveBot={removeBot}
+          onSetTimeLimit={() => showToast("The turn clock is always on with this server.")}
           onStart={() => void startGame()}
         />
       )}
@@ -187,10 +237,21 @@ export default function RoomPage() {
         />
       )}
 
+      {/* the engine moved for you because the clock ran out (#42) */}
+      {state.autoPlayed && (
+        <button
+          onClick={storeDismissAutoPlayed}
+          className="fixed left-1/2 top-3 z-[60] -translate-x-1/2 rounded-full border border-red-400/50 bg-red-950/90 px-4 py-1.5 text-sm text-red-100 shadow-lg"
+        >
+          Time ran out on your {state.autoPlayed.replace("_", "-")} — the engine played for you.
+          That turn is left out of your coaching stats. Tap to dismiss.
+        </button>
+      )}
+
       {/* connection banner */}
-      {!state.connected && (
-        <div className="fixed left-1/2 top-3 z-[60] -translate-x-1/2 rounded-full border border-red-400/50 bg-red-950/90 px-4 py-1.5 text-sm text-red-100 shadow-lg">
-          Reconnecting…
+      {state.conn !== "open" && (
+        <div className="fixed left-1/2 top-3 z-[60] -translate-x-1/2 rounded-full border border-amber-400/50 bg-amber-950/90 px-4 py-1.5 text-sm text-amber-100 shadow-lg">
+          {state.conn === "connecting" ? "Connecting…" : "Reconnecting…"}
         </div>
       )}
 

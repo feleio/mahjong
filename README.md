@@ -8,7 +8,8 @@ A multiplayer mahjong web app driven by the original Scala game engine.
 |-------------|------------|
 | `src/`      | Original Scala 2.12 mahjong engine (now exposed as the `core` sbt module). |
 | `server/`   | New Scala / http4s / doobie backend that wraps the engine, exposes REST + WebSocket APIs and persists rooms in Postgres. |
-| `web/`      | Next.js 14 (TypeScript) frontend with lobby, room (host configures seats / start), and live game UI. |
+| `webgame/frontend/` | **The player-facing app.** Next.js 16 / React 19 / Tailwind: lobby with join codes, full mahjong table, coach overlay, review. Talks to `server/`. |
+| `web/`      | **Retired** — the older Next.js 14 UI, kept only until the deploy is switched over (issue #47). Do not add features here. |
 | `rl/`       | Existing reinforcement learning Python tooling (untouched). |
 
 ## Quick start (development)

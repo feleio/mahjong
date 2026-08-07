@@ -57,7 +57,8 @@ class RoomManager private (
       Seat(2, SeatKind.Open,  None, "Seat 3"),
       Seat(3, SeatKind.Open,  None, "Seat 4")
     )
-    val room = Room(Room.newId(), name, hostId, seats, RoomStatus.Waiting, Instant.now())
+    val room = Room(Room.newId(), name, hostId, seats, RoomStatus.Waiting, Instant.now(),
+      code = Room.newCode())
     for {
       _     <- repo.upsert(room)
       topic <- Topic[IO, Json]
@@ -67,9 +68,22 @@ class RoomManager private (
 
   def list: IO[List[Room]] = repo.list
 
-  def get(id: RoomId): IO[Option[Room]] = cell.get.flatMap { m =>
-    m.get(id).map(l => IO.pure(Option(l.room))).getOrElse(repo.get(id))
+  /** Resolve by room id or by the short join code (case-insensitive). */
+  def get(idOrCode: RoomId): IO[Option[Room]] = cell.get.flatMap { m =>
+    m.get(idOrCode).map(l => IO.pure(Option(l.room))).getOrElse {
+      m.values.find(_.room.code.equalsIgnoreCase(idOrCode)) match {
+        case Some(l) => IO.pure(Option(l.room))
+        case None    => repo.get(idOrCode)
+      }
+    }
   }
+
+  /** Room id for an id or short code, for routes that need the canonical id. */
+  def resolveId(idOrCode: RoomId): IO[Option[RoomId]] =
+    cell.get.map { m =>
+      if (m.contains(idOrCode)) Some(idOrCode)
+      else m.values.find(_.room.code.equalsIgnoreCase(idOrCode)).map(_.room.id)
+    }
 
   /** Replace the kind of a seat. Only the host can call this and only while waiting. */
   def setSeatKind(roomId: RoomId, hostId: PlayerId, seatIndex: Int, kind: SeatKind): IO[Either[String, Room]] =
@@ -156,7 +170,10 @@ class RoomManager private (
           (m, Left(championBlocked(live.room).get))
         case Some(live) =>
           val runner = GameRunner.create(live.room.id, live.room.seats, newSeed(), live.topic, dispatcher,
-            onFinished = autoReadyBots(roomId), recordRepo = gameRepo.toOption)
+            onFinished = onGameFinished(roomId), recordRepo = gameRepo.toOption,
+            dealerSeat = live.room.gamesPlayed % 4,   // dealer moves on each game
+            balances = live.room.balances, gamesPlayed = live.room.gamesPlayed,
+            pacingMs = pacingFor(live.room))
           val updated = live.room.copy(status = RoomStatus.Playing)
           (m.updated(roomId, live.copy(room = updated, runner = Some(runner))), Right((updated, runner)))
       }
@@ -183,6 +200,30 @@ class RoomManager private (
           }
       }
     }.flatten
+
+  /** Only pace the table when a person is watching; bot-only games (tests,
+    * evals) must stay as fast as the engine can run. */
+  private def pacingFor(room: Room): Long =
+    if (room.seats.exists(_.kind == SeatKind.Human)) 600L else 0L
+
+  /** When a game ends: bank the per-seat money into the room's running totals,
+    * count the game, then do the usual auto-ready. */
+  private def onGameFinished(roomId: RoomId): IO[Unit] =
+    cell.modify { m =>
+      m.get(roomId) match {
+        case None => (m, IO.unit)
+        case Some(live) =>
+          val delta = live.runner
+            .flatMap(r => r.state.winnersInfo)
+            .map(_.winnersBalance.sortBy(_.id).map(_.amount))
+            .getOrElse(List(0, 0, 0, 0))
+          val updated = live.room.copy(
+            balances    = live.room.balances.zipAll(delta, 0, 0).map { case (a, b) => a + b },
+            gamesPlayed = live.room.gamesPlayed + 1
+          )
+          (m.updated(roomId, live.copy(room = updated)), repo.upsert(updated).void)
+      }
+    }.flatten *> autoReadyBots(roomId)
 
   /** Auto-ready all AI seats when a game ends (used as onFinished callback). */
   private def autoReadyBots(roomId: RoomId): IO[Unit] =
@@ -225,7 +266,10 @@ class RoomManager private (
           (m, IO.pure(Left(championBlocked(live.room).get): Either[String, Room]))
         case Some(live) =>
           val runner  = GameRunner.create(live.room.id, live.room.seats, newSeed(), live.topic, dispatcher,
-            onFinished = autoReadyBots(roomId), recordRepo = gameRepo.toOption)
+            onFinished = onGameFinished(roomId), recordRepo = gameRepo.toOption,
+            dealerSeat = live.room.gamesPlayed % 4,
+            balances = live.room.balances, gamesPlayed = live.room.gamesPlayed,
+            pacingMs = pacingFor(live.room))
           val updated = live.room.copy(status = RoomStatus.Playing)
           val io = IO.delay(runner.start()) *>
             live.topic.publish1(Json.obj("type" -> "ready_update".asJson, "readySeats" -> Json.arr())).void *>
