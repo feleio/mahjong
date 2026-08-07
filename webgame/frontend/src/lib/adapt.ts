@@ -33,7 +33,6 @@ export function adaptRoom(room: ServerRoom, creds: RoomCreds | null): RoomState 
     seat: asSeat(s.index),
     name: s.kind === "open" ? "—" : s.name,
     isBot: isBot(s.kind),
-    userId: s.playerId,
     // The server does not track presence yet; a seated human is shown as
     // present rather than falsely flagged as disconnected.
     connected: true,
@@ -44,10 +43,9 @@ export function adaptRoom(room: ServerRoom, creds: RoomCreds | null): RoomState 
     code: room.code || room.id.slice(0, 6).toUpperCase(),
     // "finished" keeps the table on screen with the game-over modal over it
     status: room.status === "waiting" ? "lobby" : "playing",
-    hostUserId: room.hostId,
+    hostSeat: asSeat(room.hostSeat),
     seats,
     youSeat: creds ? asSeat(creds.seat) : null,
-    youUserId: creds?.playerId ?? "",
     gamesPlayed: room.gamesPlayed,
     coachModels: [COACH_MODEL],
     enforceTimeLimit: true,

@@ -78,7 +78,7 @@ export default function RoomPage() {
           creds = {
             playerId: joined.playerId,
             seat: joined.seat,
-            isHost: joined.room.hostId === joined.playerId,
+            isHost: joined.room.hostSeat === joined.seat,
             name: getName(),
           };
           saveCreds(room.id, creds);

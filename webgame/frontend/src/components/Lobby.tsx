@@ -52,8 +52,8 @@ export function Lobby({
       {/* seats */}
       <div className="mt-6 grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
         {room.seats.map((seat) => {
-          const isYou = seat.userId !== null && seat.userId === room.youUserId;
-          const isSeatHost = seat.userId !== null && seat.userId === room.hostUserId;
+          const isYou = seat.seat === room.youSeat;
+          const isSeatHost = seat.seat === room.hostSeat;
           return (
             <div
               key={seat.seat}

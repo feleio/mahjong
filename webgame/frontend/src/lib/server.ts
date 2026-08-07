@@ -44,17 +44,21 @@ function patch<T>(path: string, body: unknown): Promise<T> {
 
 /* ---------- server wire shapes (only what this app consumes) ---------- */
 
+// The server's public projections (issue #51). Credentials — the host id and
+// each seat's player id — are never published: yours arrives once, in the
+// create/join response, and is kept in localStorage from there on.
+
 export interface ServerSeat {
   index: number;
   kind: string;
-  playerId: string | null;
   name: string;
+  occupied: boolean; // someone holds this seat (replaces "playerId != null")
 }
 
 export interface ServerRoom {
   id: string;
   name: string;
-  hostId: string;
+  hostSeat: number; // which seat runs the room (replaces the host's id)
   seats: ServerSeat[];
   status: "waiting" | "playing" | "finished";
   createdAt: string;
@@ -136,8 +140,8 @@ export type ServerFrame =
 
 /* ---------- REST ---------- */
 
-export const listRooms = (): Promise<ServerRoom[]> =>
-  fetch(`${API}/api/rooms`).then(check<ServerRoom[]>);
+// No listRooms: the server deliberately has no room listing — a room's code or
+// id is the capability to reach it (issue #51).
 
 export const getRoom = (idOrCode: string): Promise<ServerRoom> =>
   fetch(`${API}/api/rooms/${encodeURIComponent(idOrCode)}`).then(check<ServerRoom>);
