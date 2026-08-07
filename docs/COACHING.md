@@ -158,6 +158,12 @@ Found by dogfooding the features above, then fixed:
 - **Replay fidelity**: the replayer must consume events in exactly the recorded order,
   including timeout-defaulted actions. Mitigation: assert replayed event stream ==
   recorded stream; refuse to review (410) on mismatch rather than show wrong analysis.
+  A record must therefore carry *everything* that determines the game — wall, seats,
+  event stream **and the dealer seat** (`game_records.dealer_seat`). The replayer
+  originally assumed seat 0 starts, which is true of the server today but would have
+  silently invalidated every stored game the moment a dealer rotation was added; a
+  360-game sweep across all four dealer seats is what surfaced it. When adding any
+  new source of game variation, record it in the same commit.
 - **v4 obs from replay**: V4Obs needs discard order, which the replayer has natively.
 - **Latency**: two ONNX queries per human decision (~2ms) on the game thread is fine;
   review replay of a full game is ~100 decisions ≈ a few hundred ms — do it on a blocking
