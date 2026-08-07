@@ -21,6 +21,8 @@ FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 COPY --from=build /build/server/target/scala-2.12/mahjong-server.jar .
 COPY rl/checkpoints/best_raw_net.onnx model/best_raw_net.onnx
+COPY rl/checkpoints/exit_v4/exit_final.onnx model/danger_v4.onnx
 ENV MAHJONG_CHAMPION_MODEL=/app/model/best_raw_net.onnx
+ENV MAHJONG_DANGER_MODEL=/app/model/danger_v4.onnx
 EXPOSE 8080
 CMD ["java", "-jar", "/app/mahjong-server.jar"]

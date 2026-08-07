@@ -88,6 +88,24 @@ export type PromptKind =
   | "chow"
   | "discard";
 
+/* ---------- coach (champion hints, issue #37) ---------- */
+
+export interface OppTenpai {
+  seat: number;
+  p: number;
+}
+
+export interface CoachHint {
+  /** action key -> champion probability. Keys: tile wire names for
+   *  discard/self_kong, "pass"/"accept" for yes-no claims, "pass"/"LEFT"/
+   *  "MIDDLE"/"RIGHT" for chow. */
+  probs: Record<string, number>;
+  top: string;
+  value: number;
+  oppTenpai?: OppTenpai[] | null;
+  dangerByTile?: Record<string, number> | null;
+}
+
 export interface Prompt {
   type: "prompt";
   kind: PromptKind;
@@ -97,6 +115,19 @@ export interface Prompt {
   selfKongTiles: string[] | null;
   chowPositions: string[] | null;
   handTiles: string[] | null;
+  coach?: CoachHint | null;
+  /** How long you have before the engine plays a default for you (#42). */
+  timeoutMs?: number | null;
+  /** Identifies this decision; echoed back so a late or replayed answer is
+   *  never applied to a different one. */
+  promptId?: number;
+}
+
+/** Your prompt expired and the engine moved on your behalf (#42). */
+export interface TimeoutMsg {
+  type: "timeout";
+  seat: number;
+  kind: PromptKind;
 }
 
 export interface LobbyMsg {
@@ -108,11 +139,98 @@ export interface EndMsg { type: "end" }
 export interface ErrorMsg { type: "error"; message: string }
 export interface ReadyUpdateMsg { type: "ready_update"; readySeats: number[] }
 
-export type WsMessage = GameSnapshot | Prompt | LobbyMsg | EndMsg | ErrorMsg | ReadyUpdateMsg;
+export type WsMessage =
+  | GameSnapshot | Prompt | LobbyMsg | EndMsg | ErrorMsg | ReadyUpdateMsg | TimeoutMsg;
+
+export type ConnState = "connecting" | "open" | "reconnecting";
 
 export interface ClientAction {
   kind: PromptKind;
   yes?: boolean;
   tile?: string;
   chowPos?: "LEFT" | "MIDDLE" | "RIGHT";
+  promptId?: number;
+}
+
+/* ---------- post-game review (issues #40/#41) ---------- */
+
+export interface GameOutcome {
+  drawn: boolean;
+  isSelfWin: boolean;
+  winningTile: string | null;
+  loserSeat: number | null;
+  winners: { seat: number; score: number }[];
+}
+
+export interface GameListItem {
+  id: string;
+  roomId: string;
+  startedAt: string;
+  finishedAt: string | null;
+  seats: Seat[];
+  outcome: GameOutcome | null;
+  mySeat: number | null;
+  myMoney: number | null;
+}
+
+export interface ReviewDecision {
+  seq: number;
+  kind: PromptKind;
+  contextTile: string | null;
+  hand: string[];
+  chosen: string;
+  chosenProb: number;
+  best: string;
+  bestProb: number;
+  gap: number;
+  value: number;
+  agree: boolean;
+  /** The engine played this turn for you after the prompt expired (#42). */
+  timedOut: boolean;
+  /** Grounded reason the champion differed, when one can be computed (#44). */
+  why?: string | null;
+  bucket?: "shape" | "tempo" | "safety" | "accept" | "other" | null;
+}
+
+export interface ReviewSummary {
+  decisions: number;
+  agreements: number;
+  /** null when every turn was auto-played — no decisions to score. */
+  agreementRate: number | null;
+  meanGap: number;
+  timedOut: number;
+}
+
+export interface GameReview {
+  gameId: string;
+  seat: number;
+  playerName: string;
+  startedAt: string;
+  outcome: GameOutcome | null;
+  seatMoney: number;
+  summary: ReviewSummary;
+  decisions: ReviewDecision[];
+}
+
+export interface PlayerGameAgreement {
+  gameId: string;
+  startedAt: string;
+  agreementRate: number | null;
+  decisions: number;
+  timedOut: number;
+}
+
+export interface PlayerStats {
+  name: string;
+  games: number;
+  totalMoney: number;
+  moneyPerGame: number;
+  winRate: number;
+  selfWinRate: number;
+  dealInRate: number;
+  drawRate: number;
+  reviewedGames: number;
+  agreementRate: number | null;
+  timedOutTurns: number;
+  agreementByGame: PlayerGameAgreement[];
 }
