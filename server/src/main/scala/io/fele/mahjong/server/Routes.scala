@@ -1,6 +1,5 @@
 package io.fele.mahjong.server
 
-import cats.data.OptionT
 import cats.effect.IO
 import cats.syntax.all._
 import io.circe.generic.auto._
@@ -9,6 +8,9 @@ import io.fele.mahjong.server.Models._
 import org.http4s._
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.dsl.io._
+import org.http4s.headers.Origin
+import org.http4s.server.middleware.CORS
+import org.typelevel.ci._
 
 object Routes {
 
@@ -27,21 +29,21 @@ object Routes {
   case class StartNextReq(hostPlayerId: PlayerId)
   case class ErrResp(error: String)
 
-  /** CORS for the Next.js dev server. Adds the headers when the inner routes
-    * matched the request, and answers OPTIONS preflight directly. */
-  private val corsHeaders: Headers = Headers(
-    Header.Raw(org.typelevel.ci.CIString("Access-Control-Allow-Origin"),  "*"),
-    Header.Raw(org.typelevel.ci.CIString("Access-Control-Allow-Methods"), "GET,POST,PATCH,DELETE,OPTIONS"),
-    Header.Raw(org.typelevel.ci.CIString("Access-Control-Allow-Headers"), "Content-Type")
-  )
-
-  def withCors(inner: HttpRoutes[IO]): HttpRoutes[IO] =
-    HttpRoutes[IO] { req =>
-      if (req.method == Method.OPTIONS && req.uri.path.toString.startsWith("/api"))
-        OptionT.pure[IO](Response[IO](Status.Ok).withHeaders(corsHeaders))
-      else
-        inner.run(req).map(_.withHeaders(corsHeaders))
-    }
+  /** CORS driven by the configured origin allowlist (issue #52).
+    *
+    * This replaces a hand-rolled `Access-Control-Allow-Origin: *`, which also
+    * answered every preflight itself and rewrote the response's whole header
+    * set. The library middleware gets the parts that are easy to get wrong —
+    * echoing the request origin, `Vary: Origin`, preflight status — right. */
+  def withCors(policy: OriginPolicy)(inner: HttpRoutes[IO]): HttpRoutes[IO] = {
+    val base = CORS.policy
+      .withAllowMethodsIn(Set(Method.GET, Method.POST, Method.PATCH, Method.DELETE, Method.OPTIONS))
+      .withAllowHeadersIn(Set(ci"Content-Type"))
+    val configured =
+      if (policy.allowsAll) base.withAllowOriginAll
+      else base.withAllowOriginHeader(o => policy.permits(Header[Origin].value(o)))
+    configured.httpRoutes[IO](inner)
+  }
 
   /* ---------- Review API wire shapes (issues #40/#41) ---------- */
   case class GameListItem(

@@ -26,6 +26,9 @@ services:
       dockerfile: Dockerfile.server
     environment:
       MAHJONG_DB_URL: jdbc:postgresql://postgres:5432/mahjong
+      # Only this stack's own web app may call the API or open game sockets.
+      # Add more (comma-separated) if you serve the UI from another origin.
+      MAHJONG_ALLOWED_ORIGINS: http://${PUBLIC_HOST:-localhost}:${WEB_PORT:-3000}
     ports:
       - "8080:8080"
     depends_on:

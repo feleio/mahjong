@@ -33,6 +33,7 @@ object Main extends IOApp {
 
     val host  = Host.fromString(tcCfg.getString("server.host")).getOrElse(host"0.0.0.0")
     val port  = Port.fromInt(tcCfg.getInt("server.port")).getOrElse(port"8080")
+    val originPolicy = OriginPolicy.fromConfig(tcCfg.getString("server.allowedOrigins"))
 
     val dbUrl  = tcCfg.getString("db.url")
     val dbUser = tcCfg.getString("db.user")
@@ -78,14 +79,16 @@ object Main extends IOApp {
         .withPort(port)
         .withHttpWebSocketApp { wsb =>
           val combined: org.http4s.HttpRoutes[IO] = org.http4s.HttpRoutes[IO] { req =>
-            Routes.withCors(Routes.routes(rm, review)).run(req)
-              .orElse(WsRoutes.routes(rm, wsb).run(req))
+            Routes.withCors(originPolicy)(Routes.routes(rm, review)).run(req)
+              // the socket route carries its own origin check: CORS does not
+              // apply to websocket upgrades (issue #52)
+              .orElse(WsRoutes.routes(rm, wsb, originPolicy).run(req))
           }
           Router("/" -> combined).orNotFound
         }
         .build
     }.use { _ =>
-      IO(println(s"Mahjong server listening on $host:$port")) *> IO.never
+      IO(println(s"Mahjong server listening on $host:$port (allowed origins: ${originPolicy.describe})")) *> IO.never
     }
   }
 }
