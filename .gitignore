@@ -46,12 +46,16 @@ rl/checkpoints/
 rl/data/
 .gstack/
 
-# Next.js / web
-web/node_modules/
-web/.next/
-web/out/
-web/.env.local
-web/.env*.local
-web/tsconfig.tsbuildinfo
-web/test-results/
-web/playwright-report/
+# Secrets. Kept broad and unanchored: the previous rules were scoped to the
+# retired `web/` stack, so nothing covered the app that replaced it.
+.env
+.env.*
+!.env.example
+
+# Next.js (webgame/frontend)
+webgame/frontend/node_modules/
+webgame/frontend/.next/
+webgame/frontend/out/
+webgame/frontend/tsconfig.tsbuildinfo
+webgame/frontend/test-results/
+webgame/frontend/playwright-report/
