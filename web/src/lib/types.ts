@@ -118,6 +118,9 @@ export interface Prompt {
   coach?: CoachHint | null;
   /** How long you have before the engine plays a default for you (#42). */
   timeoutMs?: number | null;
+  /** Identifies this decision; echoed back so a late or replayed answer is
+   *  never applied to a different one. */
+  promptId?: number;
 }
 
 /** Your prompt expired and the engine moved on your behalf (#42). */
@@ -146,6 +149,7 @@ export interface ClientAction {
   yes?: boolean;
   tile?: string;
   chowPos?: "LEFT" | "MIDDLE" | "RIGHT";
+  promptId?: number;
 }
 
 /* ---------- post-game review (issues #40/#41) ---------- */
@@ -191,7 +195,8 @@ export interface ReviewDecision {
 export interface ReviewSummary {
   decisions: number;
   agreements: number;
-  agreementRate: number;
+  /** null when every turn was auto-played — no decisions to score. */
+  agreementRate: number | null;
   meanGap: number;
   timedOut: number;
 }
@@ -210,7 +215,7 @@ export interface GameReview {
 export interface PlayerGameAgreement {
   gameId: string;
   startedAt: string;
-  agreementRate: number;
+  agreementRate: number | null;
   decisions: number;
   timedOut: number;
 }

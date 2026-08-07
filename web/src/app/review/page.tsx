@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getPlayerStats, getReview, listGames } from "@/lib/api";
 import { loadName, saveName } from "@/lib/storage";
@@ -44,15 +44,22 @@ export default function ReviewPage() {
     }
   }
 
+  // Reviews replay a whole game through the champion, so they can take a
+  // second or two; without sequencing, clicking B while A is in flight can
+  // leave A's review on screen under B's selection.
+  const reviewReq = useRef(0);
+
   async function openReview(g: GameListItem) {
     if (g.mySeat === null) return;
+    const req = ++reviewReq.current;
     setSelected(g.id); setReview(null); setReviewLoading(true); setError(null);
     try {
-      setReview(await getReview(g.id, g.mySeat));
+      const r = await getReview(g.id, g.mySeat);
+      if (req === reviewReq.current) setReview(r);
     } catch (e: any) {
-      setError(String(e.message ?? e));
+      if (req === reviewReq.current) setError(String(e.message ?? e));
     } finally {
-      setReviewLoading(false);
+      if (req === reviewReq.current) setReviewLoading(false);
     }
   }
 
@@ -147,8 +154,11 @@ function StatsHeader({ stats }: { stats: PlayerStats }) {
             <div className="label">agreement trend →</div>
             <div className="agree-spark" title="champion-agreement per game, oldest to newest">
               {series.map((a) => (
-                <span key={a.gameId} className="bar" style={{ height: `${Math.max(5, a.agreementRate * 100)}%` }}
-                  title={`${new Date(a.startedAt).toLocaleDateString()}: ${Math.round(a.agreementRate * 100)}% of ${a.decisions}`} />
+                <span key={a.gameId} className="bar"
+                  style={{ height: `${Math.max(5, (a.agreementRate ?? 0) * 100)}%`, opacity: a.agreementRate === null ? 0.35 : 1 }}
+                  title={a.agreementRate === null
+                    ? `${new Date(a.startedAt).toLocaleDateString()}: no decisions you made`
+                    : `${new Date(a.startedAt).toLocaleDateString()}: ${Math.round(a.agreementRate * 100)}% of ${a.decisions}`} />
               ))}
             </div>
           </div>
@@ -196,23 +206,25 @@ function ReviewDetail({ review }: { review: GameReview }) {
       </div>
       <p className="event" style={{ marginTop: 6 }}>
         You agreed with the champion on <strong>{s.agreements}/{s.decisions}</strong> decisions
-        ({Math.round(s.agreementRate * 100)}%). {disagreements.length > 0
+        {s.agreementRate !== null && <> ({Math.round(s.agreementRate * 100)}%)</>}. {disagreements.length > 0
           ? "Biggest disagreements first — these are the moves to study."
-          : "Perfect agreement — the champion would have played every move the same way."}
+          : s.decisions === 0
+            ? "You did not make any decisions in this game."
+            : "Perfect agreement — the champion would have played every move the same way."}
         {s.timedOut > 0 && (
           <> {s.timedOut} turn{s.timedOut === 1 ? " was" : "s were"} played by the engine after
             your prompt expired; {s.timedOut === 1 ? "it is" : "they are"} left out of this score.</>
         )}
       </p>
 
-      {disagreements.map((d) => <DecisionRow key={d.seq} d={d} />)}
+      {disagreements.map((d) => <DecisionRow key={`${d.seq}-${d.kind}`} d={d} />)}
 
       {agreements.length > 0 && (
         <>
           <button className="ghost" style={{ marginTop: 8 }} onClick={() => setShowAgreements(!showAgreements)}>
             {showAgreements ? "Hide" : "Show"} {agreements.length} agreed decisions
           </button>
-          {showAgreements && agreements.map((d) => <DecisionRow key={d.seq} d={d} />)}
+          {showAgreements && agreements.map((d) => <DecisionRow key={`${d.seq}-${d.kind}`} d={d} />)}
         </>
       )}
 
@@ -221,7 +233,7 @@ function ReviewDetail({ review }: { review: GameReview }) {
           <button className="ghost" style={{ marginTop: 8 }} onClick={() => setShowTimedOut(!showTimedOut)}>
             {showTimedOut ? "Hide" : "Show"} {timedOut.length} auto-played turn{timedOut.length === 1 ? "" : "s"}
           </button>
-          {showTimedOut && timedOut.map((d) => <DecisionRow key={d.seq} d={d} />)}
+          {showTimedOut && timedOut.map((d) => <DecisionRow key={`${d.seq}-${d.kind}`} d={d} />)}
         </>
       )}
     </div>

@@ -65,7 +65,7 @@ class ReviewServiceSpec extends AnyFlatSpec with Matchers {
           r.playerName shouldBe "Reviewed Bot"
           r.summary.decisions should be > 0
           r.summary.decisions shouldBe r.decisions.size
-          r.summary.agreementRate should (be >= 0.0 and be <= 1.0)
+          r.summary.agreementRate.get should (be >= 0.0 and be <= 1.0)
           r.decisions.foreach { d =>
             d.chosenProb should (be >= 0.0 and be <= 1.0)
             d.bestProb should (be >= 0.0 and be <= 1.0)
@@ -113,7 +113,7 @@ class ReviewServiceSpec extends AnyFlatSpec with Matchers {
       // the rate is recomputed over the played decisions only
       val played = after.decisions.filterNot(_.timedOut)
       after.summary.agreements shouldBe played.count(_.agree)
-      after.summary.agreementRate shouldBe (played.count(_.agree).toDouble / played.size) +- 1e-9
+      after.summary.agreementRate.get shouldBe (played.count(_.agree).toDouble / played.size) +- 1e-9
     } finally repo.deleteGame(gameId).unsafeRunSync()
   }
 

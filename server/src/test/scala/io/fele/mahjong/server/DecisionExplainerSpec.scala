@@ -40,6 +40,10 @@ class DecisionExplainerSpec extends AnyFlatSpec with Matchers {
     e.get.text should include("East wind")
     e.get.text should include("1 dot")
     e.get.text should not include "HW_E"
+    // and it must advise DISCARDING the champion's tile, never keeping it:
+    // shAfter(t) is the shanten after discarding t, so "keeping" inverts the advice
+    e.get.text should startWith("Discarding East wind")
+    e.get.text should not include "Keeping"
   }
 
   it should "spell tiles out in plain language" in {

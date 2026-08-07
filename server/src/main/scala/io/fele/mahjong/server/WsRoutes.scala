@@ -63,9 +63,10 @@ object WsRoutes {
                         seatI <- authorisedSeat
                       } {
                         val ca = WebSocketPlayer.ClientAction(
-                          yes     = a.yes,
-                          tile    = a.tile.flatMap(t => Models.tileFromWire(t).toOption),
-                          chowPos = a.chowPos.flatMap(p => scala.util.Try(CP.withName(p.toUpperCase)).toOption)
+                          yes      = a.yes,
+                          tile     = a.tile.flatMap(t => Models.tileFromWire(t).toOption),
+                          chowPos  = a.chowPos.flatMap(p => scala.util.Try(CP.withName(p.toUpperCase)).toOption),
+                          promptId = a.promptId
                         )
                         r.submitAction(seatI, ca)
                       }

@@ -41,7 +41,8 @@ object ReviewService {
   /** Counts cover the decisions the player actually made; `timedOut` turns are
     * reported separately and excluded, because scoring moves nobody chose
     * would make the agreement rate meaningless (issue #42). */
-  case class ReviewSummary(decisions: Int, agreements: Int, agreementRate: Double, meanGap: Double, timedOut: Int)
+  case class ReviewSummary(decisions: Int, agreements: Int, agreementRate: Option[Double],
+                           meanGap: Double, timedOut: Int)
   object ReviewSummary { implicit val enc: Encoder[ReviewSummary] = deriveEncoder }
 
   case class GameReview(
@@ -62,8 +63,10 @@ object ReviewService {
   case class  BadSeat(msg: String) extends ReviewError { val message = msg }
   case class  ChampionDown(msg: String) extends ReviewError { val message = msg }
   case class  ReplayFailed(msg: String) extends ReviewError { val message = msg }
+  /** Something broke on our side (DB, decode, model); the record may be fine. */
+  case class  Internal(msg: String) extends ReviewError { val message = msg }
 
-  case class PlayerGameAgreement(gameId: String, startedAt: Instant, agreementRate: Double,
+  case class PlayerGameAgreement(gameId: String, startedAt: Instant, agreementRate: Option[Double],
                                  decisions: Int, timedOut: Int)
   object PlayerGameAgreement { implicit val enc: Encoder[PlayerGameAgreement] = deriveEncoder }
 
@@ -120,7 +123,10 @@ class ReviewService(repo: GameRecordRepo)(implicit engineConfig: EngineConfig) {
         } yield rev).attempt.map {
           case Right(r)        => Right(r)
           case Left(Bail(err)) => Left(err)
-          case Left(t)         => Left(ReplayFailed(s"${t.getClass.getSimpleName}: ${t.getMessage}"))
+          // only a genuine divergence means the record itself is unusable;
+          // a dropped DB connection must not be reported as permanent
+          case Left(m: GameReplayer.ReplayMismatchException) => Left(ReplayFailed(m.getMessage))
+          case Left(t)         => Left(Internal(s"${t.getClass.getSimpleName}: ${t.getMessage}"))
         }
     }
   }
@@ -179,7 +185,8 @@ class ReviewService(repo: GameRecordRepo)(implicit engineConfig: EngineConfig) {
         val summary = ReviewSummary(
           decisions     = played.size,
           agreements    = agreements,
-          agreementRate = if (played.isEmpty) 1.0 else agreements.toDouble / played.size,
+          // None, not 1.0: a game the player never answered is not perfect agreement
+          agreementRate = if (played.isEmpty) None else Some(agreements.toDouble / played.size),
           meanGap       = if (played.isEmpty) 0.0 else played.map(_.gap).sum / played.size,
           timedOut      = ds.size - played.size
         )
@@ -192,13 +199,19 @@ class ReviewService(repo: GameRecordRepo)(implicit engineConfig: EngineConfig) {
       }
     }
 
-  /** Finished games with a human seat named `player` (newest first). */
+  /** Finished games with a human seat named `player` (newest first).
+    *
+    * The status and player filters run in SQL: filtering the newest N rows of
+    * *all* games in Scala silently truncates a player's history to whatever
+    * share of recent traffic happens to be theirs, and the lifetime figures in
+    * [[playerStats]] would then shrink as other rooms get busier. */
   def gamesFor(player: Option[String], limit: Int): IO[List[(GameRecordRow, Option[Int])]] =
-    repo.listGames(None, math.min(math.max(limit, 1), 500)).map { rows =>
-      rows.filter(_.status == GameRecordStatus.Finished).flatMap { g =>
+    repo.listFinished(player, math.min(math.max(limit, 1), 500)).map { rows =>
+      rows.flatMap { g =>
         player match {
           case None => List((g, None))
           case Some(name) =>
+            // the SQL match is a substring prefilter; the seat check is exact
             g.seats.find(s => s.kind == SeatKind.Human && s.name == name)
               .map(s => (g, Some(s.index))).toList
         }
@@ -225,7 +238,7 @@ class ReviewService(repo: GameRecordRepo)(implicit engineConfig: EngineConfig) {
         val totalDecisions = agr.map(_.decisions).sum
         val pooled =
           if (totalDecisions == 0) None
-          else Some(agr.map(a => a.agreementRate * a.decisions).sum / totalDecisions)
+          else Some(agr.map(a => a.agreementRate.getOrElse(0.0) * a.decisions).sum / totalDecisions)
         PlayerStats(
           name            = name,
           games           = n,

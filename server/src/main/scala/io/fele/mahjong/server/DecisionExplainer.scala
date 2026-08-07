@@ -106,7 +106,8 @@ object DecisionExplainer {
 
         if (theirShanten < myShanten)
           Some(Explanation(Bucket.Shape.key,
-            s"Keeping ${tileName(best)} would have left you ${shantenWord(theirShanten)}; discarding ${tileName(chosen)} leaves you ${shantenWord(myShanten)}."))
+            s"Discarding ${tileName(best)} instead would have left you ${shantenWord(theirShanten)}; " +
+            s"throwing ${tileName(chosen)} leaves you ${shantenWord(myShanten)}."))
         else if (theirShanten == myShanten && theirUkeire > myUkeire * 6 / 5 && theirUkeire - myUkeire >= 2)
           Some(Explanation(Bucket.Tempo.key,
             s"Both keep you ${shantenWord(myShanten)}, but the champion's discard leaves $theirUkeire tiles that improve the hand against your $myUkeire."))

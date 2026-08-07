@@ -205,15 +205,17 @@ object Models {
     chowPositions: Option[List[String]], // for chow ("LEFT","MIDDLE","RIGHT")
     handTiles:   Option[List[String]],   // for discard
     coach:       Option[CoachHint] = None,
-    timeoutMs:   Option[Long] = Some(WebSocketPlayer.DefaultTimeoutMs) // client-side countdown (#42)
+    timeoutMs:   Option[Long] = Some(WebSocketPlayer.DefaultTimeoutMs), // client-side countdown (#42)
+    promptId:    Long = 0L    // echoed back in the action so a late or replayed answer is ignored
   )
   object Prompt { implicit val enc: Encoder[Prompt] = deriveEncoder }
 
   case class Action(
-    kind:    String,                     // mirrors the prompt kind
-    yes:     Option[Boolean],            // for boolean prompts (win/self_win/kong/pong)
-    tile:    Option[String],             // for discard, self_kong
-    chowPos: Option[String]              // "LEFT"/"MIDDLE"/"RIGHT"
+    kind:     String,                    // mirrors the prompt kind
+    yes:      Option[Boolean],           // for boolean prompts (win/self_win/kong/pong)
+    tile:     Option[String],            // for discard, self_kong
+    chowPos:  Option[String],            // "LEFT"/"MIDDLE"/"RIGHT"
+    promptId: Option[Long] = None        // which decision this answers
   )
   object Action { implicit val dec: Decoder[Action] = deriveDecoder }
 

@@ -106,6 +106,7 @@ export default function RoomPage() {
       };
 
       ws.onmessage = (ev) => {
+        if (cancelled) return;   // a replaced socket must not clobber newer state
         try {
           const msg = JSON.parse(ev.data) as WsMessage;
           switch (msg.type) {
@@ -135,6 +136,10 @@ export default function RoomPage() {
             case "end":
               setPrompt(null);
               setPromptAt(null);
+              // tenpai badges and the eval meter describe the hand that just
+              // ended; leaving them up would present stale reads as current
+              setLastHint(null);
+              setAutoPlayed(null);
               break;
             case "ready_update":
               setReadySeats(msg.readySeats);
@@ -174,6 +179,7 @@ export default function RoomPage() {
       const open = ws;
       if (open) {
         open.onclose = null;   // a deliberate teardown must not schedule a retry
+        open.onmessage = null;
         open.close();
       }
       if (wsRef.current === open) wsRef.current = null;
@@ -243,6 +249,7 @@ export default function RoomPage() {
       setPrompt(null);
       setPromptAt(null);
       setAutoPlayed(null);
+      setLastHint(null);
     } catch (e: any) {
       setError(String(e.message ?? e));
     } finally {
@@ -256,7 +263,7 @@ export default function RoomPage() {
       setError("Not connected — your move was not sent. Reconnecting…");
       return;
     }
-    ws.send(JSON.stringify(action));
+    ws.send(JSON.stringify({ ...action, promptId: prompt?.promptId }));
     setPrompt(null);
     setPromptAt(null);
     setAutoPlayed(null);   // they're back at the table

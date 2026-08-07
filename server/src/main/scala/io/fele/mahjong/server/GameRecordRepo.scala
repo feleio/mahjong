@@ -240,6 +240,28 @@ class GameRecordRepo(xa: Transactor[IO]) {
       FROM game_decision_timeouts WHERE game_id = $gameId ORDER BY event_seq
     """.query[DecisionTimeoutRow].to[List].transact(xa)
 
+  /** Finished games, newest first, optionally only those whose seats mention
+    * `player`. The name match is a JSON substring test used to bound the scan;
+    * callers still verify the seat exactly, since a name could appear in
+    * another field. */
+  def listFinished(player: Option[String], limit: Int): IO[List[GameRecordRow]] = {
+    val finished = GameRecordStatus.Finished
+    val base =
+      fr"""SELECT id, room_id, seats_json, seed, wall_json, dealer_seat, status, outcome_json, started_at, finished_at
+           FROM game_records WHERE status = $finished""" ++
+        player.fold(Fragment.empty) { p =>
+          // strpos, not LIKE: the name is arbitrary user input and would
+          // otherwise need wildcard escaping to avoid matching the wrong rows
+          val needle = "\"name\":\"" + p + "\""
+          fr"AND strpos(seats_json, $needle) > 0"
+        } ++
+        fr"ORDER BY started_at DESC LIMIT $limit"
+    base.query[(String, String, String, Option[Long], String, Int, String, Option[String], Instant, Option[Instant])]
+      .to[List]
+      .transact(xa)
+      .map(_.flatMap(rowToGame))
+  }
+
   def eventsFor(gameId: String): IO[List[GameEventRow]] =
     sql"""
       SELECT game_id, seq, event_type, seat, source_seat, tile, chow_position, ts
