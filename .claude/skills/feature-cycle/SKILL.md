@@ -101,6 +101,28 @@ cycle spans hours and context compaction.
 - Finish with a report to the user: features shipped, PR link, issues filed,
   anything needing their decision.
 
+## Phase 7 — Review before merge, then merge
+
+The issues stay open until the work is on master, so the cycle is not done at
+"PR opened". Before merging:
+
+- This repo has **no CI**. Nothing but you checks the diff — run the tests and
+  builds yourself on the merged result, not just on your branch.
+- Run adversarial review over the finished diff (subagents on separate axes:
+  backend correctness, frontend correctness). In practice this finds *more real
+  defects than the feature work does* — inverted user-facing text, races,
+  filters applied in the wrong order, error codes that claim permanence for
+  transient failures. Verify each finding yourself before acting; some are
+  speculative.
+- Widen one test sweep beyond what you think is needed (more seeds, more
+  configurations, every value of a parameter you assumed constant). A 25-seed
+  test passed where a 360-game sweep across all dealer seats immediately
+  exposed a latent assumption.
+- Merge the stack bottom-up, re-running tests on each merged result, then close
+  any issues GitHub did not auto-close (keywords only fire on merge to the
+  default branch, so a stacked PR's `Closes #n` will not trigger).
+- Redeploy master and confirm health.
+
 ## Failure modes to avoid
 
 - Designing features already refuted by closed issues (check first).
@@ -108,3 +130,6 @@ cycle spans hours and context compaction.
 - Testing only with curl when the deliverable is UI behavior.
 - Losing findings from testing because they weren't filed as issues on the
   spot.
+- Treating "PR opened" as done — the goal is the work on master with issues
+  closed.
+- Merging a large diff on your own reading alone when the repo has no CI.
