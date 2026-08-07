@@ -195,6 +195,9 @@ object Models {
     balances:      List[Int],                  // cumulative money per seat in this room
     gamesPlayed:   Int,
     winners:       List[WinnerView],
+    winningTile:   Option[String],             // what the win was on
+    loserSeat:     Option[Int],                // who fed it (None on a self-draw)
+    balanceDelta:  List[Int],                  // money this game moved, per seat
     isFinished:    Boolean,
     selfWin:       Boolean
   )

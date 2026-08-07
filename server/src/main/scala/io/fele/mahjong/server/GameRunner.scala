@@ -206,6 +206,11 @@ class GameHooks(
         balances       = balances,
         gamesPlayed    = gamesPlayed,
         winners        = state.winnersInfo.toList.flatMap(_.winners.toList.map(w => WinnerView(w.id, w.score))),
+        winningTile    = state.winnersInfo.map(w => Models.tileToWire(w.winningTile)),
+        loserSeat      = state.winnersInfo.flatMap(_.loserId),
+        balanceDelta   = state.winnersInfo
+                           .map(_.winnersBalance.sortBy(_.id).map(_.amount))
+                           .getOrElse(List(0, 0, 0, 0)),
         isFinished     = state.winnersInfo.isDefined,
         selfWin        = state.winnersInfo.exists(_.isSelfWin)
       )
