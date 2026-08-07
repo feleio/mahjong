@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { ClientAction, CoachHint, GameSnapshot, PlayerView, Prompt, Room } from "@/lib/types";
 import Tile from "./Tile";
+import TurnTimer from "./TurnTimer";
 
 interface Props {
   snap:      GameSnapshot;
@@ -13,9 +14,10 @@ interface Props {
   coachOn?:  boolean;
   onToggleCoach?: () => void;
   lastHint?: CoachHint | null;   // most recent hint, survives between prompts
+  promptAt?: number | null;      // when your current prompt arrived (#42)
 }
 
-export default function GameTable({ snap, room, yourSeat, prompt, onAct, coachOn, onToggleCoach, lastHint }: Props) {
+export default function GameTable({ snap, room, yourSeat, prompt, onAct, coachOn, onToggleCoach, lastHint, promptAt }: Props) {
   const me = yourSeat !== null ? snap.players.find((p) => p.seat === yourSeat) : null;
   const [picked, setPicked] = useState<string | null>(null);
   const isDiscardTurn = prompt?.kind === "discard";
@@ -79,7 +81,12 @@ export default function GameTable({ snap, room, yourSeat, prompt, onAct, coachOn
         <div className="card" style={{ marginTop: 16 }}>
           <div className="row" style={{ justifyContent: "space-between" }}>
             <div className="label">Your hand</div>
-            {isDiscardTurn && <span className="event">Your turn — pick a tile to discard</span>}
+            {isDiscardTurn && (
+              <span className="event">
+                Your turn — pick a tile to discard
+                <TurnTimer startedAt={promptAt ?? null} timeoutMs={prompt?.timeoutMs} />
+              </span>
+            )}
           </div>
           {discardHint && (
             <div className="event coach-legend">

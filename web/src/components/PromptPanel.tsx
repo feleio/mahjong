@@ -2,11 +2,13 @@
 
 import { ClientAction, CoachHint, Prompt } from "@/lib/types";
 import Tile from "./Tile";
+import TurnTimer from "./TurnTimer";
 
 interface Props {
   prompt:   Prompt;
   onAct:    (a: ClientAction) => void;
   coachOn?: boolean;
+  promptAt?: number | null;
 }
 
 /** Champion probability badge for one action key (issue #37). */
@@ -20,13 +22,14 @@ function Pct({ hint, k }: { hint?: CoachHint | null; k: string }) {
   );
 }
 
-export default function PromptPanel({ prompt, onAct, coachOn }: Props) {
+export default function PromptPanel({ prompt, onAct, coachOn, promptAt }: Props) {
   const hint = coachOn ? prompt.coach : null;
+  const timer = <TurnTimer startedAt={promptAt ?? null} timeoutMs={prompt.timeoutMs} />;
   switch (prompt.kind) {
     case "self_win":
       return (
         <div className="prompt">
-          <strong>Self-draw win</strong> {prompt.tile && <>with <Tile tile={prompt.tile} small /></>} for score {prompt.score}. Take it?
+          <strong>Self-draw win</strong> {prompt.tile && <>with <Tile tile={prompt.tile} small /></>} for score {prompt.score}. Take it? {timer}
           <div className="row" style={{ marginTop: 8 }}>
             <button onClick={() => onAct({ kind: "self_win", yes: true })}>Yes, win<Pct hint={hint} k="accept" /></button>
             <button className="ghost" onClick={() => onAct({ kind: "self_win", yes: false })}>Pass<Pct hint={hint} k="pass" /></button>
@@ -36,7 +39,7 @@ export default function PromptPanel({ prompt, onAct, coachOn }: Props) {
     case "win":
       return (
         <div className="prompt">
-          <strong>Win</strong> on opponent's discard {prompt.tile && <Tile tile={prompt.tile} small />} for score {prompt.score}.
+          <strong>Win</strong> on opponent's discard {prompt.tile && <Tile tile={prompt.tile} small />} for score {prompt.score}. {timer}
           <div className="row" style={{ marginTop: 8 }}>
             <button onClick={() => onAct({ kind: "win", yes: true })}>Yes, win<Pct hint={hint} k="accept" /></button>
             <button className="ghost" onClick={() => onAct({ kind: "win", yes: false })}>Pass<Pct hint={hint} k="pass" /></button>
@@ -46,7 +49,7 @@ export default function PromptPanel({ prompt, onAct, coachOn }: Props) {
     case "kong":
       return (
         <div className="prompt">
-          <strong>Kong</strong> on {prompt.tile && <Tile tile={prompt.tile} small />}?
+          <strong>Kong</strong> on {prompt.tile && <Tile tile={prompt.tile} small />}? {timer}
           <div className="row" style={{ marginTop: 8 }}>
             <button onClick={() => onAct({ kind: "kong", yes: true })}>Kong<Pct hint={hint} k="accept" /></button>
             <button className="ghost" onClick={() => onAct({ kind: "kong", yes: false })}>Pass<Pct hint={hint} k="pass" /></button>
@@ -56,7 +59,7 @@ export default function PromptPanel({ prompt, onAct, coachOn }: Props) {
     case "pong":
       return (
         <div className="prompt">
-          <strong>Pong</strong> on {prompt.tile && <Tile tile={prompt.tile} small />}?
+          <strong>Pong</strong> on {prompt.tile && <Tile tile={prompt.tile} small />}? {timer}
           <div className="row" style={{ marginTop: 8 }}>
             <button onClick={() => onAct({ kind: "pong", yes: true })}>Pong<Pct hint={hint} k="accept" /></button>
             <button className="ghost" onClick={() => onAct({ kind: "pong", yes: false })}>Pass<Pct hint={hint} k="pass" /></button>
@@ -67,7 +70,7 @@ export default function PromptPanel({ prompt, onAct, coachOn }: Props) {
       const opts = prompt.selfKongTiles ?? [];
       return (
         <div className="prompt">
-          <strong>Self-kong</strong>: pick a tile to kong, or pass.
+          <strong>Self-kong</strong>: pick a tile to kong, or pass. {timer}
           <div className="row" style={{ marginTop: 8 }}>
             {opts.map((t) => (
               <button key={t} onClick={() => onAct({ kind: "self_kong", tile: t })}>
@@ -83,7 +86,7 @@ export default function PromptPanel({ prompt, onAct, coachOn }: Props) {
       const positions = (prompt.chowPositions ?? []) as Array<"LEFT" | "MIDDLE" | "RIGHT">;
       return (
         <div className="prompt">
-          <strong>Chow</strong> on {prompt.tile && <Tile tile={prompt.tile} small />}?
+          <strong>Chow</strong> on {prompt.tile && <Tile tile={prompt.tile} small />}? {timer}
           <div className="row" style={{ marginTop: 8 }}>
             {positions.map((p) => (
               <button key={p} onClick={() => onAct({ kind: "chow", chowPos: p })}>

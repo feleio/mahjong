@@ -15,8 +15,11 @@ class GameReplayerSpec extends AnyFlatSpec with Matchers {
 
   implicit val engineConfig: EngineConfig = new EngineConfig()
 
+  /** Seat that takes the first turn; the server records this per game. */
+  private val dealer = 0
+
   /** Mirrors GameRecorder.logger's event mapping, minus the DB. */
-  private def recordBotGame(seed: Long): (List[String], List[GameEventRow], GameOutcome) = {
+  private def recordBotGame(seed: Long, dealerSeat: Int = 0): (List[String], List[GameEventRow], GameOutcome) = {
     val drawer = new RandomTileDrawer(Some(seed))
     val wall   = drawer.drawerState.shuffledTiles.map(Models.tileToWire).toList
     val players: List[Player] = List(
@@ -25,7 +28,7 @@ class GameReplayerSpec extends AnyFlatSpec with Matchers {
       new FirstFelix(2, drawer.popHand(), 5),
       new Chicken(3, drawer.popHand())
     )
-    val state  = GameState(players, None, Nil, 0, drawer)
+    val state  = GameState(players, None, Nil, dealerSeat, drawer)
     val events = ListBuffer.empty[GameEventRow]
     def ev(t: String, seat: Option[Int] = None, src: Option[Int] = None,
            tile: Option[Tile] = None, cp: Option[String] = None): Unit = {
@@ -51,7 +54,7 @@ class GameReplayerSpec extends AnyFlatSpec with Matchers {
       val (wall, events, outcome) = recordBotGame(seed)
       withClue(s"seed $seed: ") {
         noException should be thrownBy
-          GameReplayer.replay(wall, events, outcome, None, GameReplayer.NoopObserver)
+          GameReplayer.replay(wall, events, outcome, dealer, None, GameReplayer.NoopObserver)
       }
     }
   }
@@ -72,8 +75,27 @@ class GameReplayerSpec extends AnyFlatSpec with Matchers {
             }
           }
         }
-        GameReplayer.replay(wall, events, outcome, Some(seat), observer)
+        GameReplayer.replay(wall, events, outcome, dealer, Some(seat), observer)
         withClue(s"seed $seed seat $seat: ") { discards should be > 0 }
+      }
+    }
+  }
+
+  it should "replay games that start from any dealer seat" in {
+    // The starting seat is recorded rather than assumed: if it were assumed to
+    // be 0, every game dealt from another seat would fail to replay.
+    (1 to 3).foreach { dealerSeat =>
+      (1L to 8L).foreach { seed =>
+        val (wall, events, outcome) = recordBotGame(seed, dealerSeat)
+        withClue(s"dealer $dealerSeat seed $seed: ") {
+          noException should be thrownBy
+            GameReplayer.replay(wall, events, outcome, dealerSeat, None, GameReplayer.NoopObserver)
+        }
+        // ...and the wrong dealer must be caught, not silently mis-analysed
+        withClue(s"dealer $dealerSeat seed $seed (wrong dealer): ") {
+          a[GameReplayer.ReplayMismatchException] should be thrownBy
+            GameReplayer.replay(wall, events, outcome, (dealerSeat + 1) % 4, None, GameReplayer.NoopObserver)
+        }
       }
     }
   }
@@ -87,12 +109,12 @@ class GameReplayerSpec extends AnyFlatSpec with Matchers {
     val swapped   = if (original == "HW_E") "HW_S" else "HW_E"
     val tampered  = events.updated(firstDraw, events(firstDraw).copy(tile = Some(swapped)))
     a[GameReplayer.ReplayMismatchException] should be thrownBy
-      GameReplayer.replay(wall, tampered, outcome, None, GameReplayer.NoopObserver)
+      GameReplayer.replay(wall, tampered, outcome, dealer, None, GameReplayer.NoopObserver)
   }
 
   it should "refuse a truncated stream" in {
     val (wall, events, outcome) = recordBotGame(4L)
     a[GameReplayer.ReplayMismatchException] should be thrownBy
-      GameReplayer.replay(wall, events.dropRight(1), outcome, None, GameReplayer.NoopObserver)
+      GameReplayer.replay(wall, events.dropRight(1), outcome, dealer, None, GameReplayer.NoopObserver)
   }
 }

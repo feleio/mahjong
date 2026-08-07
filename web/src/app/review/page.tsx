@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getPlayerStats, getReview, listGames } from "@/lib/api";
 import { loadName, saveName } from "@/lib/storage";
@@ -44,15 +44,22 @@ export default function ReviewPage() {
     }
   }
 
+  // Reviews replay a whole game through the champion, so they can take a
+  // second or two; without sequencing, clicking B while A is in flight can
+  // leave A's review on screen under B's selection.
+  const reviewReq = useRef(0);
+
   async function openReview(g: GameListItem) {
     if (g.mySeat === null) return;
+    const req = ++reviewReq.current;
     setSelected(g.id); setReview(null); setReviewLoading(true); setError(null);
     try {
-      setReview(await getReview(g.id, g.mySeat));
+      const r = await getReview(g.id, g.mySeat);
+      if (req === reviewReq.current) setReview(r);
     } catch (e: any) {
-      setError(String(e.message ?? e));
+      if (req === reviewReq.current) setError(String(e.message ?? e));
     } finally {
-      setReviewLoading(false);
+      if (req === reviewReq.current) setReviewLoading(false);
     }
   }
 
@@ -135,7 +142,10 @@ function StatsHeader({ stats }: { stats: PlayerStats }) {
         </div>
         <div className="stat-tile"><div className="label">champion agreement</div>
           <div className="big">{stats.agreementRate !== null ? pct(stats.agreementRate) : "—"}</div>
-          <div className="event">last {stats.reviewedGames} games</div>
+          <div className="event">
+            last {stats.reviewedGames} games
+            {stats.timedOutTurns > 0 && <> · {stats.timedOutTurns} auto-played turn{stats.timedOutTurns === 1 ? "" : "s"} excluded</>}
+          </div>
         </div>
         <div className="stat-tile"><div className="label">win rate</div><div className="big">{pct(stats.winRate)}</div></div>
         <div className="stat-tile"><div className="label">deal-in rate</div><div className="big">{pct(stats.dealInRate)}</div></div>
@@ -144,8 +154,11 @@ function StatsHeader({ stats }: { stats: PlayerStats }) {
             <div className="label">agreement trend →</div>
             <div className="agree-spark" title="champion-agreement per game, oldest to newest">
               {series.map((a) => (
-                <span key={a.gameId} className="bar" style={{ height: `${Math.max(5, a.agreementRate * 100)}%` }}
-                  title={`${new Date(a.startedAt).toLocaleDateString()}: ${Math.round(a.agreementRate * 100)}% of ${a.decisions}`} />
+                <span key={a.gameId} className="bar"
+                  style={{ height: `${Math.max(5, (a.agreementRate ?? 0) * 100)}%`, opacity: a.agreementRate === null ? 0.35 : 1 }}
+                  title={a.agreementRate === null
+                    ? `${new Date(a.startedAt).toLocaleDateString()}: no decisions you made`
+                    : `${new Date(a.startedAt).toLocaleDateString()}: ${Math.round(a.agreementRate * 100)}% of ${a.decisions}`} />
               ))}
             </div>
           </div>
@@ -179,9 +192,12 @@ function GameItem({ g, selected, onClick }: { g: GameListItem; selected: boolean
 
 function ReviewDetail({ review }: { review: GameReview }) {
   const s = review.summary;
-  const disagreements = review.decisions.filter((d) => !d.agree);
-  const agreements = review.decisions.filter((d) => d.agree);
+  const played = review.decisions.filter((d) => !d.timedOut);
+  const disagreements = played.filter((d) => !d.agree);
+  const agreements = played.filter((d) => d.agree);
+  const timedOut = review.decisions.filter((d) => d.timedOut);
   const [showAgreements, setShowAgreements] = useState(false);
+  const [showTimedOut, setShowTimedOut] = useState(false);
   return (
     <div className="card">
       <div className="row" style={{ justifyContent: "space-between" }}>
@@ -190,19 +206,34 @@ function ReviewDetail({ review }: { review: GameReview }) {
       </div>
       <p className="event" style={{ marginTop: 6 }}>
         You agreed with the champion on <strong>{s.agreements}/{s.decisions}</strong> decisions
-        ({Math.round(s.agreementRate * 100)}%). {disagreements.length > 0
+        {s.agreementRate !== null && <> ({Math.round(s.agreementRate * 100)}%)</>}. {disagreements.length > 0
           ? "Biggest disagreements first — these are the moves to study."
-          : "Perfect agreement — the champion would have played every move the same way."}
+          : s.decisions === 0
+            ? "You did not make any decisions in this game."
+            : "Perfect agreement — the champion would have played every move the same way."}
+        {s.timedOut > 0 && (
+          <> {s.timedOut} turn{s.timedOut === 1 ? " was" : "s were"} played by the engine after
+            your prompt expired; {s.timedOut === 1 ? "it is" : "they are"} left out of this score.</>
+        )}
       </p>
 
-      {disagreements.map((d) => <DecisionRow key={d.seq} d={d} />)}
+      {disagreements.map((d) => <DecisionRow key={`${d.seq}-${d.kind}`} d={d} />)}
 
       {agreements.length > 0 && (
         <>
           <button className="ghost" style={{ marginTop: 8 }} onClick={() => setShowAgreements(!showAgreements)}>
             {showAgreements ? "Hide" : "Show"} {agreements.length} agreed decisions
           </button>
-          {showAgreements && agreements.map((d) => <DecisionRow key={d.seq} d={d} />)}
+          {showAgreements && agreements.map((d) => <DecisionRow key={`${d.seq}-${d.kind}`} d={d} />)}
+        </>
+      )}
+
+      {timedOut.length > 0 && (
+        <>
+          <button className="ghost" style={{ marginTop: 8 }} onClick={() => setShowTimedOut(!showTimedOut)}>
+            {showTimedOut ? "Hide" : "Show"} {timedOut.length} auto-played turn{timedOut.length === 1 ? "" : "s"}
+          </button>
+          {showTimedOut && timedOut.map((d) => <DecisionRow key={`${d.seq}-${d.kind}`} d={d} />)}
         </>
       )}
     </div>
@@ -221,11 +252,22 @@ function actionLabel(kind: string, key: string): JSX.Element {
   return <em>{key}</em>; // chow position
 }
 
+const BUCKET_LABEL: Record<string, string> = {
+  shape: "shape", tempo: "tempo", safety: "safety", accept: "claim", other: "close call",
+};
+
 function DecisionRow({ d }: { d: ReviewDecision }) {
+  const cls = d.timedOut ? "timedout" : d.agree ? "" : "disagree";
   return (
-    <div className={`decision ${d.agree ? "" : "disagree"}`} style={{ marginTop: 8 }}>
+    <div className={`decision ${cls}`} style={{ marginTop: 8 }}>
       <div className="row" style={{ justifyContent: "space-between" }}>
-        <strong>{KIND_LABEL[d.kind] ?? d.kind}{d.contextTile && <> on <Tile tile={d.contextTile} small /></>}</strong>
+        <strong>
+          {KIND_LABEL[d.kind] ?? d.kind}{d.contextTile && <> on <Tile tile={d.contextTile} small /></>}
+          {d.timedOut && <span className="autoplay-tag">auto-played</span>}
+          {!d.timedOut && d.bucket && !d.agree && (
+            <span className="bucket-tag">{BUCKET_LABEL[d.bucket] ?? d.bucket}</span>
+          )}
+        </strong>
         <span className="event">champion eval {d.value >= 0 ? "+" : ""}{d.value.toFixed(1)}</span>
       </div>
       <div className="row tight" style={{ marginTop: 6 }}>
@@ -233,12 +275,16 @@ function DecisionRow({ d }: { d: ReviewDecision }) {
         {d.hand.map((t, i) => <Tile key={i} tile={t} small />)}
       </div>
       <div className="row" style={{ marginTop: 6, gap: 16 }}>
-        <span>you: {actionLabel(d.kind, d.chosen)} <span className="event">({Math.round(d.chosenProb * 100)}%)</span></span>
+        <span>
+          {d.timedOut ? "engine played" : "you"}: {actionLabel(d.kind, d.chosen)}{" "}
+          <span className="event">({Math.round(d.chosenProb * 100)}%)</span>
+        </span>
         {!d.agree && (
           <span>champion: {actionLabel(d.kind, d.best)} <span className="event">({Math.round(d.bestProb * 100)}%)</span></span>
         )}
-        {d.agree && <span className="event">champion agrees</span>}
+        {d.agree && !d.timedOut && <span className="event">champion agrees</span>}
       </div>
+      {d.why && !d.timedOut && <div className="why">{d.why}</div>}
     </div>
   );
 }

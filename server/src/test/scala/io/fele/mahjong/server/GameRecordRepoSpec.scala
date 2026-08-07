@@ -58,13 +58,14 @@ class GameRecordRepoSpec extends AnyFlatSpec with Matchers {
     assume(available, "Postgres not reachable")
     repo.init.unsafeRunSync()
     withGame { id =>
-      repo.insertGame(id, "room-1", sampleSeats, Some(42L), wall, Instant.now()).unsafeRunSync()
+      repo.insertGame(id, "room-1", sampleSeats, Some(42L), wall, 2, Instant.now()).unsafeRunSync()
       val got = repo.getGame(id).unsafeRunSync().get
       got.roomId shouldBe "room-1"
       got.seats shouldBe sampleSeats
       got.seed shouldBe Some(42L)
       got.wall should have size 136
       got.wall shouldBe wall
+      got.dealerSeat shouldBe 2   // replay needs the starting seat, so it round-trips
       got.status shouldBe GameRecordStatus.InProgress
       got.outcome shouldBe None
       got.finishedAt shouldBe None
@@ -75,7 +76,7 @@ class GameRecordRepoSpec extends AnyFlatSpec with Matchers {
     assume(available, "Postgres not reachable")
     repo.init.unsafeRunSync()
     withGame { id =>
-      repo.insertGame(id, "room-2", sampleSeats, None, wall, Instant.now()).unsafeRunSync()
+      repo.insertGame(id, "room-2", sampleSeats, None, wall, 0, Instant.now()).unsafeRunSync()
       val now = Instant.now()
       val rows = List(
         GameEventRow(id, 0, "start",   None,    None,    None,       None,         now),
@@ -99,7 +100,7 @@ class GameRecordRepoSpec extends AnyFlatSpec with Matchers {
     assume(available, "Postgres not reachable")
     repo.init.unsafeRunSync()
     withGame { id =>
-      repo.insertGame(id, "room-3", sampleSeats, None, wall, Instant.now()).unsafeRunSync()
+      repo.insertGame(id, "room-3", sampleSeats, None, wall, 0, Instant.now()).unsafeRunSync()
       val outcome = GameOutcome(drawn = false, isSelfWin = false, Some("B5"), Some(2), List(OutcomeWinner(0, 4)))
       repo.finishGame(id, outcome, Instant.now()).unsafeRunSync()
       val got = repo.getGame(id).unsafeRunSync().get
@@ -113,13 +114,13 @@ class GameRecordRepoSpec extends AnyFlatSpec with Matchers {
     assume(available, "Postgres not reachable")
     repo.init.unsafeRunSync()
     withGame { id =>
-      repo.insertGame(id, "room-4", sampleSeats, None, wall, Instant.now()).unsafeRunSync()
+      repo.insertGame(id, "room-4", sampleSeats, None, wall, 0, Instant.now()).unsafeRunSync()
       repo.abortGame(id, Instant.now()).unsafeRunSync()
       repo.getGame(id).unsafeRunSync().get.status shouldBe GameRecordStatus.Aborted
 
       // a finished game must not be re-marked
       withGame { id2 =>
-        repo.insertGame(id2, "room-4", sampleSeats, None, wall, Instant.now()).unsafeRunSync()
+        repo.insertGame(id2, "room-4", sampleSeats, None, wall, 0, Instant.now()).unsafeRunSync()
         repo.finishGame(id2, GameOutcome(drawn = true, isSelfWin = false, None, None, Nil), Instant.now()).unsafeRunSync()
         repo.abortGame(id2, Instant.now()).unsafeRunSync()
         repo.getGame(id2).unsafeRunSync().get.status shouldBe GameRecordStatus.Finished
@@ -131,7 +132,7 @@ class GameRecordRepoSpec extends AnyFlatSpec with Matchers {
     assume(available, "Postgres not reachable")
     repo.init.unsafeRunSync()
     val id = UUID.randomUUID().toString
-    repo.insertGame(id, "room-5", sampleSeats, None, wall, Instant.now()).unsafeRunSync()
+    repo.insertGame(id, "room-5", sampleSeats, None, wall, 0, Instant.now()).unsafeRunSync()
     repo.insertEvent(GameEventRow(id, 0, "start", None, None, None, None, Instant.now())).unsafeRunSync()
     repo.deleteGame(id).unsafeRunSync()
     repo.getGame(id).unsafeRunSync() shouldBe None

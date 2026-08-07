@@ -40,7 +40,11 @@ class GameRunner private (
 
   /** Submit a websocket-borne action for a seat. Returns false if the seat is not human. */
   def submitAction(seat: Int, action: WebSocketPlayer.ClientAction): Boolean =
-    webPlayers.get(seat).fold(false) { p => p.submit(action); true }
+    webPlayers.get(seat).fold(false) { p =>
+      p.submit(action, action.promptId)
+      hooks.clearPrompt(seat)
+      true
+    }
 
   def isFinished: Boolean = hooks.finished
 
@@ -108,8 +112,20 @@ class GameHooks(
   @volatile private var _lastPrompts: Map[Int, Json] = Map.empty
   @volatile private var _finished:    Boolean = false
 
+  /** Set by [[GameRunner.create]] once the recorder exists, so an expired
+    * prompt can be persisted as a non-decision (issue #42). */
+  @volatile private var _onTimeout: (Int, String) => Unit = (_, _) => ()
+  def onTimeout: (Int, String) => Unit = _onTimeout
+  def onTimeout_=(f: (Int, String) => Unit): Unit = _onTimeout = f
+
   def snapshot:           Option[Json] = _snapshot
   def promptFor(seat: Option[Int]): Option[Json] = seat.flatMap(_lastPrompts.get)
+
+  /** Forget a seat's pending prompt once it has been answered. The cached
+    * prompt is replayed to every new subscriber, so keeping an answered one
+    * would re-ask a decision the player has already made — and their reply to
+    * it would then be applied to whatever they are asked next. */
+  def clearPrompt(seat: Int): Unit = _lastPrompts = _lastPrompts - seat
   def finished:           Boolean      = _finished
   def markFinished():     Unit         = { _finished = true; dispatcher.unsafeRunAndForget(onFinished) }
 
@@ -175,34 +191,47 @@ class GameHooks(
       _lastPrompts = _lastPrompts.updated(seat, j)
       publish(j)
     }
-    override def selfWin(seat: Int, t: Tile, score: Int, st: CurState): Unit =
+    override def selfWin(seat: Int, t: Tile, score: Int, st: CurState, promptId: Long): Unit =
       emit(seat, Prompt("self_win", seat, Some(Models.tileToWire(t)), Some(score), None, None, None,
-        CoachService.hint(seat, st, Some(t.toTileValue), _.selfWin, CoachService.binaryKeys)))
-    override def win(seat: Int, t: Tile, score: Int, st: CurState): Unit =
+        CoachService.hint(seat, st, Some(t.toTileValue), _.selfWin, CoachService.binaryKeys), promptId = promptId))
+    override def win(seat: Int, t: Tile, score: Int, st: CurState, promptId: Long): Unit =
       emit(seat, Prompt("win", seat, Some(Models.tileToWire(t)), Some(score), None, None, None,
-        CoachService.hint(seat, st, Some(t.toTileValue), _.win, CoachService.binaryKeys)))
-    override def selfKong(seat: Int, ts: Set[Tile], st: CurState): Unit = {
+        CoachService.hint(seat, st, Some(t.toTileValue), _.win, CoachService.binaryKeys), promptId = promptId))
+    override def selfKong(seat: Int, ts: Set[Tile], st: CurState, promptId: Long): Unit = {
       // self_kong head: logit 0 = pass, logit t+1 = kong tile t
       val keys = ("pass" -> 0) :: ts.toList.map(_.toTileValue).sorted.map(v => CoachService.tileWire(v) -> (v + 1))
       emit(seat, Prompt("self_kong", seat, None, None, Some(ts.toList.map(Models.tileToWire)), None, None,
-        CoachService.hint(seat, st, None, _.selfKong, keys)))
+        CoachService.hint(seat, st, None, _.selfKong, keys), promptId = promptId))
     }
-    override def kong(seat: Int, t: Tile, st: CurState): Unit =
+    override def kong(seat: Int, t: Tile, st: CurState, promptId: Long): Unit =
       emit(seat, Prompt("kong", seat, Some(Models.tileToWire(t)), None, None, None, None,
-        CoachService.hint(seat, st, Some(t.toTileValue), _.kong, CoachService.binaryKeys)))
-    override def pong(seat: Int, t: Tile, st: CurState): Unit =
+        CoachService.hint(seat, st, Some(t.toTileValue), _.kong, CoachService.binaryKeys), promptId = promptId))
+    override def pong(seat: Int, t: Tile, st: CurState, promptId: Long): Unit =
       emit(seat, Prompt("pong", seat, Some(Models.tileToWire(t)), None, None, None, None,
-        CoachService.hint(seat, st, Some(t.toTileValue), _.pong, CoachService.binaryKeys)))
-    override def chow(seat: Int, t: Tile, ps: Set[ChowPosition], st: CurState): Unit = {
+        CoachService.hint(seat, st, Some(t.toTileValue), _.pong, CoachService.binaryKeys), promptId = promptId))
+    override def chow(seat: Int, t: Tile, ps: Set[ChowPosition], st: CurState, promptId: Long): Unit = {
       // chow head: logit 0 = pass, logits 1..3 = LEFT/MIDDLE/RIGHT (id + 1)
       val keys = ("pass" -> 0) :: ps.toList.sortBy(_.id).map(p => p.toString -> (p.id + 1))
       emit(seat, Prompt("chow", seat, Some(Models.tileToWire(t)), None, None, Some(ps.toList.map(_.toString)), None,
-        CoachService.hint(seat, st, Some(t.toTileValue), _.chow, keys)))
+        CoachService.hint(seat, st, Some(t.toTileValue), _.chow, keys), promptId = promptId))
     }
-    override def discard(seat: Int, st: CurState): Unit = {
+    override def discard(seat: Int, st: CurState, promptId: Long): Unit = {
       val keys = st.myInfo.tiles.map(_.toTileValue).distinct.sorted.map(v => CoachService.tileWire(v) -> v)
       emit(seat, Prompt("discard", seat, None, None, None, None, Some(st.myInfo.tiles.map(Models.tileToWire)),
-        CoachService.hint(seat, st, None, _.discard, keys)))
+        CoachService.hint(seat, st, None, _.discard, keys), promptId = promptId))
+    }
+
+    /** Persist the expired prompt as a non-decision and tell the client the
+      * engine is about to move for them, so the turn does not silently look
+      * like a choice they made (issue #42). */
+    override def timedOut(seat: Int, kind: String): Unit = {
+      _onTimeout(seat, kind)
+      _lastPrompts = _lastPrompts - seat
+      publish(Json.obj(
+        "type" -> Json.fromString("timeout"),
+        "seat" -> Json.fromInt(seat),
+        "kind" -> Json.fromString(kind)
+      ))
     }
   }
 }
@@ -245,15 +274,21 @@ object GameRunner {
       }
     }
 
+    // Whoever starts is part of what makes a game replayable, so it is recorded
+    // rather than assumed. Today it is always seat 0; a future dealer rotation
+    // only has to change this value and old records stay valid.
+    val dealerSeat = 0
+
     val state = GameState(
       players        = players,
       winnersInfo    = None,
       discards       = Nil,
-      curPlayerId    = 0,
+      curPlayerId    = dealerSeat,
       drawer         = drawer
     )
 
-    val recorder = recordRepo.map(r => new GameRecorder(r, dispatcher, roomId, seats, seed, wall))
+    val recorder = recordRepo.map(r => new GameRecorder(r, dispatcher, roomId, seats, seed, wall, dealerSeat))
+    recorder.foreach(r => hooks.onTimeout = (seat, kind) => r.decisionTimedOut(seat, kind))
 
     new GameRunner(roomId, seats, players, state, webPlayers.toMap, hooks, recorder)
   }

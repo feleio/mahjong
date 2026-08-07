@@ -99,6 +99,7 @@ object Routes {
             case Left(e: ReviewService.BadSeat)          => BadRequest(ErrResp(e.message).asJson)
             case Left(e: ReviewService.ChampionDown)     => ServiceUnavailable(ErrResp(e.message).asJson)
             case Left(e: ReviewService.ReplayFailed)     => Gone(ErrResp(s"cannot replay this record: ${e.message}").asJson)
+            case Left(e: ReviewService.Internal)         => InternalServerError(ErrResp(e.message).asJson)
           }
       }
 

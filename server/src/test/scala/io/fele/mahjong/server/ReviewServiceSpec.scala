@@ -65,7 +65,7 @@ class ReviewServiceSpec extends AnyFlatSpec with Matchers {
           r.playerName shouldBe "Reviewed Bot"
           r.summary.decisions should be > 0
           r.summary.decisions shouldBe r.decisions.size
-          r.summary.agreementRate should (be >= 0.0 and be <= 1.0)
+          r.summary.agreementRate.get should (be >= 0.0 and be <= 1.0)
           r.decisions.foreach { d =>
             d.chosenProb should (be >= 0.0 and be <= 1.0)
             d.bestProb should (be >= 0.0 and be <= 1.0)
@@ -79,6 +79,59 @@ class ReviewServiceSpec extends AnyFlatSpec with Matchers {
 
           // second call must hit the cache and agree with itself
           svc.review(gameId, 0).unsafeRunSync() shouldBe Right(r)
+      }
+    } finally repo.deleteGame(gameId).unsafeRunSync()
+  }
+
+  it should "keep timed-out turns out of the agreement metric (#42)" in {
+    assume(available, "Postgres not reachable")
+    assume(ChampionService.unavailableReason.isEmpty, "champion model unavailable")
+    repo.init.unsafeRunSync()
+
+    val runner = runBotGame(20260807L)
+    val gameId = runner.recorder.get.gameId
+    try {
+      val svc  = new ReviewService(repo)
+      val full = svc.review(gameId, 0).unsafeRunSync().toOption.get
+      full.summary.timedOut shouldBe 0   // bots never time out
+
+      // Mark two of seat 0's real decisions as expired prompts, exactly as
+      // GameRecorder would, and re-review with a cold cache.
+      val marked = full.decisions.sortBy(_.seq).take(2)
+      marked.foreach { d =>
+        repo.insertTimeout(DecisionTimeoutRow(gameId, d.seq, 0, d.kind, java.time.Instant.now()))
+          .unsafeRunSync()
+      }
+      val after = new ReviewService(repo).review(gameId, 0).unsafeRunSync().toOption.get
+
+      after.summary.timedOut shouldBe 2
+      after.summary.decisions shouldBe full.summary.decisions - 2
+      after.decisions.size shouldBe full.decisions.size          // still shown, just not scored
+      after.decisions.count(_.timedOut) shouldBe 2
+      after.decisions.takeRight(2).forall(_.timedOut) shouldBe true  // sorted to the bottom
+
+      // the rate is recomputed over the played decisions only
+      val played = after.decisions.filterNot(_.timedOut)
+      after.summary.agreements shouldBe played.count(_.agree)
+      after.summary.agreementRate.get shouldBe (played.count(_.agree).toDouble / played.size) +- 1e-9
+    } finally repo.deleteGame(gameId).unsafeRunSync()
+  }
+
+  it should "explain disagreements in grounded terms (#44)" in {
+    assume(available, "Postgres not reachable")
+    assume(ChampionService.unavailableReason.isEmpty, "champion model unavailable")
+    repo.init.unsafeRunSync()
+
+    val runner = runBotGame(20260808L)
+    val gameId = runner.recorder.get.gameId
+    try {
+      val r = new ReviewService(repo).review(gameId, 0).unsafeRunSync().toOption.get
+      r.decisions.filter(_.agree).foreach(_.why shouldBe None)   // nothing to explain
+      val explained = r.decisions.filterNot(_.agree).flatMap(d => d.why.map((d, _)))
+      explained should not be empty
+      explained.foreach { case (d, text) =>
+        text.trim should not be empty
+        d.bucket.get should (be("shape") or be("tempo") or be("safety") or be("accept") or be("other"))
       }
     } finally repo.deleteGame(gameId).unsafeRunSync()
   }
