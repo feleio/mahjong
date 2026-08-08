@@ -9,7 +9,8 @@ description: >
   and define/implement new features", "do the full cycle on X", "spec, file
   issues and implement", "run the feature cycle", or sets a goal that chains
   review → spec → issues → PR → browser testing — even if they don't name
-  this skill explicitly.
+  this skill explicitly. Pauses for approval after filing the issues and
+  before writing any code.
 ---
 
 # Feature-delivery cycle
@@ -21,7 +22,9 @@ and every loose end found on the way ends up as a new issue instead of being
 forgotten.
 
 Track the phases with the task list (TaskCreate) so nothing is dropped; the
-cycle spans hours and context compaction.
+cycle spans hours and context compaction. Make the approval checkpoint below
+its own task, blocking the implementation task — a gate you can only remember
+is a gate you will walk through at hour three.
 
 ## Where the product lives (read this before touching any UI)
 
@@ -79,6 +82,36 @@ If a task sounds like "add X to the game UI", it means `webgame/frontend/`.
   implementation sketch that it stands alone (head/key mappings, endpoints,
   file paths). Cross-reference: children say "Part of #<umbrella>";
   dependencies say "depends on F1".
+
+## Checkpoint — stop here and get the plan approved
+
+**Filing the issues ends the autonomous run. Do not create the branch or edit
+a single file until the user says go.**
+
+Everything up to here is reversible and cheap to redirect: a spec is a file and
+issues can be closed. Implementation is neither — it is hours of work, a large
+diff, and a deploy. This is the one moment where a five-word correction ("wrong
+area", "don't touch the schema") saves the whole cycle, so it is worth the wait
+even when the work seems obvious.
+
+Present, compactly enough to read on a phone:
+
+- the area and the one-line goal, and why this area (what made it the lever);
+- the spec path, and the filed issues — umbrella plus one line per child;
+- what will actually change: which stacks, roughly which files, one PR or several;
+- the non-goals, especially anything a past issue already refuted;
+- anything genuinely needing their decision, stated as a question.
+
+Then ask whether to implement, and **stop**. If they change the plan, update
+`docs/<AREA>.md` and the issues before starting — the traceability this cycle
+exists for breaks the moment the code and the issues disagree.
+
+A standing "keep going" instruction — an autonomous goal, `/loop`, "continue
+until finish" — does **not** waive this gate; those keep you moving *through*
+the phases, not past the one checkpoint that is deliberately a stop. Skip it
+only when the user has explicitly authorised implementation up front ("spec it
+and just build it", "don't stop to check with me"). Once they approve, run
+Phases 4–7 straight through without further check-ins.
 
 ## Phase 4 — Implement
 
@@ -157,6 +190,9 @@ The issues stay open until the work is on master, so the cycle is not done at
 - Treating "PR opened" as done — the goal is the work on master with issues
   closed.
 - Merging a large diff on your own reading alone when the repo has no CI.
+- Rolling from "issues filed" straight into a branch. The checkpoint before
+  Phase 4 is a stop, not a status update — implementing an unapproved plan
+  wastes the cheapest chance to redirect the cycle.
 - Reviving a deleted stack. The product is `webgame/frontend/` + `server/`.
 - Picking between two stacks silently. If a fork exists, surface it and let the
   user choose; burying the choice in a spec is not surfacing it.
